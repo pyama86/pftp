@@ -5,11 +5,12 @@
 # Max number of control connections to accept
 # max_connections = 0
 base_dir = "./shared"
-max_connections = 10
+max_connections = 20
 
 [server]
 # Address to listen on
 # listen_host = "0.0.0.0"
+public_host = "127.0.0.1"
 
 # Port to listen on
 # listen_port = 2121
@@ -18,5 +19,5 @@ max_connections = 10
 # idle_timeout = 900
 
 [server.dataPortRange]
-start = 2122
-end = 2200
+start = 12122
+end = 12200

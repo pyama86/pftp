@@ -33,7 +33,7 @@ lint: ## Exec golint
 	golint -set_exit_status $(TEST)
 
 server: ## Run server with gin
-	go run main.go -data="./"
+	go run main.go -conf=example.toml
 
 build: ## Build as linux binary
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Building$(RESET)"
@@ -49,4 +49,4 @@ dist: build ## Upload to Github releases
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(INFO_COLOR)%-30s$(RESET) %s\n", $$1, $$2}'
 
-.PHONY: default dist test deps 
+.PHONY: default dist test deps
