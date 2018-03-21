@@ -18,7 +18,7 @@ import (
 	"encoding/pem"
 	"math/big"
 
-	"github.com/fclairamb/ftpserver/server"
+	"github.com/pyama86/ftpserver/server"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/naoina/toml"
@@ -144,6 +144,7 @@ func (driver *ServerDriver) WelcomeUser(cc server.ClientContext) (string, error)
 		return "Cannot accept any additional client", fmt.Errorf("too many clients: %d > % d", driver.nbClients, driver.config.MaxConnections)
 	}
 
+	cc.SetDebug(true)
 	return fmt.Sprintf(
 			"Welcome on ftp, you're on dir %s, your ID is %d, your IP:port is %s, we currently have %d clients connected",
 			driver.BaseDir,

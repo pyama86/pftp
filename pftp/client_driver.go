@@ -3,8 +3,9 @@ package pftp
 import (
 	"io/ioutil"
 	"os"
+	"time"
 
-	"github.com/fclairamb/ftpserver/server"
+	"github.com/pyama86/ftpserver/server"
 )
 
 type ClientDriver struct {
@@ -26,6 +27,11 @@ func (driver *ClientDriver) ListFiles(cc server.ClientContext) ([]os.FileInfo, e
 	if err != nil {
 		return nil, err
 	}
+	files = append(files, virtualFileInfo{
+		name: ".",
+		mode: os.FileMode(0666) | os.ModeDir,
+		size: 4096,
+	})
 	return files, err
 }
 
@@ -37,7 +43,32 @@ func (driver *ClientDriver) OpenFile(cc server.ClientContext, path string, flag 
 			os.Remove(path)
 		}
 	}
-	return os.OpenFile(path, flag, 0666)
+	f, err := os.OpenFile(path, flag, 0666)
+	if err != nil {
+		return nil, err
+	}
+	return &FileStream{file: f}, nil
+}
+
+type FileStream struct {
+	file *os.File
+}
+
+func (f FileStream) Read(p []byte) (n int, err error) {
+	return f.file.Read(p)
+}
+
+func (f FileStream) Write(p []byte) (n int, err error) {
+	return f.file.Write(p)
+}
+
+func (f FileStream) Seek(offset int64, whence int) (int64, error) {
+	return f.file.Seek(offset, whence)
+
+}
+
+func (f FileStream) Close() error {
+	return f.file.Close()
 }
 
 func (driver *ClientDriver) GetFileInfo(cc server.ClientContext, path string) (os.FileInfo, error) {
@@ -63,4 +94,34 @@ func (driver *ClientDriver) RenameFile(cc server.ClientContext, from, to string)
 	from = driver.BaseDir + from
 	to = driver.BaseDir + to
 	return os.Rename(from, to)
+}
+
+type virtualFileInfo struct {
+	name string
+	size int64
+	mode os.FileMode
+}
+
+func (f virtualFileInfo) Name() string {
+	return f.name
+}
+
+func (f virtualFileInfo) Size() int64 {
+	return f.size
+}
+
+func (f virtualFileInfo) Mode() os.FileMode {
+	return f.mode
+}
+
+func (f virtualFileInfo) IsDir() bool {
+	return f.mode.IsDir()
+}
+
+func (f virtualFileInfo) ModTime() time.Time {
+	return time.Now().UTC()
+}
+
+func (f virtualFileInfo) Sys() interface{} {
+	return nil
 }
