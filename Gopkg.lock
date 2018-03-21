@@ -2,7 +2,7 @@
 
 
 [[projects]]
-  name = "github.com/fclairamb/ftpserver"
+  name = "github.com/pyama86/ftpserver"
   packages = ["server"]
   revision = "e8c6168f48dacd4672b76644d6b03d35ce92b35c"
   version = "v0.5"

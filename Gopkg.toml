@@ -26,7 +26,7 @@
 
 
 [[constraint]]
-  name = "github.com/fclairamb/ftpserver"
+  name = "github.com/pyama86/ftpserver"
   version = "0.5.0"
 
 [[constraint]]
