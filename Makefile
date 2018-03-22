@@ -33,7 +33,7 @@ lint: ## Exec golint
 	golint -set_exit_status $(TEST)
 
 server: ## Run server with gin
-	go run main.go -conf=example.toml
+	go run main.go
 
 build: ## Build as linux binary
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Building$(RESET)"
@@ -41,7 +41,7 @@ build: ## Build as linux binary
 
 ghr: ## Upload to Github releases without token check
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Releasing for Github$(RESET)"
-	ghr -u lolipop v$(VERSION)-$(REVISION) pkg
+	ghr -u pyama86 v$(VERSION)-$(REVISION) pkg
 
 dist: build ## Upload to Github releases
 	@test -z $(GITHUB_TOKEN) || test -z $(GITHUB_API) || $(MAKE) ghr
