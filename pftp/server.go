@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -31,11 +32,11 @@ func init() {
 }
 
 type FtpServer struct {
-	Logger        log.Logger   // Go-Kit logger
-	settings      *Settings    // General settings
-	listener      net.Listener // listener used to receive files
-	clientCounter uint32       // Clients counter
-	driver        MainDriver   // Driver to handle the client authentication and the file access driver selection
+	Logger        log.Logger // Go-Kit logger
+	settings      *Settings  // General settings
+	listener      net.Listener
+	clientCounter uint32     // Clients counter
+	driver        MainDriver // Driver to handle the client authentication and the file access driver selection
 }
 
 func (server *FtpServer) loadSettings() error {
@@ -68,18 +69,14 @@ func (server *FtpServer) Listen() error {
 		return fmt.Errorf("could not load settings: %v", err)
 	}
 
-	if server.settings.Listener != nil {
-		server.listener = server.settings.Listener
-	} else {
-		server.listener, err = net.Listen("tcp", server.settings.ListenAddr)
+	server.listener, err = net.Listen("tcp", server.settings.ListenAddr)
 
-		if err != nil {
-			level.Error(server.Logger).Log(logKeyMsg, "Cannot listen", "err", err)
-			return err
-		}
+	if err != nil {
+		level.Error(server.Logger).Log(logKeyMsg, "Cannot listen", "err", err)
+		return err
 	}
 
-	level.Info(server.Logger).Log(logKeyMsg, "Listening...", logKeyAction, "ftp.listening", "address", server.listener.Addr())
+	logrus.Info("Listening ftp.listening address ", server.listener.Addr())
 
 	return err
 }
@@ -105,7 +102,7 @@ func (server *FtpServer) ListenAndServe() error {
 		return err
 	}
 
-	level.Info(server.Logger).Log(logKeyMsg, "Starting...", logKeyAction, "ftp.starting")
+	logrus.Info("Starting...ftp.starting")
 
 	server.Serve()
 
@@ -145,12 +142,12 @@ func (server *FtpServer) clientArrival(conn net.Conn) error {
 	c := server.newClientHandler(conn, id)
 	go c.HandleCommands()
 
-	level.Info(c.logger).Log(logKeyMsg, "FTP Client connected", logKeyAction, "ftp.connected", "clientIp", conn.RemoteAddr())
+	logrus.Info("FTP Client connected ftp.connected ", "clientIp ", conn.RemoteAddr())
 
 	return nil
 }
 
 // clientDeparture
 func (server *FtpServer) clientDeparture(c *clientHandler) {
-	level.Info(c.logger).Log(logKeyMsg, "FTP Client disconnected", logKeyAction, "ftp.disconnected", "clientIp", c.conn.RemoteAddr())
+	logrus.Info("FTP Client disconnected ftp.disconnected ", "clientIp ", c.conn.RemoteAddr())
 }

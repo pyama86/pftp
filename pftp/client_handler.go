@@ -2,15 +2,13 @@ package pftp
 
 import (
 	"bufio"
-	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/sirupsen/logrus"
 )
 
 type clientHandler struct {
@@ -29,13 +27,10 @@ type clientHandler struct {
 	ctxRest     int64                // Restart point
 	debug       bool                 // Show debugging info on the server side
 	transferTLS bool                 // Use TLS for transfer connection
-	logger      log.Logger           // Client handler logging
 	isAscii     bool
 }
 
-// newClientHandler initializes a client handler when someone connects
 func (server *FtpServer) newClientHandler(connection net.Conn, id uint32) *clientHandler {
-
 	p := &clientHandler{
 		daddy:       server,
 		conn:        connection,
@@ -44,10 +39,7 @@ func (server *FtpServer) newClientHandler(connection net.Conn, id uint32) *clien
 		reader:      bufio.NewReader(connection),
 		connectedAt: time.Now().UTC(),
 		path:        "/",
-		logger:      log.With(server.Logger, "clientId", id),
 	}
-
-	// Just respecting the existing logic here, this could be probably be dropped at some point
 
 	return p
 }
@@ -99,7 +91,6 @@ func (c *clientHandler) end() {
 // HandleCommands reads the stream of commands
 func (c *clientHandler) HandleCommands() {
 	defer c.end()
-
 	if msg, err := c.daddy.driver.WelcomeUser(c); err == nil {
 		c.writeMessage(220, msg)
 	} else {
@@ -109,9 +100,7 @@ func (c *clientHandler) HandleCommands() {
 
 	for {
 		if c.reader == nil {
-			if c.debug {
-				level.Debug(c.logger).Log(logKeyMsg, "Clean disconnect", logKeyAction, "ftp.disconnect", "clean", true)
-			}
+			logrus.Debug("Clean disconnect ftp.disconnect")
 			return
 		}
 
@@ -121,40 +110,35 @@ func (c *clientHandler) HandleCommands() {
 		}
 
 		line, err := c.reader.ReadString('\n')
-
 		if err != nil {
-			// florent(2018-01-14): #58: IDLE timeout: Adding some code to deal with the deadline
 			switch err := err.(type) {
 			case net.Error:
 				if err.Timeout() {
-					// We have to extend the deadline now
 					c.conn.SetDeadline(time.Now().Add(time.Minute))
-					level.Info(c.logger).Log(logKeyMsg, "IDLE timeout", logKeyAction, "ftp.idle_timeout", "err", err)
+					logrus.Info("IDLE timeout ftp.idle_timeout")
 					c.writeMessage(421, fmt.Sprintf("command timeout (%d seconds): closing control connection", c.daddy.settings.IdleTimeout))
 					if err := c.writer.Flush(); err != nil {
-						level.Error(c.logger).Log(logKeyMsg, "Network flush error", logKeyAction, "ftp.flush_error", "err", err)
+						logrus.Error("Network flush error ftp.flush_error")
 					}
 					if err := c.conn.Close(); err != nil {
-						level.Error(c.logger).Log(logKeyMsg, "Network close error", logKeyAction, "ftp.close_error", "err", err)
+						logrus.Error("Network close error ftp.close_error")
 					}
 					break
 				}
-				level.Error(c.logger).Log(logKeyMsg, "Network error", logKeyAction, "ftp.net_error", "err", err)
+				logrus.Error("Network error ftp.net_error")
 			default:
 				if err == io.EOF {
 					if c.debug {
-						level.Debug(c.logger).Log(logKeyMsg, "TCP disconnect", logKeyAction, "ftp.disconnect", "clean", false)
+						logrus.Debug("TCP disconnect ftp.disconnect")
 					}
 				} else {
-					level.Error(c.logger).Log(logKeyMsg, "Read error", logKeyAction, "ftp.read_error", "err", err)
+					logrus.Error("Read error ftp.read_error")
 				}
 			}
 			return
 		}
 
-		if c.debug {
-			level.Debug(c.logger).Log(logKeyMsg, "FTP RECV", logKeyAction, "ftp.cmd_recv", "line", line)
-		}
+		logrus.Debug("FTP RECV ftp.cmd_recv line ", line)
 
 		c.handleCommand(line)
 	}
@@ -187,9 +171,7 @@ func (c *clientHandler) handleCommand(line string) {
 }
 
 func (c *clientHandler) writeLine(line string) {
-	if c.debug {
-		level.Debug(c.logger).Log(logKeyMsg, "FTP SEND", logKeyAction, "ftp.cmd_send", "line", line)
-	}
+	logrus.Debug("FTP SEND ftp.cmd_send line ", line)
 	c.writer.Write([]byte(line))
 	c.writer.Write([]byte("\r\n"))
 	c.writer.Flush()
@@ -209,16 +191,23 @@ func parseLine(line string) (string, string) {
 
 func (c *clientHandler) handleUSER() {
 	c.user = c.param
+	p, err := NewProxyServer(c.conn, "localhost:2321")
+	if err != nil {
+		c.writeMessage(530, "I can't deal with you (proxy error)")
+	}
+	p.Start()
+	p.WriteRemote("USER", c.param)
 	c.writeMessage(331, "OK")
 }
 
 func (c *clientHandler) handleAUTH() {
-	if tlsConfig, err := c.daddy.driver.GetTLSConfig(); err == nil {
-		c.writeMessage(234, "AUTH command ok. Expecting TLS Negotiation.")
-		c.conn = tls.Server(c.conn, tlsConfig)
-		c.reader = bufio.NewReader(c.conn)
-		c.writer = bufio.NewWriter(c.conn)
-	} else {
-		c.writeMessage(550, fmt.Sprintf("Cannot get a TLS config: %v", err))
-	}
+	//	if tlsConfig, err := c.daddy.driver.GetTLSConfig(); err == nil {
+	//		c.writeMessage(234, "AUTH command ok. Expecting TLS Negotiation.")
+	//		c.conn = tls.Server(c.conn, tlsConfig)
+	//		c.reader = bufio.NewReader(c.conn)
+	//		c.writer = bufio.NewWriter(c.conn)
+	//	} else {
+	//c.writeMessage(550, fmt.Sprintf("Cannot get a TLS config: %v", err))
+	//	}
+	c.writeMessage(550, fmt.Sprintf("Cannot get a TLS config: %v", "hoge"))
 }
