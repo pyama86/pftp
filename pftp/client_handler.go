@@ -98,9 +98,7 @@ func (c *clientHandler) HandleCommands() {
 			}
 			return
 		}
-
 		c.handleCommand(line)
-
 	}
 }
 

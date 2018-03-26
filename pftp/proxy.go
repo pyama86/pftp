@@ -40,8 +40,6 @@ func NewProxyServer(user string, local net.Conn, remoteAddr string) (*ProxyServe
 
 func (s *ProxyServer) SendLine(line string) error {
 	rremote := bufio.NewReader(s.remote)
-
-	logrus.Info("send=", line)
 	if _, err := s.remote.Write([]byte(line)); err != nil {
 		return err
 	}
@@ -50,7 +48,6 @@ func (s *ProxyServer) SendLine(line string) error {
 		if response, err := rremote.ReadString('\n'); err != nil {
 			return err
 		} else {
-			logrus.Info("to client=", response)
 			if _, err := s.local.Write([]byte(response)); err != nil {
 				return err
 			} else {
@@ -105,6 +102,7 @@ func (p *Proxy) Start(username string, clientConn, serverConn net.Conn) error {
 
 	return eg.Wait()
 }
+
 func (p *Proxy) relay(eg *errgroup.Group, fromConn, toConn net.Conn) error {
 	buff := make([]byte, BUFFER_SIZE)
 	for {
