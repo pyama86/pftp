@@ -2,10 +2,11 @@ package pftp
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net"
+	"os"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/BurntSushi/toml"
 	"github.com/sirupsen/logrus"
 )
 
@@ -32,30 +33,50 @@ func init() {
 }
 
 type FtpServer struct {
-	Logger        log.Logger // Go-Kit logger
-	settings      *Settings  // General settings
+	SettingsFile  string
+	settings      *Settings // General settings
 	listener      net.Listener
-	clientCounter uint32     // Clients counter
-	driver        MainDriver // Driver to handle the client authentication and the file access driver selection
+	ClientCounter uint32
+	config        OurSettings // Our settings
+}
+
+type OurSettings struct {
+	Server         Settings // Server settings (shouldn't need to be filled)
+	MaxConnections uint32   `toml:"max_connections"`
 }
 
 func (server *FtpServer) loadSettings() error {
-	s, err := server.driver.GetSettings()
+	err := server.GetSettings()
 
 	if err != nil {
 		return err
 	}
 
-	if s.Listener == nil && s.ListenAddr == "" {
-		s.ListenAddr = "0.0.0.0:2121"
+	if server.config.Server.Listener == nil && server.config.Server.ListenAddr == "" {
+		server.settings.ListenAddr = "0.0.0.0:2121"
 	}
 
-	// florent(2018-01-14): #58: IDLE timeout: Default idle timeout will be set at 900 seconds
-	if s.IdleTimeout == 0 {
-		s.IdleTimeout = 900
+	if server.config.Server.IdleTimeout == 0 {
+		server.settings.IdleTimeout = 900
 	}
 
-	server.settings = s
+	return nil
+}
+
+func (server *FtpServer) GetSettings() error {
+	f, err := os.Open(server.SettingsFile)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	buf, err := ioutil.ReadAll(f)
+	if err != nil {
+		return err
+	}
+	if err := toml.Unmarshal(buf, &server.config); err != nil {
+		return fmt.Errorf("problem loading \"%s\": %v", server.SettingsFile, err)
+	}
 
 	return nil
 }
@@ -72,7 +93,6 @@ func (server *FtpServer) Listen() error {
 	server.listener, err = net.Listen("tcp", server.settings.ListenAddr)
 
 	if err != nil {
-		level.Error(server.Logger).Log(logKeyMsg, "Cannot listen", "err", err)
 		return err
 	}
 
@@ -82,18 +102,18 @@ func (server *FtpServer) Listen() error {
 }
 
 // Serve accepts and process any new client coming
-func (server *FtpServer) Serve() {
+func (server *FtpServer) Serve() error {
 	for {
 		connection, err := server.listener.Accept()
 		if err != nil {
 			if server.listener != nil {
-				level.Error(server.Logger).Log(logKeyMsg, "Accept error", "err", err)
+				return err
 			}
-			break
 		}
 
 		server.clientArrival(connection)
 	}
+	return nil
 }
 
 // ListenAndServe simply chains the Listen and Serve method calls
@@ -104,18 +124,12 @@ func (server *FtpServer) ListenAndServe() error {
 
 	logrus.Info("Starting...ftp.starting")
 
-	server.Serve()
-
-	// Note: At this precise time, the clients are still connected. We are just not accepting clients anymore.
-
-	return nil
+	return server.Serve()
 }
 
-// NewFtpServer creates a new FtpServer instance
-func NewFtpServer(driver MainDriver) *FtpServer {
+func NewFtpServer(confFile string) *FtpServer {
 	return &FtpServer{
-		driver: driver,
-		Logger: log.NewNopLogger(),
+		SettingsFile: confFile,
 	}
 }
 
@@ -136,8 +150,8 @@ func (server *FtpServer) Stop() {
 
 // When a client connects, the server could refuse the connection
 func (server *FtpServer) clientArrival(conn net.Conn) error {
-	server.clientCounter++
-	id := server.clientCounter
+	server.ClientCounter++
+	id := server.ClientCounter
 
 	c := server.newClientHandler(conn, id)
 	go c.HandleCommands()
@@ -145,9 +159,4 @@ func (server *FtpServer) clientArrival(conn net.Conn) error {
 	logrus.Info("FTP Client connected ftp.connected ", "clientIp ", conn.RemoteAddr())
 
 	return nil
-}
-
-// clientDeparture
-func (server *FtpServer) clientDeparture(c *clientHandler) {
-	logrus.Info("FTP Client disconnected ftp.disconnected ", "clientIp ", c.conn.RemoteAddr())
 }

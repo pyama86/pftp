@@ -1,9 +1,11 @@
 package pftp
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 
+	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -12,52 +14,98 @@ const (
 )
 
 type ProxyServer struct {
+	user   string
 	local  net.Conn
 	remote net.Conn
 }
 
-func NewProxyServer(local net.Conn, remoteAddr string) (*ProxyServer, error) {
+func NewProxyServer(user string, local net.Conn, remoteAddr string) (*ProxyServer, error) {
 	c, err := net.Dial("tcp", remoteAddr)
 	if err != nil {
 		return nil, err
 	}
 
+	remote := bufio.NewReader(c)
+	// read welcome message
+	if _, err := remote.ReadString('\n'); err != nil {
+		return nil, err
+	}
+
 	return &ProxyServer{
+		user:   user,
 		local:  local,
 		remote: c,
 	}, nil
 }
 
-func (s *ProxyServer) Start() error {
-	for {
-		go s.handleConn()
-	}
-}
+func (s *ProxyServer) SendLine(line string) error {
+	rremote := bufio.NewReader(s.remote)
 
-func (s *ProxyServer) WriteRemote(cmd, value string) error {
-	if _, err := s.remote.Write([]byte(fmt.Sprintf("%s %s", cmd, value))); err != nil {
+	logrus.Info("send=", line)
+	if _, err := s.remote.Write([]byte(line)); err != nil {
 		return err
 	}
-	if _, err := s.remote.Write([]byte("\r\n")); err != nil {
 
+	for {
+		if response, err := rremote.ReadString('\n'); err != nil {
+			return err
+		} else {
+			logrus.Info("to client=", response)
+			if _, err := s.local.Write([]byte(response)); err != nil {
+				return err
+			} else {
+				return nil
+			}
+		}
+	}
+	return nil
+}
+
+func (s *ProxyServer) writeCmd(conn net.Conn, cmd, value string) error {
+	if _, err := conn.Write([]byte(fmt.Sprintf("%s %s", cmd, value))); err != nil {
+		return err
+	}
+	if _, err := conn.Write([]byte("\r\n")); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (s *ProxyServer) handleConn() error {
+func (s *ProxyServer) Start() error {
 	defer s.local.Close()
 	defer s.remote.Close()
 
+	p := &Proxy{}
+	return p.Start(s.user, s.local, s.remote)
+}
+
+func (s *Proxy) writeCmd(conn net.Conn, cmd, value string) error {
+	if _, err := conn.Write([]byte(fmt.Sprintf("%s %s", cmd, value))); err != nil {
+		return err
+	}
+	if _, err := conn.Write([]byte("\r\n")); err != nil {
+		return err
+	}
+	return nil
+}
+
+type Proxy struct{}
+
+func (p *Proxy) Start(username string, clientConn, serverConn net.Conn) error {
+	defer clientConn.Close()
+	defer serverConn.Close()
+
 	var eg errgroup.Group
 
-	eg.Go(func() error { return s.relay(&eg, s.local, s.remote) })
-	eg.Go(func() error { return s.relay(&eg, s.remote, s.local) })
+	eg.Go(func() error { return p.relay(&eg, serverConn, clientConn) })
+	eg.Go(func() error { return p.relay(&eg, clientConn, serverConn) })
+	if err := p.writeCmd(serverConn, "USER", username); err != nil {
+		return nil
+	}
 
 	return eg.Wait()
 }
-
-func (p *ProxyServer) relay(eg *errgroup.Group, fromConn, toConn net.Conn) error {
+func (p *Proxy) relay(eg *errgroup.Group, fromConn, toConn net.Conn) error {
 	buff := make([]byte, BUFFER_SIZE)
 	for {
 		n, err := fromConn.Read(buff)
@@ -65,6 +113,9 @@ func (p *ProxyServer) relay(eg *errgroup.Group, fromConn, toConn net.Conn) error
 			return err
 		}
 		b := buff[:n]
+		logrus.Info("remote=", fromConn.RemoteAddr())
+		logrus.Info("local=", toConn.RemoteAddr())
+		logrus.Info(string(b))
 		n, err = toConn.Write(b)
 		if err != nil {
 			return err

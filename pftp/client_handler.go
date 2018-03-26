@@ -19,7 +19,6 @@ type clientHandler struct {
 	writer      *bufio.Writer        // Writer on the TCP connection
 	reader      *bufio.Reader        // Reader on the TCP connection
 	user        string               // Authenticated user
-	path        string               // Current path
 	command     string               // Command received on the connection
 	param       string               // Param of the FTP command
 	connectedAt time.Time            // Date of connection
@@ -27,7 +26,7 @@ type clientHandler struct {
 	ctxRest     int64                // Restart point
 	debug       bool                 // Show debugging info on the server side
 	transferTLS bool                 // Use TLS for transfer connection
-	isAscii     bool
+	proxy       *ProxyServer
 }
 
 func (server *FtpServer) newClientHandler(connection net.Conn, id uint32) *clientHandler {
@@ -38,7 +37,6 @@ func (server *FtpServer) newClientHandler(connection net.Conn, id uint32) *clien
 		writer:      bufio.NewWriter(connection),
 		reader:      bufio.NewReader(connection),
 		connectedAt: time.Now().UTC(),
-		path:        "/",
 	}
 
 	return p
@@ -46,16 +44,6 @@ func (server *FtpServer) newClientHandler(connection net.Conn, id uint32) *clien
 
 func (c *clientHandler) disconnect() {
 	c.conn.Close()
-}
-
-// Path provides the current working directory of the client
-func (c *clientHandler) Path() string {
-	return c.path
-}
-
-// SetPath changes the current working directory
-func (c *clientHandler) SetPath(path string) {
-	c.path = path
 }
 
 // Debug defines if we will list all interaction
@@ -84,14 +72,21 @@ func (c *clientHandler) LocalAddr() net.Addr {
 }
 
 func (c *clientHandler) end() {
-	c.daddy.driver.UserLeft(c)
-	c.daddy.clientDeparture(c)
+	c.daddy.ClientCounter--
 }
 
-// HandleCommands reads the stream of commands
+// WelcomeUser is called to send the very first welcome message
+func (c *clientHandler) WelcomeUser() (string, error) {
+	if c.daddy.ClientCounter > c.daddy.config.MaxConnections {
+		return "Cannot accept any additional client", fmt.Errorf("too many clients: %d > % d", c.daddy.ClientCounter, c.daddy.config.MaxConnections)
+	}
+
+	return fmt.Sprint("Welcome on ftpserver"), nil
+}
+
 func (c *clientHandler) HandleCommands() {
 	defer c.end()
-	if msg, err := c.daddy.driver.WelcomeUser(c); err == nil {
+	if msg, err := c.WelcomeUser(); err == nil {
 		c.writeMessage(220, msg)
 	} else {
 		c.writeMessage(500, msg)
@@ -104,7 +99,6 @@ func (c *clientHandler) HandleCommands() {
 			return
 		}
 
-		// florent(2018-01-14): #58: IDLE timeout: Preparing the deadline before we read
 		if c.daddy.settings.IdleTimeout > 0 {
 			c.conn.SetDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(c.daddy.settings.IdleTimeout))))
 		}
@@ -138,40 +132,34 @@ func (c *clientHandler) HandleCommands() {
 			return
 		}
 
-		logrus.Debug("FTP RECV ftp.cmd_recv line ", line)
-
 		c.handleCommand(line)
+
 	}
 }
 
-// handleCommand takes care of executing the received line
 func (c *clientHandler) handleCommand(line string) {
 	command, param := parseLine(line)
 	c.command = strings.ToUpper(command)
 	c.param = param
 
-	cmdDesc := commandsMap[c.command]
-	if cmdDesc == nil {
-		c.writeMessage(500, "Unknown command")
-		return
+	if c.command == "USER" || c.command == "AUTH" {
+		cmdDesc := commandsMap[c.command]
+
+		defer func() {
+			if r := recover(); r != nil {
+				c.writeMessage(500, fmt.Sprintf("Internal error: %s", r))
+			}
+		}()
+
+		cmdDesc.Fn(c)
 	}
 
-	if c.driver == nil && !cmdDesc.Open {
-		c.writeMessage(530, "Please login with USER and PASS")
-		return
+	if c.proxy != nil {
+		c.proxy.SendLine(line)
 	}
-
-	// Let's prepare to recover in case there's a command error
-	defer func() {
-		if r := recover(); r != nil {
-			c.writeMessage(500, fmt.Sprintf("Internal error: %s", r))
-		}
-	}()
-	cmdDesc.Fn(c)
 }
 
 func (c *clientHandler) writeLine(line string) {
-	logrus.Debug("FTP SEND ftp.cmd_send line ", line)
 	c.writer.Write([]byte(line))
 	c.writer.Write([]byte("\r\n"))
 	c.writer.Flush()
@@ -191,13 +179,12 @@ func parseLine(line string) (string, string) {
 
 func (c *clientHandler) handleUSER() {
 	c.user = c.param
-	p, err := NewProxyServer(c.conn, "localhost:2321")
+	p, err := NewProxyServer(c.param, c.conn, "localhost:2321")
 	if err != nil {
 		c.writeMessage(530, "I can't deal with you (proxy error)")
 	}
-	p.Start()
-	p.WriteRemote("USER", c.param)
-	c.writeMessage(331, "OK")
+
+	c.proxy = p
 }
 
 func (c *clientHandler) handleAUTH() {

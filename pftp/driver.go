@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"io"
 	"net"
-	"os"
 )
 
 type MainDriver interface {
@@ -16,21 +15,9 @@ type MainDriver interface {
 }
 
 type ClientHandlingDriver interface {
-	ChangeDirectory(cc ClientContext, directory string) error
-	MakeDirectory(cc ClientContext, directory string) error
-	ListFiles(cc ClientContext) ([]os.FileInfo, error)
-	OpenFile(cc ClientContext, path string, flag int) (FileStream, error)
-	DeleteFile(cc ClientContext, path string) error
-	GetFileInfo(cc ClientContext, path string) (os.FileInfo, error)
-	RenameFile(cc ClientContext, from, to string) error
-	CanAllocate(cc ClientContext, size int) (bool, error)
-	ChmodFile(cc ClientContext, path string, mode os.FileMode) error
 }
 
 type ClientContext interface {
-	Path() string
-	SetDebug(debug bool)
-	Debug() bool
 	ID() uint32
 	RemoteAddr() net.Addr
 	LocalAddr() net.Addr
