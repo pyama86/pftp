@@ -199,7 +199,7 @@ func (c *clientHandler) handleLIST() {
 				logrus.Error(err)
 				return
 			}
-
+			// TODO channel
 			time.Sleep(10)
 			err = c.controlProxy.SendToClient(res)
 			if err != nil {
@@ -208,23 +208,6 @@ func (c *clientHandler) handleLIST() {
 			return
 
 		}
-	}
-}
-
-func (c *clientHandler) TransferOpen() (*ProxyServer, error) {
-	if c.transfer == nil {
-		return nil, errors.New("no passive connection declared")
-	}
-	conn, err := c.transfer.Open()
-	if err != nil {
-		return nil, err
-	}
-	return conn, err
-}
-
-func (c *clientHandler) TransferClose() {
-	if c.transfer != nil {
-		c.transfer = nil
 	}
 }
 
@@ -244,5 +227,22 @@ func (c *clientHandler) handleFEAT() {
 		if strings.HasSuffix(strings.ToUpper(b), "END") || string(b[0]) == "5" {
 			return
 		}
+	}
+}
+
+func (c *clientHandler) TransferOpen() (*ProxyServer, error) {
+	if c.transfer == nil {
+		return nil, errors.New("no passive connection declared")
+	}
+	conn, err := c.transfer.Open()
+	if err != nil {
+		return nil, err
+	}
+	return conn, err
+}
+
+func (c *clientHandler) TransferClose() {
+	if c.transfer != nil {
+		c.transfer = nil
 	}
 }
