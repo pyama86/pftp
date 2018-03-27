@@ -26,6 +26,7 @@ func init() {
 	commandsMap["AUTH"] = &CommandDescription{Fn: (*clientHandler).handleAUTH}
 	commandsMap["EPSV"] = &CommandDescription{Fn: (*clientHandler).handlePASV}
 	commandsMap["LIST"] = &CommandDescription{Fn: (*clientHandler).handleLIST}
+	commandsMap["MLSD"] = &CommandDescription{Fn: (*clientHandler).handleLIST}
 	commandsMap["FEAT"] = &CommandDescription{Fn: (*clientHandler).handleFEAT}
 }
 
