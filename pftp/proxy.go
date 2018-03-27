@@ -2,7 +2,6 @@ package pftp
 
 import (
 	"bufio"
-	"fmt"
 	"net"
 	"time"
 
@@ -15,10 +14,9 @@ const (
 )
 
 type ProxyServer struct {
-	timeout      int
-	client       net.Conn
-	origin       net.Conn
-	originReader *bufio.Reader
+	timeout int
+	client  net.Conn
+	origin  net.Conn
 }
 
 func NewProxyServer(timeout int, client net.Conn, originAddr string) (*ProxyServer, error) {
@@ -29,20 +27,20 @@ func NewProxyServer(timeout int, client net.Conn, originAddr string) (*ProxyServ
 
 	logrus.Debug("client:", client.LocalAddr(), " origin:", c.RemoteAddr())
 	return &ProxyServer{
-		client:       client,
-		origin:       c,
-		originReader: bufio.NewReader(c),
-		timeout:      timeout,
+		client:  client,
+		origin:  c,
+		timeout: timeout,
 	}, nil
 }
 
-func (s *ProxyServer) ReadLine() (string, error) {
-
+func (s *ProxyServer) ReadFromOrigin() (string, error) {
+	originReader := bufio.NewReader(s.origin)
 	if s.timeout > 0 {
 		s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
 	}
+
 	for {
-		if response, err := s.originReader.ReadString('\n'); err != nil {
+		if response, err := originReader.ReadString('\n'); err != nil {
 			return "", err
 		} else {
 			logrus.Debug("response command:", response)
@@ -52,7 +50,7 @@ func (s *ProxyServer) ReadLine() (string, error) {
 	return "", nil
 }
 
-func (s *ProxyServer) SendLine(line string) error {
+func (s *ProxyServer) SendToOrigin(line string) error {
 	logrus.Debug("send command:", line)
 	if _, err := s.origin.Write([]byte(line)); err != nil {
 		return err
@@ -61,44 +59,34 @@ func (s *ProxyServer) SendLine(line string) error {
 	return nil
 }
 
-func (s *ProxyServer) SendWithReadLine(line string) (string, error) {
-	err := s.SendLine(line)
+func (s *ProxyServer) SendAndReadToOrigin(line string) (string, error) {
+	err := s.SendToOrigin(line)
 	if err != nil {
 		return "", err
 	}
-	return s.ReadLine()
+	return s.ReadFromOrigin()
 }
 
-func (s *ProxyServer) SendLineWithProxy(line string) error {
-	err := s.SendLine(line)
+func (s *ProxyServer) SendToOriginWithProxy(line string) error {
+	err := s.SendToOrigin(line)
 	if err != nil {
 		return err
 	}
 
-	response, err := s.ReadLine()
+	response, err := s.ReadFromOrigin()
 	if err != nil {
 		return err
 	}
 
-	return s.SendClient(response)
+	return s.SendToClient(response)
 }
 
-func (s *ProxyServer) SendClient(line string) error {
+func (s *ProxyServer) SendToClient(line string) error {
 	if _, err := s.client.Write([]byte(line)); err != nil {
 		return err
 	}
 	return nil
 
-}
-
-func (s *ProxyServer) writeCmd(conn net.Conn, cmd, value string) error {
-	if _, err := conn.Write([]byte(fmt.Sprintf("%s %s", cmd, value))); err != nil {
-		return err
-	}
-	if _, err := conn.Write([]byte("\r\n")); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (s *ProxyServer) Start() error {
@@ -107,16 +95,6 @@ func (s *ProxyServer) Start() error {
 
 	p := &Proxy{}
 	return p.Start(s.client, s.origin)
-}
-
-func (s *Proxy) writeCmd(conn net.Conn, cmd, value string) error {
-	if _, err := conn.Write([]byte(fmt.Sprintf("%s %s", cmd, value))); err != nil {
-		return err
-	}
-	if _, err := conn.Write([]byte("\r\n")); err != nil {
-		return err
-	}
-	return nil
 }
 
 type Proxy struct{}

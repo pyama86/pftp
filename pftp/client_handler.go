@@ -26,6 +26,7 @@ func init() {
 	commandsMap["AUTH"] = &CommandDescription{Fn: (*clientHandler).handleAUTH}
 	commandsMap["EPSV"] = &CommandDescription{Fn: (*clientHandler).handlePASV}
 	commandsMap["LIST"] = &CommandDescription{Fn: (*clientHandler).handleLIST}
+	commandsMap["FEAT"] = &CommandDescription{Fn: (*clientHandler).handleFEAT}
 }
 
 type clientHandler struct {
@@ -140,8 +141,10 @@ func (c *clientHandler) handleCommand(line string) {
 		cmdDesc.Fn(c)
 	}
 
-	if c.controlProxy != nil && command != "EPSV" {
-		c.controlProxy.SendLineWithProxy(line)
+	if c.controlProxy != nil &&
+		command != "EPSV" &&
+		command != "FEAT" {
+		c.controlProxy.SendToOriginWithProxy(line)
 	}
 }
 
@@ -171,7 +174,7 @@ func (c *clientHandler) handleUSER() {
 	}
 
 	// read welcome message
-	p.ReadLine()
+	p.ReadFromOrigin()
 	c.controlProxy = p
 }
 
@@ -187,18 +190,18 @@ func (c *clientHandler) handleAUTH() {
 }
 
 func (c *clientHandler) handleLIST() {
-	c.controlProxy.SendLineWithProxy(c.line)
+	c.controlProxy.SendToOriginWithProxy(c.line)
 	if proxy, err := c.TransferOpen(); err == nil {
 		go proxy.Start()
 		for {
-			res, err := c.controlProxy.ReadLine()
+			res, err := c.controlProxy.ReadFromOrigin()
 			if err != nil {
 				logrus.Error(err)
 				return
 			}
 
 			time.Sleep(10)
-			err = c.controlProxy.SendClient(res)
+			err = c.controlProxy.SendToClient(res)
 			if err != nil {
 				logrus.Error(err)
 			}
@@ -222,5 +225,24 @@ func (c *clientHandler) TransferOpen() (*ProxyServer, error) {
 func (c *clientHandler) TransferClose() {
 	if c.transfer != nil {
 		c.transfer = nil
+	}
+}
+
+func (c *clientHandler) handleFEAT() {
+	c.controlProxy.SendToOriginWithProxy(c.line)
+	for {
+		b, err := c.controlProxy.ReadFromOrigin()
+		if err != nil {
+			logrus.Error(err)
+			return
+		}
+
+		if err := c.controlProxy.SendToClient(b); err != nil {
+			logrus.Error(err)
+			return
+		}
+		if strings.HasSuffix(strings.ToUpper(b), "END") || string(b[0]) == "5" {
+			return
+		}
 	}
 }
