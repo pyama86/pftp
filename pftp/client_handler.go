@@ -3,6 +3,7 @@ package pftp
 import (
 	"bufio"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,17 +13,37 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+var commandsMap map[string]*CommandDescription
+
+type CommandDescription struct {
+	Open bool                 // Open to clients without auth
+	Fn   func(*clientHandler) // Function to handle it
+}
+
+func init() {
+	commandsMap = make(map[string]*CommandDescription)
+	commandsMap["USER"] = &CommandDescription{Fn: (*clientHandler).handleUSER}
+	commandsMap["AUTH"] = &CommandDescription{Fn: (*clientHandler).handleAUTH}
+	commandsMap["EPSV"] = &CommandDescription{Fn: (*clientHandler).handlePASV}
+	commandsMap["LIST"] = &CommandDescription{Fn: (*clientHandler).handleLIST}
+}
+
 type clientHandler struct {
-	id          uint32        // ID of the client
-	daddy       *FtpServer    // Server on which the connection was accepted
-	conn        net.Conn      // TCP connection
-	writer      *bufio.Writer // Writer on the TCP connection
-	reader      *bufio.Reader // Reader on the TCP connection
-	connectedAt time.Time     // Date of connection
-	ctxRnfr     string        // Rename from
-	ctxRest     int64         // Restart point
-	transferTLS bool          // Use TLS for transfer connection
-	proxy       *ProxyServer
+	id            uint32        // ID of the client
+	daddy         *FtpServer    // Server on which the connection was accepted
+	conn          net.Conn      // TCP connection
+	writer        *bufio.Writer // Writer on the TCP connection
+	reader        *bufio.Reader // Reader on the TCP connection
+	connectedAt   time.Time     // Date of connection
+	line          string
+	command       string
+	param         string
+	ctxRnfr       string          // Rename from
+	ctxRest       int64           // Restart point
+	transferTLS   bool            // Use TLS for transfer connection
+	transfer      transferHandler // Transfer connection (only passive is implemented at this stage)
+	controlProxy  *ProxyServer
+	transferProxy *ProxyServer
 }
 
 func (server *FtpServer) newClientHandler(connection net.Conn, id uint32) *clientHandler {
@@ -104,21 +125,23 @@ func (c *clientHandler) HandleCommands() {
 
 func (c *clientHandler) handleCommand(line string) {
 	command, param := parseLine(line)
+	c.command = strings.ToUpper(command)
+	c.param = param
+	c.line = line
 
-	switch command {
-	case "USER":
-		c.handleUSER(param)
-	case "AUTH":
-		c.handleAUTH()
-	}
+	cmdDesc := commandsMap[c.command]
 	defer func() {
 		if r := recover(); r != nil {
 			c.writeMessage(500, fmt.Sprintf("Internal error: %s", r))
 		}
 	}()
 
-	if c.proxy != nil && command != "AUTH" {
-		c.proxy.SendLine(line)
+	if cmdDesc != nil {
+		cmdDesc.Fn(c)
+	}
+
+	if c.controlProxy != nil && command != "EPSV" {
+		c.controlProxy.SendLineWithProxy(line)
 	}
 }
 
@@ -140,14 +163,16 @@ func parseLine(line string) (string, string) {
 	return params[0], params[1]
 }
 
-func (c *clientHandler) handleUSER(user string) {
-	p, err := NewProxyServer(user, c.conn, "localhost:2321")
+func (c *clientHandler) handleUSER() {
+	p, err := NewProxyServer(c.daddy.config.ProxyTimeout, c.conn, "localhost:2321")
 	if err != nil {
 		c.writeMessage(530, "I can't deal with you (proxy error)")
 		return
 	}
 
-	c.proxy = p
+	// read welcome message
+	p.ReadLine()
+	c.controlProxy = p
 }
 
 func (c *clientHandler) handleAUTH() {
@@ -158,5 +183,44 @@ func (c *clientHandler) handleAUTH() {
 		c.writer = bufio.NewWriter(c.conn)
 	} else {
 		c.writeMessage(550, fmt.Sprint("Cannot get a TLS config"))
+	}
+}
+
+func (c *clientHandler) handleLIST() {
+	c.controlProxy.SendLineWithProxy(c.line)
+	if proxy, err := c.TransferOpen(); err == nil {
+		go proxy.Start()
+		for {
+			res, err := c.controlProxy.ReadLine()
+			if err != nil {
+				logrus.Error(err)
+				return
+			}
+
+			time.Sleep(10)
+			err = c.controlProxy.SendClient(res)
+			if err != nil {
+				logrus.Error(err)
+			}
+			return
+
+		}
+	}
+}
+
+func (c *clientHandler) TransferOpen() (*ProxyServer, error) {
+	if c.transfer == nil {
+		return nil, errors.New("no passive connection declared")
+	}
+	conn, err := c.transfer.Open()
+	if err != nil {
+		return nil, err
+	}
+	return conn, err
+}
+
+func (c *clientHandler) TransferClose() {
+	if c.transfer != nil {
+		c.transfer = nil
 	}
 }

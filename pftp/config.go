@@ -6,9 +6,15 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+type portRange struct {
+	Start int
+	End   int
+}
 type config struct {
 	ListenAddr     string
 	IdleTimeout    int
+	ProxyTimeout   int
+	DataPortRange  *portRange  `toml:"port_range"`
 	MaxConnections uint32      `toml:"max_connections"`
 	tls            *tlsPair    `toml:"tls"`
 	TLSConfig      *tls.Config `toml:"-"`
@@ -45,4 +51,5 @@ func loadConfig(path string) (*config, error) {
 func defaultConfig(config *config) {
 	config.ListenAddr = "0.0.0.0:2121"
 	config.IdleTimeout = 900
+	config.ProxyTimeout = 900
 }
