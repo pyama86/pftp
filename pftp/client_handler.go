@@ -2,7 +2,6 @@ package pftp
 
 import (
 	"bufio"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -167,40 +166,18 @@ func parseLine(line string) (string, string) {
 	return params[0], params[1]
 }
 
-func (c *clientHandler) handleUSER() {
-	p, err := NewProxyServer(c.daddy.config.ProxyTimeout, c.conn, "localhost:2321")
-	if err != nil {
-		c.writeMessage(530, "I can't deal with you (proxy error)")
-		return
-	}
-
-	// read welcome message
-	p.ReadFromOrigin()
-	c.controlProxy = p
-}
-
-func (c *clientHandler) handleAUTH() {
-	if c.daddy.config.TLSConfig != nil {
-		c.writeMessage(234, "AUTH command ok. Expecting TLS Negotiation.")
-		c.conn = tls.Server(c.conn, c.daddy.config.TLSConfig)
-		c.reader = bufio.NewReader(c.conn)
-		c.writer = bufio.NewWriter(c.conn)
-	} else {
-		c.writeMessage(550, fmt.Sprint("Cannot get a TLS config"))
-	}
-}
-
 func (c *clientHandler) handleLIST() {
 	c.controlProxy.SendToOriginWithProxy(c.line)
 	if proxy, err := c.TransferOpen(); err == nil {
 		go proxy.Start()
+
 		for {
 			res, err := c.controlProxy.ReadFromOrigin()
 			if err != nil {
 				logrus.Error(err)
 				return
 			}
-			// TODO channel
+
 			time.Sleep(10)
 			err = c.controlProxy.SendToClient(res)
 			if err != nil {
@@ -225,7 +202,7 @@ func (c *clientHandler) handleFEAT() {
 			logrus.Error(err)
 			return
 		}
-		if strings.HasSuffix(strings.ToUpper(b), "END") || string(b[0]) == "5" {
+		if strings.Index(strings.ToUpper(b), " END") > 0 || string(b[0]) == "5" {
 			return
 		}
 	}

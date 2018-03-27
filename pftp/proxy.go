@@ -59,6 +59,7 @@ func (s *ProxyServer) SendToOrigin(line string) error {
 	return nil
 }
 
+// オリジンにコマンドを投げてから結果を受け取る
 func (s *ProxyServer) SendAndReadToOrigin(line string) (string, error) {
 	err := s.SendToOrigin(line)
 	if err != nil {
@@ -67,6 +68,7 @@ func (s *ProxyServer) SendAndReadToOrigin(line string) (string, error) {
 	return s.ReadFromOrigin()
 }
 
+// オリジンにコマンドを投げてから結果をクライアントにプロキシする
 func (s *ProxyServer) SendToOriginWithProxy(line string) error {
 	err := s.SendToOrigin(line)
 	if err != nil {
@@ -117,6 +119,7 @@ func (p *Proxy) relay(eg *errgroup.Group, fromConn, toConn net.Conn) error {
 	buff := make([]byte, BUFFER_SIZE)
 	for {
 		n, err := fromConn.Read(buff)
+		logrus.Error(err)
 		if err != nil {
 			return err
 		}
