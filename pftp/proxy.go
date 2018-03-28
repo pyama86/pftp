@@ -123,7 +123,7 @@ func (p *Proxy) relay(ctx context.Context, fromConn, toConn net.Conn) error {
 	logrus.Debug("relay start from=", fromConn.LocalAddr(), " to=", fromConn.RemoteAddr())
 	buff := make([]byte, BUFFER_SIZE)
 	errChan := make(chan error, 1)
-	jobs := make(chan []byte, BUFFER_SIZE)
+	read := make(chan []byte, BUFFER_SIZE)
 
 	go func() {
 		for {
@@ -132,7 +132,7 @@ func (p *Proxy) relay(ctx context.Context, fromConn, toConn net.Conn) error {
 				errChan <- err
 				return
 			}
-			jobs <- buff[:n]
+			read <- buff[:n]
 		}
 	}()
 
@@ -142,7 +142,7 @@ func (p *Proxy) relay(ctx context.Context, fromConn, toConn net.Conn) error {
 			return ctx.Err()
 		case err := <-errChan:
 			return err
-		case b := <-jobs:
+		case b := <-read:
 			_, err := toConn.Write(b)
 			if err != nil {
 				return err
