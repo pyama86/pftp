@@ -176,24 +176,24 @@ func (c *clientHandler) handleLIST() {
 	c.controlProxy.SendToOriginWithProxy(c.line)
 	if proxy, err := c.TransferOpen(); err == nil {
 		defer c.TransferClose()
+
+		// データ転送の完了はシリアルに待つ
 		err := proxy.Start()
 		if err != io.EOF {
 			logrus.Error(err)
 		}
 
-		for {
-			res, err := c.controlProxy.ReadFromOrigin()
-			if err != nil {
-				logrus.Error(err)
-				return
-			}
-
-			err = c.controlProxy.SendToClient(res)
-			if err != nil {
-				logrus.Error(err)
-			}
+		// オリジンサーバから完了通知を受け取る
+		res, err := c.controlProxy.ReadFromOrigin()
+		if err != nil {
+			logrus.Error(err)
 			return
+		}
 
+		// クライアントに完了通知を送る
+		err = c.controlProxy.SendToClient(res)
+		if err != nil {
+			logrus.Error(err)
 		}
 	} else {
 		logrus.Error(err)

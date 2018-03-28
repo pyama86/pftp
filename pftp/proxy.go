@@ -110,9 +110,11 @@ func (p *Proxy) Start(clientConn, serverConn net.Conn) error {
 	defer done()
 	eg, ctx := errgroup.WithContext(ctx)
 
+	// リレー用のgoroutineを起動
 	eg.Go(func() error { return p.relay(ctx, serverConn, clientConn) })
 	eg.Go(func() error { return p.relay(ctx, clientConn, serverConn) })
 
+	// 完了まで待ち合わせる
 	if err := eg.Wait(); err != nil {
 		return err
 	}
@@ -125,6 +127,7 @@ func (p *Proxy) relay(ctx context.Context, fromConn, toConn net.Conn) error {
 	errChan := make(chan error, 1)
 	read := make(chan []byte, BUFFER_SIZE)
 
+	// ソケットからの読込をgoroutineにすることで非同期IO
 	go func() {
 		for {
 			n, err := fromConn.Read(buff)
