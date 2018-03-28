@@ -2,6 +2,7 @@ package pftp
 
 import (
 	"bufio"
+	"context"
 	"net"
 	"time"
 
@@ -14,9 +15,10 @@ const (
 )
 
 type ProxyServer struct {
-	timeout int
-	client  net.Conn
-	origin  net.Conn
+	timeout      int
+	client       net.Conn
+	origin       net.Conn
+	originReader *bufio.Reader
 }
 
 func NewProxyServer(timeout int, client net.Conn, originAddr string) (*ProxyServer, error) {
@@ -25,25 +27,24 @@ func NewProxyServer(timeout int, client net.Conn, originAddr string) (*ProxyServ
 		return nil, err
 	}
 
-	logrus.Debug("client:", client.LocalAddr(), " origin:", c.RemoteAddr())
 	return &ProxyServer{
-		client:  client,
-		origin:  c,
-		timeout: timeout,
+		client:       client,
+		origin:       c,
+		originReader: bufio.NewReader(c),
+		timeout:      timeout,
 	}, nil
 }
 
 func (s *ProxyServer) ReadFromOrigin() (string, error) {
-	originReader := bufio.NewReader(s.origin)
 	if s.timeout > 0 {
 		s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
 	}
 
 	for {
-		if response, err := originReader.ReadString('\n'); err != nil {
+		if response, err := s.originReader.ReadString('\n'); err != nil {
 			return "", err
 		} else {
-			logrus.Debug("response command:", response)
+			logrus.Debug("read from origin:", response)
 			return response, nil
 		}
 	}
@@ -51,7 +52,7 @@ func (s *ProxyServer) ReadFromOrigin() (string, error) {
 }
 
 func (s *ProxyServer) SendToOrigin(line string) error {
-	logrus.Debug("send command:", line)
+	logrus.Debug("send to origin:", line)
 	if _, err := s.origin.Write([]byte(line)); err != nil {
 		return err
 	}
@@ -84,6 +85,7 @@ func (s *ProxyServer) SendToOriginWithProxy(line string) error {
 }
 
 func (s *ProxyServer) SendToClient(line string) error {
+	logrus.Debug("send to client:", line)
 	if _, err := s.client.Write([]byte(line)); err != nil {
 		return err
 	}
@@ -92,38 +94,59 @@ func (s *ProxyServer) SendToClient(line string) error {
 }
 
 func (s *ProxyServer) Start() error {
-	defer s.client.Close()
-	defer s.origin.Close()
-
+	defer s.Close()
 	p := &Proxy{}
 	return p.Start(s.client, s.origin)
+}
+func (s *ProxyServer) Close() {
+	s.client.Close()
+	s.origin.Close()
 }
 
 type Proxy struct{}
 
 func (p *Proxy) Start(clientConn, serverConn net.Conn) error {
-	defer clientConn.Close()
-	defer serverConn.Close()
+	ctx, done := context.WithCancel(context.Background())
+	defer done()
+	eg, ctx := errgroup.WithContext(ctx)
 
-	var eg errgroup.Group
+	eg.Go(func() error { return p.relay(ctx, serverConn, clientConn) })
+	eg.Go(func() error { return p.relay(ctx, clientConn, serverConn) })
 
-	eg.Go(func() error { return p.relay(&eg, serverConn, clientConn) })
-	eg.Go(func() error { return p.relay(&eg, clientConn, serverConn) })
-
-	return eg.Wait()
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+	return nil
 }
 
-func (p *Proxy) relay(eg *errgroup.Group, fromConn, toConn net.Conn) error {
+func (p *Proxy) relay(ctx context.Context, fromConn, toConn net.Conn) error {
+	logrus.Debug("relay start from=", fromConn.LocalAddr(), " to=", fromConn.RemoteAddr())
 	buff := make([]byte, BUFFER_SIZE)
-	for {
-		n, err := fromConn.Read(buff)
-		if err != nil {
-			return err
+	errChan := make(chan error, 1)
+	jobs := make(chan []byte, BUFFER_SIZE)
+
+	go func() {
+		for {
+			n, err := fromConn.Read(buff)
+			if err != nil {
+				errChan <- err
+				return
+			}
+			jobs <- buff[:n]
 		}
-		b := buff[:n]
-		n, err = toConn.Write(b)
-		if err != nil {
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-errChan:
 			return err
+		case b := <-jobs:
+			_, err := toConn.Write(b)
+			if err != nil {
+				return err
+			}
 		}
 	}
 }

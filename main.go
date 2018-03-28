@@ -13,7 +13,6 @@ var ftpServer *pftp.FtpServer
 
 func init() {
 	logrus.SetLevel(logrus.DebugLevel)
-	logrus.Info("hoge")
 }
 func main() {
 	confFile := "./example.toml"

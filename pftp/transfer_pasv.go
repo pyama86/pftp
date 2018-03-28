@@ -77,7 +77,6 @@ func (c *clientHandler) handlePASV() {
 				continue
 			}
 
-			logrus.Debugf("proxy transfer listen addr %s", laddr)
 			tcpListener, err = net.ListenTCP("tcp", laddr)
 			if err == nil {
 				break
@@ -100,7 +99,6 @@ func (c *clientHandler) handlePASV() {
 		listener = tcpListener
 	}
 
-	logrus.Debugf("proxy transfer listen addr %s", listener.Addr())
 	p := &passiveTransferHandler{
 		tcpListener:        tcpListener,
 		listener:           listener,
@@ -126,8 +124,6 @@ func (p *passiveTransferHandler) ConnectionWait(wait time.Duration) (*ProxyServe
 		p.tcpListener.SetDeadline(time.Now().Add(wait))
 		var err error
 		connection, err := p.listener.Accept()
-		logrus.Debug(connection.LocalAddr())
-		logrus.Debug(connection.RemoteAddr())
 		proxy, err := NewProxyServer(60, connection, "127.0.0.1:"+strconv.Itoa(p.originTransferPort))
 
 		if err != nil {
@@ -149,6 +145,8 @@ func (p *passiveTransferHandler) Close() error {
 	}
 
 	if p.proxyServer != nil {
+		p.proxyServer.client.Close()
+		p.proxyServer.origin.Close()
 		p.proxyServer = nil
 	}
 	return nil

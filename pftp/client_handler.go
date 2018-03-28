@@ -96,6 +96,7 @@ func (c *clientHandler) HandleCommands() {
 		}
 
 		line, err := c.reader.ReadString('\n')
+		logrus.Debug("read from client:", line)
 		if err != nil {
 			switch err := err.(type) {
 			case net.Error:
@@ -158,7 +159,9 @@ func (c *clientHandler) writeLine(line string) {
 }
 
 func (c *clientHandler) writeMessage(code int, message string) {
-	c.writeLine(fmt.Sprintf("%d %s", code, message))
+	line := fmt.Sprintf("%d %s", code, message)
+	logrus.Debug("send to client:", line)
+	c.writeLine(line)
 }
 
 func parseLine(line string) (string, string) {
@@ -172,7 +175,11 @@ func parseLine(line string) (string, string) {
 func (c *clientHandler) handleLIST() {
 	c.controlProxy.SendToOriginWithProxy(c.line)
 	if proxy, err := c.TransferOpen(); err == nil {
-		go proxy.Start()
+		defer c.TransferClose()
+		err := proxy.Start()
+		if err != io.EOF {
+			logrus.Error(err)
+		}
 
 		for {
 			res, err := c.controlProxy.ReadFromOrigin()
@@ -226,8 +233,6 @@ func (c *clientHandler) TransferOpen() (*ProxyServer, error) {
 
 func (c *clientHandler) TransferClose() {
 	if c.transfer != nil {
-		logrus.Info("Closing transfer connection")
-		//c.writeMessage(226, "Closing transfer connection")
 		c.transfer.Close()
 		c.transfer = nil
 	}
