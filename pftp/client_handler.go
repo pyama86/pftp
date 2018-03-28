@@ -24,6 +24,7 @@ func init() {
 	commandsMap["USER"] = &CommandDescription{Fn: (*clientHandler).handleUSER}
 	commandsMap["AUTH"] = &CommandDescription{Fn: (*clientHandler).handleAUTH}
 	commandsMap["EPSV"] = &CommandDescription{Fn: (*clientHandler).handlePASV}
+	commandsMap["PASV"] = &CommandDescription{Fn: (*clientHandler).handlePASV}
 	commandsMap["LIST"] = &CommandDescription{Fn: (*clientHandler).handleLIST}
 	commandsMap["MLSD"] = &CommandDescription{Fn: (*clientHandler).handleLIST}
 	commandsMap["FEAT"] = &CommandDescription{Fn: (*clientHandler).handleFEAT}
@@ -143,6 +144,8 @@ func (c *clientHandler) handleCommand(line string) {
 
 	if c.controlProxy != nil &&
 		command != "EPSV" &&
+		command != "LIST" &&
+		command != "PASV" &&
 		command != "FEAT" {
 		c.controlProxy.SendToOriginWithProxy(line)
 	}
@@ -178,7 +181,6 @@ func (c *clientHandler) handleLIST() {
 				return
 			}
 
-			time.Sleep(10)
 			err = c.controlProxy.SendToClient(res)
 			if err != nil {
 				logrus.Error(err)
@@ -186,6 +188,8 @@ func (c *clientHandler) handleLIST() {
 			return
 
 		}
+	} else {
+		logrus.Error(err)
 	}
 }
 
@@ -202,6 +206,7 @@ func (c *clientHandler) handleFEAT() {
 			logrus.Error(err)
 			return
 		}
+
 		if strings.Index(strings.ToUpper(b), " END") > 0 || string(b[0]) == "5" {
 			return
 		}
@@ -221,6 +226,9 @@ func (c *clientHandler) TransferOpen() (*ProxyServer, error) {
 
 func (c *clientHandler) TransferClose() {
 	if c.transfer != nil {
+		logrus.Info("Closing transfer connection")
+		//c.writeMessage(226, "Closing transfer connection")
+		c.transfer.Close()
 		c.transfer = nil
 	}
 }

@@ -114,17 +114,13 @@ func (p *Proxy) Start(clientConn, serverConn net.Conn) error {
 }
 
 func (p *Proxy) relay(eg *errgroup.Group, fromConn, toConn net.Conn) error {
-	logrus.Debugf("from=", fromConn.LocalAddr())
-	logrus.Debugf("to=", fromConn.RemoteAddr())
 	buff := make([]byte, BUFFER_SIZE)
 	for {
 		n, err := fromConn.Read(buff)
-		logrus.Error(err)
 		if err != nil {
 			return err
 		}
 		b := buff[:n]
-		logrus.Info(string(b))
 		n, err = toConn.Write(b)
 		if err != nil {
 			return err
