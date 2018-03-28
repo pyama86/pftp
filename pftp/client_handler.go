@@ -146,6 +146,7 @@ func (c *clientHandler) handleCommand(line string) {
 	if c.controlProxy != nil &&
 		command != "EPSV" &&
 		command != "LIST" &&
+		command != "MLSD" &&
 		command != "PASV" &&
 		command != "FEAT" {
 		c.controlProxy.SendToOriginWithProxy(line)
