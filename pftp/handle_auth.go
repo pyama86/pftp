@@ -21,6 +21,10 @@ func (c *clientHandler) handleUSER() {
 
 	// read welcome message
 	p.ReadFromOrigin()
+
+	if c.controlProxy != nil {
+		c.controlProxy.Close()
+	}
 	c.controlProxy = p
 	p.SendToOriginWithProxy(c.line)
 }

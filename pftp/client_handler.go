@@ -35,17 +35,16 @@ func init() {
 }
 
 type clientHandler struct {
-	daddy         *FtpServer
-	conn          net.Conn
-	writer        *bufio.Writer
-	reader        *bufio.Reader
-	connectedAt   time.Time
-	line          string
-	command       string
-	param         string
-	transfer      transferHandler
-	controlProxy  *ProxyServer
-	transferProxy *ProxyServer
+	daddy        *FtpServer
+	conn         net.Conn
+	writer       *bufio.Writer
+	reader       *bufio.Reader
+	connectedAt  time.Time
+	line         string
+	command      string
+	param        string
+	transfer     transferHandler
+	controlProxy *ProxyServer
 }
 
 func (server *FtpServer) newClientHandler(connection net.Conn, id uint32) *clientHandler {
