@@ -35,19 +35,15 @@ func init() {
 }
 
 type clientHandler struct {
-	id            uint32        // ID of the client
-	daddy         *FtpServer    // Server on which the connection was accepted
-	conn          net.Conn      // TCP connection
-	writer        *bufio.Writer // Writer on the TCP connection
-	reader        *bufio.Reader // Reader on the TCP connection
-	connectedAt   time.Time     // Date of connection
+	daddy         *FtpServer
+	conn          net.Conn
+	writer        *bufio.Writer
+	reader        *bufio.Reader
+	connectedAt   time.Time
 	line          string
 	command       string
 	param         string
-	ctxRnfr       string          // Rename from
-	ctxRest       int64           // Restart point
-	transferTLS   bool            // Use TLS for transfer connection
-	transfer      transferHandler // Transfer connection (only passive is implemented at this stage)
+	transfer      transferHandler
 	controlProxy  *ProxyServer
 	transferProxy *ProxyServer
 }
@@ -150,26 +146,6 @@ func parseLine(line string) (string, string) {
 	return params[0], params[1]
 }
 
-func (c *clientHandler) handleFEAT() {
-	c.controlProxy.SendToOriginWithProxy(c.line)
-	for {
-		b, err := c.controlProxy.ReadFromOrigin()
-		if err != nil {
-			logrus.Error(err)
-			return
-		}
-
-		if err := c.controlProxy.SendToClient(b); err != nil {
-			logrus.Error(err)
-			return
-		}
-
-		if strings.Index(strings.ToUpper(b), " END") > 0 || string(b[0]) == "5" {
-			return
-		}
-	}
-}
-
 func (c *clientHandler) handleCommand(line string) {
 	command, param := parseLine(line)
 	c.command = strings.ToUpper(command)
@@ -185,17 +161,7 @@ func (c *clientHandler) handleCommand(line string) {
 
 	if cmdDesc != nil {
 		cmdDesc.Fn(c)
-	}
-
-	if c.controlProxy != nil &&
-		command != "EPSV" &&
-		command != "LIST" &&
-		command != "MLSD" &&
-		command != "PASV" &&
-		command != "RETR" &&
-		command != "STOR" &&
-		command != "APPE" &&
-		command != "FEAT" {
+	} else {
 		c.controlProxy.SendToOriginWithProxy(line)
 	}
 }

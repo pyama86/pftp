@@ -91,7 +91,6 @@ func (c *clientHandler) handleLIST() {
 	if proxy, err = c.TransferOpen(); err == nil {
 		defer c.TransferClose()
 		err = c.transferWithCommandProxy(proxy)
-
 	}
 
 	if err != nil {

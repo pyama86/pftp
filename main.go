@@ -14,6 +14,7 @@ var ftpServer *pftp.FtpServer
 func init() {
 	logrus.SetLevel(logrus.DebugLevel)
 }
+
 func main() {
 	confFile := "./example.toml"
 
@@ -21,6 +22,7 @@ func main() {
 	if err != nil {
 		logrus.Fatal(err)
 	}
+
 	ftpServer.Use(sampleMiddleware{})
 	if err := ftpServer.ListenAndServe(); err != nil {
 		logrus.Fatal(err)
@@ -43,6 +45,5 @@ type sampleMiddleware struct {
 }
 
 func (m sampleMiddleware) User(u string) (string, error) {
-	//return "127.0.0.1:2321", nil
 	return "192.168.33.2:21", nil
 }

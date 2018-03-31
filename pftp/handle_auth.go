@@ -22,6 +22,7 @@ func (c *clientHandler) handleUSER() {
 	// read welcome message
 	p.ReadFromOrigin()
 	c.controlProxy = p
+	p.SendToOriginWithProxy(c.line)
 }
 
 func (c *clientHandler) handleAUTH() {
