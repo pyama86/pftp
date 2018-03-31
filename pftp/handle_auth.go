@@ -7,7 +7,13 @@ import (
 )
 
 func (c *clientHandler) handleUSER() {
-	p, err := NewProxyServer(c.daddy.config.ProxyTimeout, c.conn, "localhost:2321")
+	server, err := c.daddy.middleware.User(c.param)
+	if err != nil {
+		c.writeMessage(530, "I can't deal with you (proxy error)")
+		return
+	}
+
+	p, err := NewProxyServer(c.daddy.config.ProxyTimeout, c.conn, server)
 	if err != nil {
 		c.writeMessage(530, "I can't deal with you (proxy error)")
 		return

@@ -71,16 +71,10 @@ func (s *ProxyServer) SendAndReadToOrigin(line string) (string, error) {
 
 // オリジンにコマンドを投げてから結果をクライアントにプロキシする
 func (s *ProxyServer) SendToOriginWithProxy(line string) error {
-	err := s.SendToOrigin(line)
+	response, err := s.SendAndReadToOrigin(line)
 	if err != nil {
 		return err
 	}
-
-	response, err := s.ReadFromOrigin()
-	if err != nil {
-		return err
-	}
-
 	return s.SendToClient(response)
 }
 

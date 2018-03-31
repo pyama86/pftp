@@ -21,6 +21,7 @@ func main() {
 	if err != nil {
 		logrus.Fatal(err)
 	}
+	ftpServer.Use(sampleMiddleware{})
 	if err := ftpServer.ListenAndServe(); err != nil {
 		logrus.Fatal(err)
 	}
@@ -36,4 +37,11 @@ func signalHandler() {
 			break
 		}
 	}
+}
+
+type sampleMiddleware struct {
+}
+
+func (m sampleMiddleware) User(u string) (string, error) {
+	return "192.168.33.2:21", nil
 }

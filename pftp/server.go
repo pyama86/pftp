@@ -10,6 +10,7 @@ type FtpServer struct {
 	listener      net.Listener
 	ClientCounter uint32
 	config        *config
+	middleware    Middleware
 }
 
 func NewFtpServer(confFile string) (*FtpServer, error) {
@@ -20,6 +21,10 @@ func NewFtpServer(confFile string) (*FtpServer, error) {
 	return &FtpServer{
 		config: c,
 	}, nil
+}
+
+func (server *FtpServer) Use(m Middleware) {
+	server.middleware = m
 }
 
 func (server *FtpServer) Listen() (err error) {

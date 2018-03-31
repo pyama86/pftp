@@ -23,6 +23,7 @@ type passiveTransferHandler struct {
 	tcpListener        *net.TCPListener
 	Port               int
 	originTransferPort int
+	originAddr         string
 	proxyServer        *ProxyServer
 }
 
@@ -99,11 +100,13 @@ func (c *clientHandler) handlePASV() {
 		listener = tcpListener
 	}
 
+	a := c.controlProxy.origin.RemoteAddr().String()
 	p := &passiveTransferHandler{
 		tcpListener:        tcpListener,
 		listener:           listener,
 		Port:               tcpListener.Addr().(*net.TCPAddr).Port,
 		originTransferPort: originPort,
+		originAddr:         a[0:strings.Index(a, ":")],
 	}
 
 	if c.command == "PASV" {
@@ -117,6 +120,7 @@ func (c *clientHandler) handlePASV() {
 		c.writeMessage(229, fmt.Sprintf("Entering Extended Passive Mode (|||%d|)", p.Port))
 	}
 	c.transfer = p
+
 }
 
 func (p *passiveTransferHandler) ConnectionWait(wait time.Duration) (*ProxyServer, error) {
@@ -124,7 +128,8 @@ func (p *passiveTransferHandler) ConnectionWait(wait time.Duration) (*ProxyServe
 		p.tcpListener.SetDeadline(time.Now().Add(wait))
 		var err error
 		connection, err := p.listener.Accept()
-		proxy, err := NewProxyServer(60, connection, "127.0.0.1:"+strconv.Itoa(p.originTransferPort))
+		//proxy, err := NewProxyServer(60, connection, "192.168.33.2:"+strconv.Itoa(p.originTransferPort))
+		proxy, err := NewProxyServer(60, connection, p.originAddr+":"+strconv.Itoa(p.originTransferPort))
 
 		if err != nil {
 			return nil, err

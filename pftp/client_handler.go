@@ -174,7 +174,7 @@ func parseLine(line string) (string, string) {
 }
 
 func (c *clientHandler) handleLIST() {
-	c.controlProxy.SendToOriginWithProxy(c.line)
+	c.controlProxy.SendToOrigin(c.line)
 	if proxy, err := c.TransferOpen(); err == nil {
 		defer c.TransferClose()
 
@@ -184,17 +184,19 @@ func (c *clientHandler) handleLIST() {
 			logrus.Error(err)
 		}
 
-		// オリジンサーバから完了通知を受け取る
-		res, err := c.controlProxy.ReadFromOrigin()
-		if err != nil {
-			logrus.Error(err)
-			return
-		}
+		for {
+			// オリジンサーバから完了通知を受け取る
+			res, err := c.controlProxy.ReadFromOrigin()
+			if err != nil {
+				logrus.Error(err)
+				return
+			}
 
-		// クライアントに完了通知を送る
-		err = c.controlProxy.SendToClient(res)
-		if err != nil {
-			logrus.Error(err)
+			// クライアントに完了通知を送る
+			err = c.controlProxy.SendToClient(res)
+			if err != nil {
+				logrus.Error(err)
+			}
 		}
 	} else {
 		logrus.Error(err)
