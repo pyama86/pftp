@@ -25,3 +25,8 @@ func (c *clientHandler) handleFEAT() {
 		}
 	}
 }
+
+func (c *clientHandler) handlePROT() {
+	c.transferTLS = c.param == "P"
+	c.controlProxy.SendToOriginWithProxy(c.line)
+}

@@ -44,6 +44,7 @@ type clientHandler struct {
 	command      string
 	param        string
 	transfer     transferHandler
+	transferTLS  bool
 	controlProxy *ProxyServer
 }
 

@@ -94,7 +94,7 @@ func (c *clientHandler) handlePASV() {
 	}
 
 	var listener net.Listener
-	if c.daddy.config.TLSConfig != nil {
+	if c.transferTLS && c.daddy.config.TLSConfig != nil {
 		listener = tls.NewListener(tcpListener, c.daddy.config.TLSConfig)
 	} else {
 		listener = tcpListener
