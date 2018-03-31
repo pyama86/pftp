@@ -16,6 +16,7 @@ Vagrant.configure("2") do |config|
     echo 'log_ftp_protocol=YES' >> '/etc/vsftpd/vsftpd.conf'
     echo 'syslog_enable=YES' >> '/etc/vsftpd/vsftpd.conf'
   fi
+  setenforce 0
   service vsftpd restart
   SHELL
 end

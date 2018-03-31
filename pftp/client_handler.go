@@ -2,7 +2,6 @@ package pftp
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -28,6 +27,11 @@ func init() {
 	commandsMap["LIST"] = &CommandDescription{Fn: (*clientHandler).handleLIST}
 	commandsMap["MLSD"] = &CommandDescription{Fn: (*clientHandler).handleLIST}
 	commandsMap["FEAT"] = &CommandDescription{Fn: (*clientHandler).handleFEAT}
+
+	// transfer files
+	commandsMap["RETR"] = &CommandDescription{Fn: (*clientHandler).handleRETR}
+	commandsMap["STOR"] = &CommandDescription{Fn: (*clientHandler).handleSTOR}
+	commandsMap["APPE"] = &CommandDescription{Fn: (*clientHandler).handleAPPE}
 }
 
 type clientHandler struct {
@@ -126,33 +130,6 @@ func (c *clientHandler) HandleCommands() {
 	}
 }
 
-func (c *clientHandler) handleCommand(line string) {
-	command, param := parseLine(line)
-	c.command = strings.ToUpper(command)
-	c.param = param
-	c.line = line
-
-	cmdDesc := commandsMap[c.command]
-	defer func() {
-		if r := recover(); r != nil {
-			c.writeMessage(500, fmt.Sprintf("Internal error: %s", r))
-		}
-	}()
-
-	if cmdDesc != nil {
-		cmdDesc.Fn(c)
-	}
-
-	if c.controlProxy != nil &&
-		command != "EPSV" &&
-		command != "LIST" &&
-		command != "MLSD" &&
-		command != "PASV" &&
-		command != "FEAT" {
-		c.controlProxy.SendToOriginWithProxy(line)
-	}
-}
-
 func (c *clientHandler) writeLine(line string) {
 	c.writer.Write([]byte(line))
 	c.writer.Write([]byte("\r\n"))
@@ -171,36 +148,6 @@ func parseLine(line string) (string, string) {
 		return params[0], ""
 	}
 	return params[0], params[1]
-}
-
-func (c *clientHandler) handleLIST() {
-	c.controlProxy.SendToOrigin(c.line)
-	if proxy, err := c.TransferOpen(); err == nil {
-		defer c.TransferClose()
-
-		// データ転送の完了はシリアルに待つ
-		err := proxy.Start()
-		if err != io.EOF {
-			logrus.Error(err)
-		}
-
-		for {
-			// オリジンサーバから完了通知を受け取る
-			res, err := c.controlProxy.ReadFromOrigin()
-			if err != nil {
-				logrus.Error(err)
-				return
-			}
-
-			// クライアントに完了通知を送る
-			err = c.controlProxy.SendToClient(res)
-			if err != nil {
-				logrus.Error(err)
-			}
-		}
-	} else {
-		logrus.Error(err)
-	}
 }
 
 func (c *clientHandler) handleFEAT() {
@@ -223,20 +170,32 @@ func (c *clientHandler) handleFEAT() {
 	}
 }
 
-func (c *clientHandler) TransferOpen() (*ProxyServer, error) {
-	if c.transfer == nil {
-		return nil, errors.New("no passive connection declared")
-	}
-	conn, err := c.transfer.Open()
-	if err != nil {
-		return nil, err
-	}
-	return conn, err
-}
+func (c *clientHandler) handleCommand(line string) {
+	command, param := parseLine(line)
+	c.command = strings.ToUpper(command)
+	c.param = param
+	c.line = line
 
-func (c *clientHandler) TransferClose() {
-	if c.transfer != nil {
-		c.transfer.Close()
-		c.transfer = nil
+	cmdDesc := commandsMap[c.command]
+	defer func() {
+		if r := recover(); r != nil {
+			c.writeMessage(500, fmt.Sprintf("Internal error: %s", r))
+		}
+	}()
+
+	if cmdDesc != nil {
+		cmdDesc.Fn(c)
+	}
+
+	if c.controlProxy != nil &&
+		command != "EPSV" &&
+		command != "LIST" &&
+		command != "MLSD" &&
+		command != "PASV" &&
+		command != "RETR" &&
+		command != "STOR" &&
+		command != "APPE" &&
+		command != "FEAT" {
+		c.controlProxy.SendToOriginWithProxy(line)
 	}
 }

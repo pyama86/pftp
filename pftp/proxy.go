@@ -92,6 +92,7 @@ func (s *ProxyServer) Start() error {
 	p := &Proxy{}
 	return p.Start(s.client, s.origin)
 }
+
 func (s *ProxyServer) Close() {
 	s.client.Close()
 	s.origin.Close()
