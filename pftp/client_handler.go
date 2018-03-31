@@ -137,20 +137,8 @@ func (c *clientHandler) writeMessage(code int, message string) {
 	c.writeLine(line)
 }
 
-func parseLine(line string) (string, string) {
-	params := strings.SplitN(strings.Trim(line, "\r\n"), " ", 2)
-	if len(params) == 1 {
-		return params[0], ""
-	}
-	return params[0], params[1]
-}
-
 func (c *clientHandler) handleCommand(line string) {
-	command, param := parseLine(line)
-	c.command = strings.ToUpper(command)
-	c.param = param
-	c.line = line
-
+	c.parseLine(line)
 	cmdDesc := commandsMap[c.command]
 	defer func() {
 		if r := recover(); r != nil {
@@ -162,5 +150,14 @@ func (c *clientHandler) handleCommand(line string) {
 		cmdDesc.Fn(c)
 	} else {
 		c.controlProxy.SendToOriginWithProxy(line)
+	}
+}
+
+func (c *clientHandler) parseLine(line string) {
+	params := strings.SplitN(strings.Trim(line, "\r\n"), " ", 2)
+	c.line = line
+	c.command = strings.ToUpper(params[0])
+	if len(params) > 1 {
+		c.param = params[1]
 	}
 }
