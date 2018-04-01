@@ -24,6 +24,7 @@ func init() {
 	commandsMap["AUTH"] = &CommandDescription{Fn: (*clientHandler).handleAUTH}
 	commandsMap["EPSV"] = &CommandDescription{Fn: (*clientHandler).handlePASV}
 	commandsMap["PASV"] = &CommandDescription{Fn: (*clientHandler).handlePASV}
+	commandsMap["PORT"] = &CommandDescription{Fn: (*clientHandler).handlePORT}
 	commandsMap["LIST"] = &CommandDescription{Fn: (*clientHandler).handleLIST}
 	commandsMap["MLSD"] = &CommandDescription{Fn: (*clientHandler).handleLIST}
 	commandsMap["FEAT"] = &CommandDescription{Fn: (*clientHandler).handleFEAT}
@@ -45,7 +46,7 @@ type clientHandler struct {
 	param        string
 	transfer     transferHandler
 	transferTLS  bool
-	controlProxy *ProxyServer
+	controleProxy *ProxyServer
 }
 
 func (server *FtpServer) newClientHandler(connection net.Conn, id uint32) *clientHandler {
@@ -128,13 +129,13 @@ func (c *clientHandler) HandleCommands() {
 
 func (c *clientHandler) writeLine(line string) {
 	c.writer.Write([]byte(line))
+	logrus.Debug("send to client:", line)
 	c.writer.Write([]byte("\r\n"))
 	c.writer.Flush()
 }
 
 func (c *clientHandler) writeMessage(code int, message string) {
 	line := fmt.Sprintf("%d %s", code, message)
-	logrus.Debug("send to client:", line)
 	c.writeLine(line)
 }
 
@@ -150,7 +151,7 @@ func (c *clientHandler) handleCommand(line string) {
 	if cmdDesc != nil {
 		cmdDesc.Fn(c)
 	} else {
-		c.controlProxy.SendToOriginWithProxy(line)
+		c.controleProxy.SendToOriginWithProxy(line)
 	}
 }
 

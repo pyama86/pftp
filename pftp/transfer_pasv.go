@@ -28,7 +28,11 @@ type passiveTransferHandler struct {
 }
 
 func (c *clientHandler) handlePASV() {
-	response, err := c.controlProxy.SendAndReadToOrigin(c.line)
+	response, err := c.controleProxy.SendAndReadToOrigin(c.line)
+	if err != nil {
+		logrus.Error(err)
+		return
+	}
 
 	// origin server listen port
 	assined := regexp.MustCompile(`.+\(\|\|\|([0-9]+)\|\)`)
@@ -100,13 +104,12 @@ func (c *clientHandler) handlePASV() {
 		listener = tcpListener
 	}
 
-	a := c.controlProxy.origin.RemoteAddr().String()
 	p := &passiveTransferHandler{
 		tcpListener:        tcpListener,
 		listener:           listener,
 		Port:               tcpListener.Addr().(*net.TCPAddr).Port,
 		originTransferPort: originPort,
-		originAddr:         a[0:strings.Index(a, ":")],
+		originAddr:         strings.Split(c.controleProxy.origin.RemoteAddr().String(), ":")[0],
 	}
 
 	if c.command == "PASV" {
@@ -128,7 +131,10 @@ func (p *passiveTransferHandler) ConnectionWait(wait time.Duration) (*ProxyServe
 		p.tcpListener.SetDeadline(time.Now().Add(wait))
 		var err error
 		connection, err := p.listener.Accept()
-		//proxy, err := NewProxyServer(60, connection, "192.168.33.2:"+strconv.Itoa(p.originTransferPort))
+		if err != nil {
+			return nil, err
+		}
+
 		proxy, err := NewProxyServer(60, connection, p.originAddr+":"+strconv.Itoa(p.originTransferPort))
 
 		if err != nil {
@@ -150,8 +156,7 @@ func (p *passiveTransferHandler) Close() error {
 	}
 
 	if p.proxyServer != nil {
-		p.proxyServer.client.Close()
-		p.proxyServer.origin.Close()
+		p.proxyServer.Close()
 		p.proxyServer = nil
 	}
 	return nil

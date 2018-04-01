@@ -7,15 +7,15 @@ import (
 )
 
 func (c *clientHandler) handleFEAT() {
-	c.controlProxy.SendToOriginWithProxy(c.line)
+	c.controleProxy.SendToOriginWithProxy(c.line)
 	for {
-		b, err := c.controlProxy.ReadFromOrigin()
+		b, err := c.controleProxy.ReadFromOrigin()
 		if err != nil {
 			logrus.Error(err)
 			return
 		}
 
-		if err := c.controlProxy.SendToClient(b); err != nil {
+		if err := c.controleProxy.SendToClient(b); err != nil {
 			logrus.Error(err)
 			return
 		}
@@ -28,5 +28,5 @@ func (c *clientHandler) handleFEAT() {
 
 func (c *clientHandler) handlePROT() {
 	c.transferTLS = c.param == "P"
-	c.controlProxy.SendToOriginWithProxy(c.line)
+	c.controleProxy.SendToOriginWithProxy(c.line)
 }

@@ -41,7 +41,7 @@ func (c *clientHandler) handleRETR() {
 func (c *clientHandler) transferFile() {
 	var err error
 	var proxy *ProxyServer
-	c.controlProxy.SendToOrigin(c.line)
+	c.controleProxy.SendToOrigin(c.line)
 	if proxy, err = c.TransferOpen(); err == nil {
 		defer c.TransferClose()
 		err = c.transferWithCommandProxy(proxy)
@@ -64,7 +64,7 @@ func (c *clientHandler) transferWithCommandProxy(proxy *ProxyServer) error {
 
 	for {
 		// オリジンサーバから完了通知を受け取る
-		res, err := c.controlProxy.ReadFromOrigin()
+		res, err := c.controleProxy.ReadFromOrigin()
 		if err != nil {
 			return err
 		}
@@ -72,7 +72,7 @@ func (c *clientHandler) transferWithCommandProxy(proxy *ProxyServer) error {
 		r1 := string(res[0])
 		if r1 != `1` {
 			// クライアントに完了通知を送る
-			err = c.controlProxy.SendToClient(res)
+			err = c.controleProxy.SendToClient(res)
 			if err != nil {
 				return err
 			}
@@ -85,7 +85,7 @@ func (c *clientHandler) transferWithCommandProxy(proxy *ProxyServer) error {
 func (c *clientHandler) handleLIST() {
 	var err error
 	var proxy *ProxyServer
-	c.controlProxy.SendToOrigin(c.line)
+	c.controleProxy.SendToOrigin(c.line)
 	c.writeMessage(150, "Using transfer connection")
 
 	if proxy, err = c.TransferOpen(); err == nil {

@@ -22,10 +22,10 @@ func (c *clientHandler) handleUSER() {
 	// read welcome message
 	p.ReadFromOrigin()
 
-	if c.controlProxy != nil {
-		c.controlProxy.Close()
+	if c.controleProxy != nil {
+		c.controleProxy.Close()
 	}
-	c.controlProxy = p
+	c.controleProxy = p
 	p.SendToOriginWithProxy(c.line)
 }
 

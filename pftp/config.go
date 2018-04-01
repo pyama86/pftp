@@ -11,13 +11,14 @@ type portRange struct {
 	End   int
 }
 type config struct {
-	ListenAddr     string
-	IdleTimeout    int
-	ProxyTimeout   int
-	DataPortRange  *portRange  `toml:"port_range"`
-	MaxConnections uint32      `toml:"max_connections"`
-	tls            *tlsPair    `toml:"tls"`
-	TLSConfig      *tls.Config `toml:"-"`
+	ListenAddr               string
+	IdleTimeout              int
+	ProxyTimeout             int
+	DataPortRange            *portRange  `toml:"port_range"`
+	MaxConnections           uint32      `toml:"max_connections"`
+	tls                      *tlsPair    `toml:"tls"`
+	TLSConfig                *tls.Config `toml:"-"`
+	UseUnknownActiveDataPort bool        `toml:"use_unknown_active_dataport"`
 }
 
 type tlsPair struct {
@@ -52,4 +53,5 @@ func defaultConfig(config *config) {
 	config.ListenAddr = "0.0.0.0:2121"
 	config.IdleTimeout = 900
 	config.ProxyTimeout = 900
+	config.UseUnknownActiveDataPort = true
 }
