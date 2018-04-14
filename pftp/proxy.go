@@ -137,6 +137,7 @@ func (p *Proxy) relay(ctx context.Context, fromConn, toConn net.Conn) error {
 	for {
 		select {
 		case <-ctx.Done():
+			// todo connection close
 			return ctx.Err()
 		case err := <-errChan:
 			return err
