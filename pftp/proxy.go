@@ -111,6 +111,7 @@ func (p *Proxy) Start(clientConn, serverConn net.Conn) error {
 
 	// 完了まで待ち合わせる
 	if err := eg.Wait(); err != nil {
+		logrus.Debugf("proxy end err:%s", err)
 		return err
 	}
 	return nil
@@ -137,9 +138,9 @@ func (p *Proxy) relay(ctx context.Context, fromConn, toConn net.Conn) error {
 	for {
 		select {
 		case <-ctx.Done():
-			// todo connection close
-			return ctx.Err()
+			fromConn.Close()
 		case err := <-errChan:
+			logrus.Error(err)
 			return err
 		case b := <-read:
 			_, err := toConn.Write(b)
