@@ -11,51 +11,44 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var commandsMap map[string]*CommandDescription
-
-type CommandDescription struct {
-	Open bool                 // Open to clients without auth
-	Fn   func(*clientHandler) // Function to handle it
-}
+var handlers map[string]func(*clientHandler) *result
 
 func init() {
-	commandsMap = make(map[string]*CommandDescription)
-	commandsMap["USER"] = &CommandDescription{Fn: (*clientHandler).handleUSER}
-	commandsMap["AUTH"] = &CommandDescription{Fn: (*clientHandler).handleAUTH}
-	commandsMap["EPSV"] = &CommandDescription{Fn: (*clientHandler).handlePASV}
-	commandsMap["PASV"] = &CommandDescription{Fn: (*clientHandler).handlePASV}
-	commandsMap["PORT"] = &CommandDescription{Fn: (*clientHandler).handlePORT}
-	commandsMap["LIST"] = &CommandDescription{Fn: (*clientHandler).handleLIST}
-	commandsMap["MLSD"] = &CommandDescription{Fn: (*clientHandler).handleLIST}
-	commandsMap["FEAT"] = &CommandDescription{Fn: (*clientHandler).handleFEAT}
+	handlers = make(map[string]func(*clientHandler) *result)
+	handlers["USER"] = (*clientHandler).handleUSER
+	handlers["AUTH"] = (*clientHandler).handleAUTH
+	handlers["EPSV"] = (*clientHandler).handlePASV
+	handlers["PASV"] = (*clientHandler).handlePASV
+	handlers["PORT"] = (*clientHandler).handlePORT
+	handlers["LIST"] = (*clientHandler).handleLIST
+	handlers["MLSD"] = (*clientHandler).handleLIST
+	handlers["FEAT"] = (*clientHandler).handleFEAT
 
 	// transfer files
-	commandsMap["RETR"] = &CommandDescription{Fn: (*clientHandler).handleRETR}
-	commandsMap["STOR"] = &CommandDescription{Fn: (*clientHandler).handleSTOR}
-	commandsMap["APPE"] = &CommandDescription{Fn: (*clientHandler).handleAPPE}
+	handlers["RETR"] = (*clientHandler).handleRETR
+	handlers["STOR"] = (*clientHandler).handleSTOR
+	handlers["APPE"] = (*clientHandler).handleAPPE
 }
 
 type clientHandler struct {
-	daddy        *FtpServer
-	conn         net.Conn
-	writer       *bufio.Writer
-	reader       *bufio.Reader
-	connectedAt  time.Time
-	line         string
-	command      string
-	param        string
-	transfer     transferHandler
-	transferTLS  bool
+	daddy         *FtpServer
+	conn          net.Conn
+	writer        *bufio.Writer
+	reader        *bufio.Reader
+	line          string
+	command       string
+	param         string
+	transfer      transferHandler
+	transferTLS   bool
 	controleProxy *ProxyServer
 }
 
-func (server *FtpServer) newClientHandler(connection net.Conn, id uint32) *clientHandler {
+func (server *FtpServer) newClientHandler(connection net.Conn) *clientHandler {
 	p := &clientHandler{
-		daddy:       server,
-		conn:        connection,
-		writer:      bufio.NewWriter(connection),
-		reader:      bufio.NewReader(connection),
-		connectedAt: time.Now().UTC(),
+		daddy:  server,
+		conn:   connection,
+		writer: bufio.NewWriter(connection),
+		reader: bufio.NewReader(connection),
 	}
 
 	return p
@@ -69,20 +62,24 @@ func (c *clientHandler) end() {
 	c.daddy.ClientCounter--
 }
 
-func (c *clientHandler) WelcomeUser() (string, error) {
+func (c *clientHandler) WelcomeUser() cmdError {
 	if c.daddy.ClientCounter > c.daddy.config.MaxConnections {
-		return "Cannot accept any additional client", fmt.Errorf("too many clients: %d > % d", c.daddy.ClientCounter, c.daddy.config.MaxConnections)
+		return cmdError{
+			code: 500,
+			err:  fmt.Error("Cannot accept any additional client"),
+		}
 	}
 
-	return fmt.Sprint("Welcome on ftpserver"), nil
+	return cmdError{
+		code: 220,
+		msg:  "Welcome on ftpserver",
+	}
 }
 
 func (c *clientHandler) HandleCommands() {
 	defer c.end()
-	if msg, err := c.WelcomeUser(); err == nil {
-		c.writeMessage(220, msg)
-	} else {
-		c.writeMessage(500, msg)
+	res := c.WelcomeUser()
+	if !res.Response() {
 		return
 	}
 
@@ -141,7 +138,7 @@ func (c *clientHandler) writeMessage(code int, message string) {
 
 func (c *clientHandler) handleCommand(line string) {
 	c.parseLine(line)
-	cmdDesc := commandsMap[c.command]
+	cmd := commands[c.command]
 	defer func() {
 		if r := recover(); r != nil {
 			c.writeMessage(500, fmt.Sprintf("Internal error: %s", r))
@@ -149,7 +146,10 @@ func (c *clientHandler) handleCommand(line string) {
 	}()
 
 	if cmdDesc != nil {
-		cmdDesc.Fn(c)
+		res := cmd(c)
+		if res != nil {
+			res.Response()
+		}
 	} else {
 		c.controleProxy.SendToOriginWithProxy(line)
 	}

@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 type transferHandler interface {
@@ -27,11 +25,12 @@ type passiveTransferHandler struct {
 	proxyServer        *ProxyServer
 }
 
-func (c *clientHandler) handlePASV() {
+func (c *clientHandler) handlePASV() *result {
 	response, err := c.controleProxy.SendAndReadToOrigin(c.line)
 	if err != nil {
-		logrus.Error(err)
-		return
+		return &result{
+			err: err,
+		}
 	}
 
 	// origin server listen port
@@ -42,28 +41,32 @@ func (c *clientHandler) handlePASV() {
 		assined = regexp.MustCompile(`.+\(\d+,\d+,\d+,\d+,(\d+),(\d+)\)`)
 		originTransferPort = assined.FindSubmatch([]byte(response))
 		if originTransferPort == nil {
-			logrus.Errorf("pasv mode port unmatch: %s", response)
-			return
+			return &result{
+				err: fmt.Errorf("pasv mode port unmatch: %s", response),
+			}
 		}
 
 		five, err := strconv.Atoi(string(originTransferPort[1]))
 		if err != nil {
-			logrus.Error(err)
-			return
+			return &result{
+				err: err,
+			}
 		}
 
 		six, err := strconv.Atoi(string(originTransferPort[2]))
 		if err != nil {
-			logrus.Error(err)
-			return
+			return &result{
+				err: err,
+			}
 		}
 		o := five*256 + six
 		originPort = o
 	} else {
 		o, err := strconv.Atoi(string(originTransferPort[1]))
 		if err != nil {
-			logrus.Error(err)
-			return
+			return &result{
+				err: err,
+			}
 		}
 		originPort = o
 	}
@@ -93,8 +96,9 @@ func (c *clientHandler) handlePASV() {
 	}
 
 	if err != nil {
-		logrus.Error("Could not listen")
-		return
+		return &result{
+			err: err,
+		}
 	}
 
 	var listener net.Listener
@@ -112,18 +116,25 @@ func (c *clientHandler) handlePASV() {
 		originAddr:         strings.Split(c.controleProxy.origin.RemoteAddr().String(), ":")[0],
 	}
 
+	var r *result
 	if c.command == "PASV" {
 		p1 := p.Port / 256
 		p2 := p.Port - (p1 * 256)
 		ip := strings.Split(c.conn.LocalAddr().String(), ":")[0]
 		quads := strings.Split(ip, ".")
 
-		c.writeMessage(227, fmt.Sprintf("Entering Passive Mode (%s,%s,%s,%s,%d,%d)", quads[0], quads[1], quads[2], quads[3], p1, p2))
+		r = &result{
+			code: 227,
+			msg:  fmt.Sprintf("Entering Passive Mode (%s,%s,%s,%s,%d,%d)", quads[0], quads[1], quads[2], quads[3], p1, p2),
+		}
 	} else {
-		c.writeMessage(229, fmt.Sprintf("Entering Extended Passive Mode (|||%d|)", p.Port))
+		r = &result{
+			code: 229,
+			msg:  fmt.Sprintf("Entering Extended Passive Mode (|||%d|)", p.Port),
+		}
 	}
 	c.transfer = p
-
+	return r
 }
 
 func (p *passiveTransferHandler) ConnectionWait(wait time.Duration) (*ProxyServer, error) {
