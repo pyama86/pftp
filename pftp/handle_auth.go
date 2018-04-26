@@ -26,7 +26,7 @@ func (c *clientHandler) handleUSER() *result {
 	}
 
 	// read welcome message
-	_, err := p.ReadFromOrigin()
+	_, err = p.ReadFromOrigin()
 	if err != nil {
 		return &result{
 			code: 530,

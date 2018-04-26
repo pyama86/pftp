@@ -71,9 +71,8 @@ func (server *FtpServer) Stop() {
 
 func (server *FtpServer) clientArrival(conn net.Conn) error {
 	server.ClientCounter++
-	id := server.ClientCounter
 
-	c := server.newClientHandler(conn, id)
+	c := server.newClientHandler(conn)
 	go c.HandleCommands()
 
 	logrus.Info("FTP Client connected ", "clientIp ", conn.RemoteAddr())

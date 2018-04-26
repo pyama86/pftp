@@ -62,15 +62,15 @@ func (c *clientHandler) end() {
 	c.daddy.ClientCounter--
 }
 
-func (c *clientHandler) WelcomeUser() cmdError {
+func (c *clientHandler) WelcomeUser() *result {
 	if c.daddy.ClientCounter > c.daddy.config.MaxConnections {
-		return cmdError{
+		return &result{
 			code: 500,
-			err:  fmt.Error("Cannot accept any additional client"),
+			err:  fmt.Errorf("Cannot accept any additional client"),
 		}
 	}
 
-	return cmdError{
+	return &result{
 		code: 220,
 		msg:  "Welcome on ftpserver",
 	}
@@ -79,10 +79,9 @@ func (c *clientHandler) WelcomeUser() cmdError {
 func (c *clientHandler) HandleCommands() {
 	defer c.end()
 	res := c.WelcomeUser()
-	if !res.Response() {
-		return
+	if res != nil {
+		res.Response(c)
 	}
-
 	for {
 		if c.reader == nil {
 			logrus.Debug("Clean disconnect")
@@ -138,20 +137,22 @@ func (c *clientHandler) writeMessage(code int, message string) {
 
 func (c *clientHandler) handleCommand(line string) {
 	c.parseLine(line)
-	cmd := commands[c.command]
+	cmd := handlers[c.command]
 	defer func() {
 		if r := recover(); r != nil {
 			c.writeMessage(500, fmt.Sprintf("Internal error: %s", r))
 		}
 	}()
 
-	if cmdDesc != nil {
+	if cmd != nil {
 		res := cmd(c)
 		if res != nil {
-			res.Response()
+			res.Response(c)
 		}
 	} else {
-		c.controleProxy.SendToOriginWithProxy(line)
+		if err := c.controleProxy.SendToOriginWithProxy(line); err != nil {
+			c.writeMessage(500, fmt.Sprintf("Internal error: %s", err.Error()))
+		}
 	}
 }
 

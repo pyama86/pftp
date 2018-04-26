@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-
-	"github.com/sirupsen/logrus"
 )
 
 func (c *clientHandler) TransferOpen() (*ProxyServer, error) {
@@ -26,19 +24,19 @@ func (c *clientHandler) TransferClose() {
 	}
 }
 
-func (c *clientHandler) handleSTOR() {
-	c.transferFile()
+func (c *clientHandler) handleSTOR() *result {
+	return c.transferFile()
 }
 
-func (c *clientHandler) handleAPPE() {
-	c.transferFile()
+func (c *clientHandler) handleAPPE() *result {
+	return c.transferFile()
 }
 
-func (c *clientHandler) handleRETR() {
-	c.transferFile()
+func (c *clientHandler) handleRETR() *result {
+	return c.transferFile()
 }
 
-func (c *clientHandler) transferFile() {
+func (c *clientHandler) transferFile() *result {
 	var err error
 	var proxy *ProxyServer
 	c.controleProxy.SendToOrigin(c.line)
@@ -48,10 +46,13 @@ func (c *clientHandler) transferFile() {
 	}
 
 	if err != nil {
-		logrus.Error(err)
-		c.writeMessage(550, "Could not transfer file: "+err.Error())
-		return
+		return &result{
+			code: 550,
+			msg:  "Could not transfer file: " + err.Error(),
+			err:  err,
+		}
 	}
+	return nil
 
 }
 
@@ -82,7 +83,7 @@ func (c *clientHandler) transferWithCommandProxy(proxy *ProxyServer) error {
 	return nil
 }
 
-func (c *clientHandler) handleLIST() {
+func (c *clientHandler) handleLIST() *result {
 	var err error
 	var proxy *ProxyServer
 	c.controleProxy.SendToOrigin(c.line)
@@ -94,7 +95,11 @@ func (c *clientHandler) handleLIST() {
 	}
 
 	if err != nil {
-		logrus.Error(err)
-		c.writeMessage(500, fmt.Sprintf("Could not list: %v", err))
+		return &result{
+			code: 500,
+			msg:  fmt.Sprintf("Could not list: %v", err),
+			err:  err,
+		}
 	}
+	return nil
 }

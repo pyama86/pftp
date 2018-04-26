@@ -8,12 +8,14 @@ import (
 	"strings"
 )
 
-func (c *clientHandler) handlePORT() {
+func (c *clientHandler) handlePORT() *result {
 	raddr, err := parseRemoteAddr(c.param)
 
 	if err != nil {
-		c.writeMessage(500, fmt.Sprintf("Problem parsing PORT: %v", err))
-		return
+		return &result{
+			code: 500,
+			err:  fmt.Errorf("Problem parsing PORT: %v", err),
+		}
 	}
 
 	var laddr *net.TCPAddr
@@ -26,8 +28,10 @@ func (c *clientHandler) handlePORT() {
 
 	tcpListener, err = net.ListenTCP("tcp", laddr)
 	if err != nil {
-		c.writeMessage(500, fmt.Sprintf("Problem parsing PORT: %v", err))
-		return
+		return &result{
+			code: 500,
+			err:  fmt.Errorf("Problem parsing PORT: %v", err),
+		}
 	}
 
 	c.transfer = &activeTransferHandler{
@@ -42,11 +46,16 @@ func (c *clientHandler) handlePORT() {
 	quads := strings.Split(ip, ".")
 
 	if err := c.controleProxy.SendToOrigin(fmt.Sprintf("PORT %s,%s,%s,%s,%d,%d\r\n", quads[0], quads[1], quads[2], quads[3], p1, p2)); err != nil {
-		c.writeMessage(500, fmt.Sprintf("Problem parsing PORT: %v", err))
-		return
+		return &result{
+			code: 500,
+			err:  fmt.Errorf("Problem parsing PORT: %v", err),
+		}
 	}
 
-	c.writeMessage(200, "PORT command successful")
+	return &result{
+		code: 200,
+		msg:  "PORT command successful",
+	}
 }
 
 type activeTransferHandler struct {

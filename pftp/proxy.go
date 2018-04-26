@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	BUFFER_SIZE = 0xFFFF
+	BUFFER_SIZE = 4096
 )
 
 type ProxyServer struct {
@@ -131,22 +131,23 @@ func (p *Proxy) relay(ctx context.Context, fromConn, toConn net.Conn) error {
 				errChan <- err
 				return
 			}
+			logrus.Info("read")
 			read <- buff[:n]
 		}
 	}()
 
 	for {
 		select {
-		case <-ctx.Done():
-			fromConn.Close()
-		case err := <-errChan:
-			logrus.Error(err)
-			return err
 		case b := <-read:
+			logrus.Info("write")
 			_, err := toConn.Write(b)
 			if err != nil {
 				return err
 			}
+		case err := <-errChan:
+			return err
+		case <-ctx.Done():
+			fromConn.Close()
 		}
 	}
 }
