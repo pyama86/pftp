@@ -40,15 +40,26 @@ func (c *clientHandler) handlePORT() *result {
 	}
 
 	port := tcpListener.Addr().(*net.TCPAddr).Port
-	p1 := port / 256
-	p2 := port - (p1 * 256)
 	ip := strings.Split(c.conn.LocalAddr().String(), ":")[0]
 	quads := strings.Split(ip, ".")
 
-	if err := c.controleProxy.SendToOrigin(fmt.Sprintf("PORT %s,%s,%s,%s,%d,%d\r\n", quads[0], quads[1], quads[2], quads[3], p1, p2)); err != nil {
+	if err := c.controleProxy.SendToOrigin(fmt.Sprintf("PORT %s,%s,%s,%s,%d,%d\r\n", quads[0], quads[1], quads[2], quads[3], port>>8, port&0xFF)); err != nil {
 		return &result{
 			code: 500,
 			err:  fmt.Errorf("Problem parsing PORT: %v", err),
+		}
+	}
+	if res, err := c.controleProxy.ReadFromOrigin(); err != nil {
+		return &result{
+			code: 500,
+			err:  fmt.Errorf("Problem parsing PORT: %v", err),
+		}
+	} else {
+		if string(res[0]) == "5" {
+			return &result{
+				code: 500,
+				err:  fmt.Errorf(res[4:]),
+			}
 		}
 	}
 

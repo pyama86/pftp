@@ -41,6 +41,14 @@ func (c *clientHandler) handlePASV() *result {
 		assined = regexp.MustCompile(`.+\(\d+,\d+,\d+,\d+,(\d+),(\d+)\)`)
 		originTransferPort = assined.FindSubmatch([]byte(response))
 		if originTransferPort == nil {
+			// 2回目以降の接続はポートが通知されない
+			if response[0:3] == "150" {
+				return &result{
+					code: 150,
+					msg:  response[4:],
+				}
+			}
+
 			return &result{
 				err: fmt.Errorf("pasv mode port unmatch: %s", response),
 			}

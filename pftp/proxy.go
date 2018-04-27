@@ -2,7 +2,7 @@ package pftp
 
 import (
 	"bufio"
-	"context"
+	"io"
 	"net"
 	"time"
 
@@ -68,6 +68,14 @@ func (s *ProxyServer) SendAndReadToOrigin(line string) (string, error) {
 	}
 	return s.ReadFromOrigin()
 }
+func (s *ProxyServer) ReadFromOriginWithProxy() error {
+	line, err := s.ReadFromOrigin()
+	if err != nil {
+		return err
+	}
+
+	return s.SendToClient(line)
+}
 
 // オリジンにコマンドを投げてから結果をクライアントにプロキシする
 func (s *ProxyServer) SendToOriginWithProxy(line string) error {
@@ -101,53 +109,64 @@ func (s *ProxyServer) Close() {
 type Proxy struct{}
 
 func (p *Proxy) Start(clientConn, serverConn net.Conn) error {
-	ctx, done := context.WithCancel(context.Background())
-	defer done()
-	eg, ctx := errgroup.WithContext(ctx)
-
+	var eg errgroup.Group
+	var done bool
 	// リレー用のgoroutineを起動
-	eg.Go(func() error { return p.relay(ctx, serverConn, clientConn) })
-	eg.Go(func() error { return p.relay(ctx, clientConn, serverConn) })
+	eg.Go(func() error { return p.relay(serverConn, clientConn, &done) })
+	eg.Go(func() error { return p.relay(clientConn, serverConn, &done) })
 
 	// 完了まで待ち合わせる
 	if err := eg.Wait(); err != nil {
-		logrus.Debugf("proxy end err:%s", err)
-		return err
+		if !done {
+			logrus.Errorf("proxy end err:%s", err)
+			return err
+		}
 	}
 	return nil
 }
 
-func (p *Proxy) relay(ctx context.Context, fromConn, toConn net.Conn) error {
-	logrus.Debug("relay start from=", fromConn.LocalAddr(), " to=", fromConn.RemoteAddr())
+func (p *Proxy) relay(from, to net.Conn, doneTransfer *bool) error {
+	logrus.Debug("relay start from=", from.LocalAddr(), " to=", from.RemoteAddr())
+	defer to.Close()
+	defer from.Close()
 	buff := make([]byte, BUFFER_SIZE)
-	errChan := make(chan error, 1)
 	read := make(chan []byte, BUFFER_SIZE)
+	done := make(chan struct{})
 
-	// ソケットからの読込をgoroutineにすることで非同期IO
+	var lastError error
 	go func() {
+	loop:
 		for {
-			n, err := fromConn.Read(buff)
-			if err != nil {
-				errChan <- err
-				return
+			select {
+			case b, ok := <-read:
+				if !ok {
+					break loop
+				}
+				_, err := to.Write(b)
+				if err != nil {
+					lastError = err
+					break loop
+				}
 			}
-			logrus.Info("read")
-			read <- buff[:n]
 		}
+		done <- struct{}{}
 	}()
 
 	for {
-		select {
-		case b := <-read:
-			logrus.Info("write")
-			_, err := toConn.Write(b)
-			if err != nil {
-				return err
+		if n, err := from.Read(buff); err != nil {
+			if err != io.EOF {
+				lastError = err
 			}
-		case err := <-errChan:
-			return err
-		case <-ctx.Done():
-			fromConn.Close()
+			break
+		} else {
+			read <- buff[:n]
 		}
 	}
+	close(read)
+	<-done
+
+	if lastError == nil {
+		*doneTransfer = true
+	}
+	return lastError
 }
