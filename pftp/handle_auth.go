@@ -7,7 +7,7 @@ import (
 )
 
 func (c *clientHandler) handleUSER() *result {
-	server, err := c.daddy.middleware.User(c.param)
+	server, err := c.server.middleware.User(c.param)
 	if err != nil {
 		return &result{
 			code: 530,
@@ -16,7 +16,7 @@ func (c *clientHandler) handleUSER() *result {
 		}
 	}
 
-	p, err := NewProxyServer(c.daddy.config.ProxyTimeout, c.conn, server)
+	p, err := NewProxyServer(c.server.config.ProxyTimeout, c.conn, server)
 	if err != nil {
 		return &result{
 			code: 530,
@@ -44,8 +44,8 @@ func (c *clientHandler) handleUSER() *result {
 }
 
 func (c *clientHandler) handleAUTH() *result {
-	if c.daddy.config.TLSConfig != nil {
-		c.conn = tls.Server(c.conn, c.daddy.config.TLSConfig)
+	if c.server.config.TLSConfig != nil {
+		c.conn = tls.Server(c.conn, c.server.config.TLSConfig)
 		c.reader = bufio.NewReader(c.conn)
 		c.writer = bufio.NewWriter(c.conn)
 		return &result{

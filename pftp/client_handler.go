@@ -31,7 +31,7 @@ func init() {
 }
 
 type clientHandler struct {
-	daddy         *FtpServer
+	server         *FtpServer
 	conn          net.Conn
 	writer        *bufio.Writer
 	reader        *bufio.Reader
@@ -45,7 +45,7 @@ type clientHandler struct {
 
 func (server *FtpServer) newClientHandler(connection net.Conn) *clientHandler {
 	p := &clientHandler{
-		daddy:  server,
+		server:  server,
 		conn:   connection,
 		writer: bufio.NewWriter(connection),
 		reader: bufio.NewReader(connection),
@@ -59,11 +59,11 @@ func (c *clientHandler) disconnect() {
 }
 
 func (c *clientHandler) end() {
-	c.daddy.ClientCounter--
+	c.server.ClientCounter--
 }
 
 func (c *clientHandler) WelcomeUser() *result {
-	if c.daddy.ClientCounter > c.daddy.config.MaxConnections {
+	if c.server.ClientCounter > c.server.config.MaxConnections {
 		return &result{
 			code: 500,
 			err:  fmt.Errorf("Cannot accept any additional client"),
@@ -88,8 +88,8 @@ func (c *clientHandler) HandleCommands() {
 			return
 		}
 
-		if c.daddy.config.IdleTimeout > 0 {
-			c.conn.SetDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(c.daddy.config.IdleTimeout))))
+		if c.server.config.IdleTimeout > 0 {
+			c.conn.SetDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(c.server.config.IdleTimeout))))
 		}
 
 		line, err := c.reader.ReadString('\n')
@@ -100,7 +100,7 @@ func (c *clientHandler) HandleCommands() {
 				if err.Timeout() {
 					c.conn.SetDeadline(time.Now().Add(time.Minute))
 					logrus.Info("IDLE timeout")
-					c.writeMessage(421, fmt.Sprintf("command timeout (%d seconds): closing control connection", c.daddy.config.IdleTimeout))
+					c.writeMessage(421, fmt.Sprintf("command timeout (%d seconds): closing control connection", c.server.config.IdleTimeout))
 					if err := c.writer.Flush(); err != nil {
 						logrus.Error("Network flush error")
 					}
