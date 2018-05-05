@@ -4,13 +4,10 @@ import (
 	"bufio"
 	"crypto/tls"
 	"fmt"
-
-	"github.com/sirupsen/logrus"
 )
 
 func (c *clientHandler) handleUSER() *result {
 	p, err := NewProxyServer(c.config.ProxyTimeout, c.conn, c.context.RemoteAddr)
-	logrus.Debug("hoge")
 	if err != nil {
 		return &result{
 			code: 530,
