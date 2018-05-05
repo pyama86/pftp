@@ -8,7 +8,6 @@ func (c *clientHandler) TransferOpen() (*ProxyServer, error) {
 	if c.transfer == nil {
 		return nil, errors.New("no passive connection declared")
 	}
-	c.writeMessage(150, "Using transfer connection")
 
 	conn, err := c.transfer.Open()
 	if err != nil {

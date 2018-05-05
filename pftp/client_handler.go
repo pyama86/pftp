@@ -11,22 +11,27 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var handlers map[string]func(*clientHandler) *result
+type handleFunc struct {
+	f       func(*clientHandler) *result
+	suspend bool
+}
+
+var handlers map[string]*handleFunc
 
 func init() {
-	handlers = make(map[string]func(*clientHandler) *result)
-	handlers["USER"] = (*clientHandler).handleUSER
-	handlers["AUTH"] = (*clientHandler).handleAUTH
-	handlers["EPSV"] = (*clientHandler).handlePASV
-	handlers["PASV"] = (*clientHandler).handlePASV
-	handlers["PORT"] = (*clientHandler).handlePORT
-	handlers["LIST"] = (*clientHandler).handleLIST
-	handlers["MLSD"] = (*clientHandler).handleLIST
+	handlers = make(map[string]*handleFunc)
+	handlers["USER"] = &handleFunc{(*clientHandler).handleUSER, true}
+	handlers["AUTH"] = &handleFunc{(*clientHandler).handleAUTH, true}
+	handlers["EPSV"] = &handleFunc{(*clientHandler).handlePASV, true}
+	handlers["PASV"] = &handleFunc{(*clientHandler).handlePASV, true}
+	handlers["PORT"] = &handleFunc{(*clientHandler).handlePORT, true}
+	handlers["MLSD"] = &handleFunc{(*clientHandler).handleLIST, true}
 
 	// transfer files
-	handlers["RETR"] = (*clientHandler).handleRETR
-	handlers["STOR"] = (*clientHandler).handleSTOR
-	handlers["APPE"] = (*clientHandler).handleAPPE
+	handlers["RETR"] = &handleFunc{(*clientHandler).handleRETR, false}
+	handlers["STOR"] = &handleFunc{(*clientHandler).handleSTOR, false}
+	handlers["APPE"] = &handleFunc{(*clientHandler).handleAPPE, false}
+	handlers["LIST"] = &handleFunc{(*clientHandler).handleLIST, false}
 }
 
 type clientHandler struct {
@@ -152,10 +157,12 @@ func (c *clientHandler) handleCommand(line string) {
 
 	if cmd != nil {
 		if c.controleProxy != nil {
-			c.controleProxy.Suspend()
+			if cmd.suspend {
+				c.controleProxy.Suspend()
+			}
 		}
 
-		res := cmd(c)
+		res := cmd.f(c)
 		if res != nil {
 			res.Response(c)
 		}
