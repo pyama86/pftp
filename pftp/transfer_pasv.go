@@ -82,7 +82,7 @@ func (c *clientHandler) handlePASV() *result {
 	addr, _ := net.ResolveTCPAddr("tcp", ":0")
 	var tcpListener *net.TCPListener
 
-	portRange := c.daddy.config.DataPortRange
+	portRange := c.config.DataPortRange
 
 	// choice proxy port
 	if portRange != nil {
@@ -110,8 +110,8 @@ func (c *clientHandler) handlePASV() *result {
 	}
 
 	var listener net.Listener
-	if c.transferTLS && c.daddy.config.TLSConfig != nil {
-		listener = tls.NewListener(tcpListener, c.daddy.config.TLSConfig)
+	if c.transferTLS && c.config.TLSConfig != nil {
+		listener = tls.NewListener(tcpListener, c.config.TLSConfig)
 	} else {
 		listener = tcpListener
 	}

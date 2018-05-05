@@ -4,19 +4,13 @@ import (
 	"bufio"
 	"crypto/tls"
 	"fmt"
+
+	"github.com/sirupsen/logrus"
 )
 
 func (c *clientHandler) handleUSER() *result {
-	server, err := c.daddy.middleware.User(c.param)
-	if err != nil {
-		return &result{
-			code: 530,
-			msg:  "I can't deal with you (proxy error)",
-			err:  err,
-		}
-	}
-
-	p, err := NewProxyServer(c.daddy.config.ProxyTimeout, c.conn, server)
+	p, err := NewProxyServer(c.config.ProxyTimeout, c.conn, c.context.RemoteAddr)
+	logrus.Debug("hoge")
 	if err != nil {
 		return &result{
 			code: 530,
@@ -44,8 +38,8 @@ func (c *clientHandler) handleUSER() *result {
 }
 
 func (c *clientHandler) handleAUTH() *result {
-	if c.daddy.config.TLSConfig != nil {
-		c.conn = tls.Server(c.conn, c.daddy.config.TLSConfig)
+	if c.config.TLSConfig != nil {
+		c.conn = tls.Server(c.conn, c.config.TLSConfig)
 		c.reader = bufio.NewReader(c.conn)
 		c.writer = bufio.NewWriter(c.conn)
 		return &result{

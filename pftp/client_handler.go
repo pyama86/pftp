@@ -31,8 +31,9 @@ func init() {
 }
 
 type clientHandler struct {
-	daddy         *FtpServer
 	conn          net.Conn
+	config        *config
+	middleware    middleware
 	writer        *bufio.Writer
 	reader        *bufio.Reader
 	line          string
@@ -41,35 +42,23 @@ type clientHandler struct {
 	transfer      transferHandler
 	transferTLS   bool
 	controleProxy *ProxyServer
+	context       *Context
 }
 
-func (server *FtpServer) newClientHandler(connection net.Conn) *clientHandler {
+func (ftp *FtpServer) newClientHandler(connection net.Conn, c *config, m middleware) *clientHandler {
 	p := &clientHandler{
-		daddy:  server,
-		conn:   connection,
-		writer: bufio.NewWriter(connection),
-		reader: bufio.NewReader(connection),
+		conn:       connection,
+		config:     c,
+		middleware: m,
+		writer:     bufio.NewWriter(connection),
+		reader:     bufio.NewReader(connection),
+		context:    newContext(c),
 	}
 
 	return p
 }
 
-func (c *clientHandler) disconnect() {
-	c.conn.Close()
-}
-
-func (c *clientHandler) end() {
-	c.daddy.ClientCounter--
-}
-
 func (c *clientHandler) WelcomeUser() *result {
-	if c.daddy.ClientCounter > c.daddy.config.MaxConnections {
-		return &result{
-			code: 500,
-			err:  fmt.Errorf("Cannot accept any additional client"),
-		}
-	}
-
 	return &result{
 		code: 220,
 		msg:  "Welcome on ftpserver",
@@ -77,7 +66,6 @@ func (c *clientHandler) WelcomeUser() *result {
 }
 
 func (c *clientHandler) HandleCommands() {
-	defer c.end()
 	res := c.WelcomeUser()
 	if res != nil {
 		res.Response(c)
@@ -88,8 +76,8 @@ func (c *clientHandler) HandleCommands() {
 			return
 		}
 
-		if c.daddy.config.IdleTimeout > 0 {
-			c.conn.SetDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(c.daddy.config.IdleTimeout))))
+		if c.config.IdleTimeout > 0 {
+			c.conn.SetDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(c.config.IdleTimeout))))
 		}
 
 		line, err := c.reader.ReadString('\n')
@@ -100,7 +88,7 @@ func (c *clientHandler) HandleCommands() {
 				if err.Timeout() {
 					c.conn.SetDeadline(time.Now().Add(time.Minute))
 					logrus.Info("IDLE timeout")
-					c.writeMessage(421, fmt.Sprintf("command timeout (%d seconds): closing control connection", c.daddy.config.IdleTimeout))
+					c.writeMessage(421, fmt.Sprintf("command timeout (%d seconds): closing control connection", c.config.IdleTimeout))
 					if err := c.writer.Flush(); err != nil {
 						logrus.Error("Network flush error")
 					}
@@ -143,6 +131,12 @@ func (c *clientHandler) handleCommand(line string) {
 			c.writeMessage(500, fmt.Sprintf("Internal error: %s", r))
 		}
 	}()
+
+	if c.middleware[c.command] != nil {
+		if err := c.middleware[c.command](c.context, c.param); err != nil {
+			c.writeMessage(500, fmt.Sprintf("Internal error: %s", err.Error))
+		}
+	}
 
 	if cmd != nil {
 		res := cmd(c)
