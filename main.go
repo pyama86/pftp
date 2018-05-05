@@ -23,7 +23,7 @@ func main() {
 		logrus.Fatal(err)
 	}
 
-	ftpServer.Use(sampleMiddleware{})
+	ftpServer.Use("user", User)
 	if err := ftpServer.ListenAndServe(); err != nil {
 		logrus.Fatal(err)
 	}
@@ -41,9 +41,7 @@ func signalHandler() {
 	}
 }
 
-type sampleMiddleware struct {
-}
-
-func (m sampleMiddleware) User(u string) (string, error) {
-	return "192.168.33.2:21", nil
+func User(c *pftp.Context, param string) error {
+	c.RemoteAddr = "192.168.33.2:21"
+	return nil
 }

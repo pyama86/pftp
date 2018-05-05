@@ -19,7 +19,7 @@ func (c *clientHandler) handlePORT() *result {
 	}
 
 	var laddr *net.TCPAddr
-	if c.server.config.UseUnknownActiveDataPort {
+	if c.config.UseUnknownActiveDataPort {
 		laddr = nil
 	} else {
 		laddr, _ = net.ResolveTCPAddr("tcp", ":20")

@@ -2,15 +2,19 @@ package pftp
 
 import (
 	"net"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 )
+
+type middlewareFunc func(*Context, string) error
+type middleware map[string]middlewareFunc
 
 type FtpServer struct {
 	listener      net.Listener
 	ClientCounter uint32
 	config        *config
-	middleware    Middleware
+	middleware    middleware
 }
 
 func NewFtpServer(confFile string) (*FtpServer, error) {
@@ -18,13 +22,15 @@ func NewFtpServer(confFile string) (*FtpServer, error) {
 	if err != nil {
 		return nil, err
 	}
+	m := middleware{}
 	return &FtpServer{
-		config: c,
+		config:     c,
+		middleware: m,
 	}, nil
 }
 
-func (server *FtpServer) Use(m Middleware) {
-	server.middleware = m
+func (server *FtpServer) Use(command string, m middlewareFunc) {
+	server.middleware[strings.ToUpper(command)] = m
 }
 
 func (server *FtpServer) Listen() (err error) {
@@ -70,9 +76,7 @@ func (server *FtpServer) Stop() {
 }
 
 func (server *FtpServer) clientArrival(conn net.Conn) error {
-	server.ClientCounter++
-
-	c := server.newClientHandler(conn)
+	c := server.newClientHandler(conn, server.config, server.middleware)
 	go c.HandleCommands()
 
 	logrus.Info("FTP Client connected ", "clientIp ", conn.RemoteAddr())
