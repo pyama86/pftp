@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -95,10 +94,14 @@ func (s *ProxyServer) SendToClient(line string) error {
 
 }
 
-func (s *ProxyServer) Start() error {
+func (s *ProxyServer) Start(isUpload bool) error {
 	defer s.Close()
 	p := &Proxy{}
-	return p.Start(s.client, s.origin)
+
+	if isUpload {
+		return p.Start(s.client, s.origin)
+	}
+	return p.Start(s.origin, s.client)
 }
 
 func (s *ProxyServer) Close() {
@@ -108,24 +111,7 @@ func (s *ProxyServer) Close() {
 
 type Proxy struct{}
 
-func (p *Proxy) Start(clientConn, serverConn net.Conn) error {
-	var eg errgroup.Group
-	var done bool
-	// リレー用のgoroutineを起動
-	eg.Go(func() error { return p.relay(serverConn, clientConn, &done) })
-	eg.Go(func() error { return p.relay(clientConn, serverConn, &done) })
-
-	// 完了まで待ち合わせる
-	if err := eg.Wait(); err != nil {
-		if !done {
-			logrus.Errorf("proxy end err:%s", err)
-			return err
-		}
-	}
-	return nil
-}
-
-func (p *Proxy) relay(from, to net.Conn, doneTransfer *bool) error {
+func (p *Proxy) Start(from, to net.Conn) error {
 	logrus.Debug("relay start from=", from.LocalAddr(), " to=", from.RemoteAddr())
 	defer to.Close()
 	defer from.Close()
@@ -142,6 +128,7 @@ func (p *Proxy) relay(from, to net.Conn, doneTransfer *bool) error {
 				if !ok {
 					break loop
 				}
+
 				_, err := to.Write(b)
 				if err != nil {
 					lastError = err
@@ -165,8 +152,5 @@ func (p *Proxy) relay(from, to net.Conn, doneTransfer *bool) error {
 	close(read)
 	<-done
 
-	if lastError == nil {
-		*doneTransfer = true
-	}
 	return lastError
 }

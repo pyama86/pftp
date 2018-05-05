@@ -27,18 +27,25 @@ func (c *clientHandler) TransferClose() {
 }
 
 func (c *clientHandler) handleSTOR() *result {
-	return c.transferFile()
+	return c.upload()
 }
 
 func (c *clientHandler) handleAPPE() *result {
-	return c.transferFile()
+	return c.upload()
 }
 
 func (c *clientHandler) handleRETR() *result {
-	return c.transferFile()
+	return c.download()
 }
 
-func (c *clientHandler) transferFile() *result {
+func (c *clientHandler) upload() *result {
+	return c.transferFile(true)
+}
+
+func (c *clientHandler) download() *result {
+	return c.transferFile(false)
+}
+func (c *clientHandler) transferFile(isUpload bool) *result {
 	var err error
 	var proxy *ProxyServer
 
@@ -52,7 +59,7 @@ func (c *clientHandler) transferFile() *result {
 
 	if proxy, err = c.TransferOpen(); err == nil {
 		defer c.TransferClose()
-		err = c.transferWithCommandProxy(proxy)
+		err = c.transferWithCommandProxy(proxy, isUpload)
 	}
 
 	if err != nil {
@@ -65,9 +72,9 @@ func (c *clientHandler) transferFile() *result {
 	return nil
 }
 
-func (c *clientHandler) transferWithCommandProxy(proxy *ProxyServer) error {
+func (c *clientHandler) transferWithCommandProxy(proxy *ProxyServer, isUpload bool) error {
 	// データ転送の完了はシリアルに待つ
-	if err := proxy.Start(); err != nil && err != io.EOF {
+	if err := proxy.Start(isUpload); err != nil && err != io.EOF {
 		return err
 	}
 
@@ -97,7 +104,7 @@ func (c *clientHandler) handleLIST() *result {
 
 	if proxy, err = c.TransferOpen(); err == nil {
 		defer c.TransferClose()
-		err = c.transferWithCommandProxy(proxy)
+		err = c.transferWithCommandProxy(proxy, false)
 	}
 
 	if err != nil {
