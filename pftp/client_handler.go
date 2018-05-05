@@ -22,7 +22,6 @@ func init() {
 	handlers["PORT"] = (*clientHandler).handlePORT
 	handlers["LIST"] = (*clientHandler).handleLIST
 	handlers["MLSD"] = (*clientHandler).handleLIST
-	handlers["FEAT"] = (*clientHandler).handleFEAT
 
 	// transfer files
 	handlers["RETR"] = (*clientHandler).handleRETR
@@ -66,16 +65,29 @@ func (c *clientHandler) WelcomeUser() *result {
 }
 
 func (c *clientHandler) HandleCommands() {
+	defer func() {
+		if c.controleProxy != nil {
+			c.controleProxy.Close()
+		}
+	}()
+
 	res := c.WelcomeUser()
 	if res != nil {
 		res.Response(c)
 	}
-	for {
-		if c.reader == nil {
-			logrus.Debug("Clean disconnect")
-			return
-		}
 
+	go func() {
+		for {
+			if c.controleProxy != nil {
+				if err := c.controleProxy.Start(false); err != nil {
+					logrus.Errorf("Response Proxy error: %s", err)
+					break
+				}
+			}
+		}
+	}()
+
+	for {
 		if c.config.IdleTimeout > 0 {
 			c.conn.SetDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(c.config.IdleTimeout))))
 		}
@@ -139,14 +151,24 @@ func (c *clientHandler) handleCommand(line string) {
 	}
 
 	if cmd != nil {
+		if c.controleProxy != nil {
+			c.controleProxy.Suspend()
+		}
+
 		res := cmd(c)
 		if res != nil {
 			res.Response(c)
 		}
 	} else {
-		if err := c.controleProxy.SendToOriginWithProxy(line); err != nil {
-			c.writeMessage(500, fmt.Sprintf("Internal error: %s", err.Error()))
+		if c.controleProxy != nil {
+			if err := c.controleProxy.SendToOrigin(line); err != nil {
+				c.writeMessage(500, fmt.Sprintf("Internal error: %s", err.Error()))
+			}
 		}
+	}
+
+	if c.controleProxy != nil {
+		c.controleProxy.Unsuspend()
 	}
 }
 

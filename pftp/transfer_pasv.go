@@ -26,13 +26,12 @@ type passiveTransferHandler struct {
 }
 
 func (c *clientHandler) handlePASV() *result {
-	response, err := c.controleProxy.SendAndReadToOrigin(c.line)
+	response, err := c.controleProxy.SendAndReadFromOrigin(c.line)
 	if err != nil {
 		return &result{
 			err: err,
 		}
 	}
-
 	// origin server listen port
 	assined := regexp.MustCompile(`.+\(\|\|\|([0-9]+)\|\)`)
 	originTransferPort := assined.FindSubmatch([]byte(response))

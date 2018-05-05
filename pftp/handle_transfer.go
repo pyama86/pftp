@@ -2,8 +2,6 @@ package pftp
 
 import (
 	"errors"
-	"fmt"
-	"io"
 )
 
 func (c *clientHandler) TransferOpen() (*ProxyServer, error) {
@@ -59,7 +57,7 @@ func (c *clientHandler) transferFile(isUpload bool) *result {
 
 	if proxy, err = c.TransferOpen(); err == nil {
 		defer c.TransferClose()
-		err = c.transferWithCommandProxy(proxy, isUpload)
+		err = proxy.Start(isUpload)
 	}
 
 	if err != nil {
@@ -72,47 +70,6 @@ func (c *clientHandler) transferFile(isUpload bool) *result {
 	return nil
 }
 
-func (c *clientHandler) transferWithCommandProxy(proxy *ProxyServer, isUpload bool) error {
-	// データ転送の完了はシリアルに待つ
-	if err := proxy.Start(isUpload); err != nil && err != io.EOF {
-		return err
-	}
-
-	for {
-		// オリジンサーバから完了通知を受け取る
-		res, err := c.controleProxy.ReadFromOrigin()
-		if err != nil {
-			return err
-		}
-		r1 := string(res[0])
-		if r1 != `1` {
-			// クライアントに完了通知を送る
-			err = c.controleProxy.SendToClient(res)
-			if err != nil {
-				return err
-			}
-			break
-		}
-	}
-	return nil
-}
-
 func (c *clientHandler) handleLIST() *result {
-	var err error
-	var proxy *ProxyServer
-	c.controleProxy.SendToOrigin(c.line)
-
-	if proxy, err = c.TransferOpen(); err == nil {
-		defer c.TransferClose()
-		err = c.transferWithCommandProxy(proxy, false)
-	}
-
-	if err != nil {
-		return &result{
-			code: 500,
-			msg:  fmt.Sprintf("Could not list: %v", err),
-			err:  err,
-		}
-	}
-	return nil
+	return c.download()
 }

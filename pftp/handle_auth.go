@@ -16,21 +16,19 @@ func (c *clientHandler) handleUSER() *result {
 		}
 	}
 
-	// read welcome message
-	_, err = p.ReadFromOrigin()
-	if err != nil {
+	if c.controleProxy != nil {
+		c.controleProxy.Close()
+	}
+
+	c.controleProxy = p
+
+	if err := p.SendToOrigin(c.line); err != nil {
 		return &result{
 			code: 530,
 			msg:  "I can't deal with you (proxy error)",
 			err:  err,
 		}
 	}
-
-	if c.controleProxy != nil {
-		c.controleProxy.Close()
-	}
-	c.controleProxy = p
-	p.SendToOriginWithProxy(c.line)
 	return nil
 }
 

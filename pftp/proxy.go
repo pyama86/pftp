@@ -2,6 +2,7 @@ package pftp
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 	"net"
 	"time"
@@ -14,10 +15,11 @@ const (
 )
 
 type ProxyServer struct {
-	timeout      int
-	client       net.Conn
-	origin       net.Conn
-	originReader *bufio.Reader
+	timeout int
+	client  net.Conn
+	origin  net.Conn
+	doProxy bool
+	pipe    chan []byte
 }
 
 func NewProxyServer(timeout int, client net.Conn, originAddr string) (*ProxyServer, error) {
@@ -26,12 +28,18 @@ func NewProxyServer(timeout int, client net.Conn, originAddr string) (*ProxyServ
 		return nil, err
 	}
 
-	return &ProxyServer{
-		client:       client,
-		origin:       c,
-		originReader: bufio.NewReader(c),
-		timeout:      timeout,
-	}, nil
+	p := &ProxyServer{
+		client:  client,
+		origin:  c,
+		timeout: timeout,
+		doProxy: true,
+		pipe:    make(chan []byte, BUFFER_SIZE),
+	}
+
+	// read welcome message
+	_, err = p.ReadFromOrigin()
+
+	return p, err
 }
 
 func (s *ProxyServer) ReadFromOrigin() (string, error) {
@@ -39,8 +47,15 @@ func (s *ProxyServer) ReadFromOrigin() (string, error) {
 		s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
 	}
 
+	var reader *bufio.Reader
+	if s.doProxy {
+		reader = bufio.NewReader(s.origin)
+	} else {
+		reader = bufio.NewReader(bytes.NewBuffer(<-s.pipe))
+	}
+
 	for {
-		if response, err := s.originReader.ReadString('\n'); err != nil {
+		if response, err := reader.ReadString('\n'); err != nil {
 			return "", err
 		} else {
 			logrus.Debug("read from origin:", response)
@@ -60,29 +75,12 @@ func (s *ProxyServer) SendToOrigin(line string) error {
 }
 
 // オリジンにコマンドを投げてから結果を受け取る
-func (s *ProxyServer) SendAndReadToOrigin(line string) (string, error) {
+func (s *ProxyServer) SendAndReadFromOrigin(line string) (string, error) {
 	err := s.SendToOrigin(line)
 	if err != nil {
 		return "", err
 	}
 	return s.ReadFromOrigin()
-}
-func (s *ProxyServer) ReadFromOriginWithProxy() error {
-	line, err := s.ReadFromOrigin()
-	if err != nil {
-		return err
-	}
-
-	return s.SendToClient(line)
-}
-
-// オリジンにコマンドを投げてから結果をクライアントにプロキシする
-func (s *ProxyServer) SendToOriginWithProxy(line string) error {
-	response, err := s.SendAndReadToOrigin(line)
-	if err != nil {
-		return err
-	}
-	return s.SendToClient(response)
 }
 
 func (s *ProxyServer) SendToClient(line string) error {
@@ -96,12 +94,20 @@ func (s *ProxyServer) SendToClient(line string) error {
 
 func (s *ProxyServer) Start(isUpload bool) error {
 	defer s.Close()
-	p := &Proxy{}
 
 	if isUpload {
-		return p.Start(s.client, s.origin)
+		return s.start(s.client, s.origin)
 	}
-	return p.Start(s.origin, s.client)
+	return s.start(s.origin, s.client)
+}
+
+func (s *ProxyServer) Suspend() {
+	logrus.Debug("suspend")
+	s.doProxy = false
+}
+
+func (s *ProxyServer) Unsuspend() {
+	s.doProxy = true
 }
 
 func (s *ProxyServer) Close() {
@@ -109,17 +115,16 @@ func (s *ProxyServer) Close() {
 	s.origin.Close()
 }
 
-type Proxy struct{}
-
-func (p *Proxy) Start(from, to net.Conn) error {
+func (s *ProxyServer) start(from, to net.Conn) error {
 	logrus.Debug("relay start from=", from.LocalAddr(), " to=", from.RemoteAddr())
 	defer to.Close()
 	defer from.Close()
+
 	buff := make([]byte, BUFFER_SIZE)
 	read := make(chan []byte, BUFFER_SIZE)
 	done := make(chan struct{})
-
 	var lastError error
+
 	go func() {
 	loop:
 		for {
@@ -129,10 +134,14 @@ func (p *Proxy) Start(from, to net.Conn) error {
 					break loop
 				}
 
-				_, err := to.Write(b)
-				if err != nil {
-					lastError = err
-					break loop
+				if s.doProxy {
+					_, err := to.Write(b)
+					if err != nil {
+						lastError = err
+						break loop
+					}
+				} else {
+					s.pipe <- b
 				}
 			}
 		}
