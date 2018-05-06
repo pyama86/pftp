@@ -2,15 +2,12 @@ package pftp
 
 import (
 	"errors"
-	"fmt"
-	"io"
 )
 
 func (c *clientHandler) TransferOpen() (*ProxyServer, error) {
 	if c.transfer == nil {
 		return nil, errors.New("no passive connection declared")
 	}
-	c.writeMessage(150, "Using transfer connection")
 
 	conn, err := c.transfer.Open()
 	if err != nil {
@@ -42,6 +39,37 @@ func (c *clientHandler) upload() *result {
 	return c.transferFile(true)
 }
 
+func (c *clientHandler) handleLIST() *result {
+	r := c.download()
+	for {
+		// オリジンサーバから完了通知を受け取る
+		res, err := c.controleProxy.ReadFromOrigin()
+		if err != nil {
+			return &result{
+				code: 500,
+				msg:  "Could not list file: " + err.Error(),
+				err:  err,
+			}
+		}
+		r1 := string(res[0])
+		// 150レスポンスは破棄する
+		if r1 != `1` {
+			// クライアントに完了通知を送る
+			err = c.controleProxy.SendToClient(res)
+			if err != nil {
+				return &result{
+					code: 500,
+					msg:  "Could not list file: " + err.Error(),
+					err:  err,
+				}
+			}
+			break
+		}
+	}
+
+	return r
+}
+
 func (c *clientHandler) download() *result {
 	return c.transferFile(false)
 }
@@ -57,60 +85,16 @@ func (c *clientHandler) transferFile(isUpload bool) *result {
 		}
 	}
 
+	c.writeMessage(150, "Using transfer connection")
 	if proxy, err = c.TransferOpen(); err == nil {
 		defer c.TransferClose()
-		err = c.transferWithCommandProxy(proxy, isUpload)
+		err = proxy.Start(isUpload)
 	}
 
 	if err != nil {
 		return &result{
 			code: 550,
 			msg:  "Could not transfer file: " + err.Error(),
-			err:  err,
-		}
-	}
-	return nil
-}
-
-func (c *clientHandler) transferWithCommandProxy(proxy *ProxyServer, isUpload bool) error {
-	// データ転送の完了はシリアルに待つ
-	if err := proxy.Start(isUpload); err != nil && err != io.EOF {
-		return err
-	}
-
-	for {
-		// オリジンサーバから完了通知を受け取る
-		res, err := c.controleProxy.ReadFromOrigin()
-		if err != nil {
-			return err
-		}
-		r1 := string(res[0])
-		if r1 != `1` {
-			// クライアントに完了通知を送る
-			err = c.controleProxy.SendToClient(res)
-			if err != nil {
-				return err
-			}
-			break
-		}
-	}
-	return nil
-}
-
-func (c *clientHandler) handleLIST() *result {
-	var err error
-	var proxy *ProxyServer
-	c.controleProxy.SendToOrigin(c.line)
-
-	if proxy, err = c.TransferOpen(); err == nil {
-		defer c.TransferClose()
-		err = c.transferWithCommandProxy(proxy, false)
-	}
-
-	if err != nil {
-		return &result{
-			code: 500,
-			msg:  fmt.Sprintf("Could not list: %v", err),
 			err:  err,
 		}
 	}

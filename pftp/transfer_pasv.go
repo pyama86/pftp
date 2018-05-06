@@ -26,13 +26,12 @@ type passiveTransferHandler struct {
 }
 
 func (c *clientHandler) handlePASV() *result {
-	response, err := c.controleProxy.SendAndReadToOrigin(c.line)
+	response, err := c.controleProxy.SendAndReadFromOrigin(c.line)
 	if err != nil {
 		return &result{
 			err: err,
 		}
 	}
-
 	// origin server listen port
 	assined := regexp.MustCompile(`.+\(\|\|\|([0-9]+)\|\)`)
 	originTransferPort := assined.FindSubmatch([]byte(response))
@@ -145,9 +144,9 @@ func (c *clientHandler) handlePASV() *result {
 	return r
 }
 
-func (p *passiveTransferHandler) ConnectionWait(wait time.Duration) (*ProxyServer, error) {
+func (p *passiveTransferHandler) Open() (*ProxyServer, error) {
 	if p.proxyServer == nil {
-		p.tcpListener.SetDeadline(time.Now().Add(wait))
+		p.tcpListener.SetDeadline(time.Now().Add(time.Minute))
 		var err error
 		connection, err := p.listener.Accept()
 		if err != nil {
@@ -163,10 +162,6 @@ func (p *passiveTransferHandler) ConnectionWait(wait time.Duration) (*ProxyServe
 	}
 
 	return p.proxyServer, nil
-}
-
-func (p *passiveTransferHandler) Open() (*ProxyServer, error) {
-	return p.ConnectionWait(time.Minute)
 }
 
 func (p *passiveTransferHandler) Close() error {

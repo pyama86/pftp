@@ -11,23 +11,27 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var handlers map[string]func(*clientHandler) *result
+type handleFunc struct {
+	f       func(*clientHandler) *result
+	suspend bool
+}
+
+var handlers map[string]*handleFunc
 
 func init() {
-	handlers = make(map[string]func(*clientHandler) *result)
-	handlers["USER"] = (*clientHandler).handleUSER
-	handlers["AUTH"] = (*clientHandler).handleAUTH
-	handlers["EPSV"] = (*clientHandler).handlePASV
-	handlers["PASV"] = (*clientHandler).handlePASV
-	handlers["PORT"] = (*clientHandler).handlePORT
-	handlers["LIST"] = (*clientHandler).handleLIST
-	handlers["MLSD"] = (*clientHandler).handleLIST
-	handlers["FEAT"] = (*clientHandler).handleFEAT
+	handlers = make(map[string]*handleFunc)
+	handlers["USER"] = &handleFunc{(*clientHandler).handleUSER, false}
+	handlers["AUTH"] = &handleFunc{(*clientHandler).handleAUTH, true}
+	handlers["EPSV"] = &handleFunc{(*clientHandler).handlePASV, true}
+	handlers["PASV"] = &handleFunc{(*clientHandler).handlePASV, true}
+	handlers["PORT"] = &handleFunc{(*clientHandler).handlePORT, true}
+	handlers["MLSD"] = &handleFunc{(*clientHandler).handleLIST, true}
 
 	// transfer files
-	handlers["RETR"] = (*clientHandler).handleRETR
-	handlers["STOR"] = (*clientHandler).handleSTOR
-	handlers["APPE"] = (*clientHandler).handleAPPE
+	handlers["RETR"] = &handleFunc{(*clientHandler).handleRETR, false}
+	handlers["STOR"] = &handleFunc{(*clientHandler).handleSTOR, false}
+	handlers["APPE"] = &handleFunc{(*clientHandler).handleAPPE, false}
+	handlers["LIST"] = &handleFunc{(*clientHandler).handleLIST, true}
 }
 
 type clientHandler struct {
@@ -66,16 +70,29 @@ func (c *clientHandler) WelcomeUser() *result {
 }
 
 func (c *clientHandler) HandleCommands() {
+	defer func() {
+		if c.controleProxy != nil {
+			c.controleProxy.Close()
+		}
+	}()
+
 	res := c.WelcomeUser()
 	if res != nil {
 		res.Response(c)
 	}
-	for {
-		if c.reader == nil {
-			logrus.Debug("Clean disconnect")
-			return
-		}
 
+	go func() {
+		for {
+			if c.controleProxy != nil {
+				if err := c.controleProxy.Start(false); err != nil {
+					logrus.Errorf("Response Proxy error: %s", err)
+					break
+				}
+			}
+		}
+	}()
+
+	for {
 		if c.config.IdleTimeout > 0 {
 			c.conn.SetDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(c.config.IdleTimeout))))
 		}
@@ -139,14 +156,26 @@ func (c *clientHandler) handleCommand(line string) {
 	}
 
 	if cmd != nil {
-		res := cmd(c)
+		if c.controleProxy != nil {
+			if cmd.suspend {
+				c.controleProxy.Suspend()
+			}
+		}
+
+		res := cmd.f(c)
 		if res != nil {
 			res.Response(c)
 		}
 	} else {
-		if err := c.controleProxy.SendToOriginWithProxy(line); err != nil {
-			c.writeMessage(500, fmt.Sprintf("Internal error: %s", err.Error()))
+		if c.controleProxy != nil {
+			if err := c.controleProxy.SendToOrigin(line); err != nil {
+				c.writeMessage(500, fmt.Sprintf("Internal error: %s", err.Error()))
+			}
 		}
+	}
+
+	if c.controleProxy != nil {
+		c.controleProxy.Unsuspend()
 	}
 }
 
