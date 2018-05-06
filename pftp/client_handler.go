@@ -31,7 +31,7 @@ func init() {
 	handlers["RETR"] = &handleFunc{(*clientHandler).handleRETR, false}
 	handlers["STOR"] = &handleFunc{(*clientHandler).handleSTOR, false}
 	handlers["APPE"] = &handleFunc{(*clientHandler).handleAPPE, false}
-	handlers["LIST"] = &handleFunc{(*clientHandler).handleLIST, false}
+	handlers["LIST"] = &handleFunc{(*clientHandler).handleLIST, true}
 }
 
 type clientHandler struct {
