@@ -36,9 +36,6 @@ func NewProxyServer(timeout int, client net.Conn, originAddr string) (*ProxyServ
 		pipe:    make(chan []byte, BUFFER_SIZE),
 	}
 
-	// read welcome message
-	_, err = p.ReadFromOrigin()
-
 	return p, err
 }
 
