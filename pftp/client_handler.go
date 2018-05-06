@@ -20,7 +20,7 @@ var handlers map[string]*handleFunc
 
 func init() {
 	handlers = make(map[string]*handleFunc)
-	handlers["USER"] = &handleFunc{(*clientHandler).handleUSER, true}
+	handlers["USER"] = &handleFunc{(*clientHandler).handleUSER, false}
 	handlers["AUTH"] = &handleFunc{(*clientHandler).handleAUTH, true}
 	handlers["EPSV"] = &handleFunc{(*clientHandler).handlePASV, true}
 	handlers["PASV"] = &handleFunc{(*clientHandler).handlePASV, true}

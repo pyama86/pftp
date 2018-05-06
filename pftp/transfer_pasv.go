@@ -144,9 +144,9 @@ func (c *clientHandler) handlePASV() *result {
 	return r
 }
 
-func (p *passiveTransferHandler) ConnectionWait(wait time.Duration) (*ProxyServer, error) {
+func (p *passiveTransferHandler) Open() (*ProxyServer, error) {
 	if p.proxyServer == nil {
-		p.tcpListener.SetDeadline(time.Now().Add(wait))
+		p.tcpListener.SetDeadline(time.Now().Add(time.Minute))
 		var err error
 		connection, err := p.listener.Accept()
 		if err != nil {
@@ -162,10 +162,6 @@ func (p *passiveTransferHandler) ConnectionWait(wait time.Duration) (*ProxyServe
 	}
 
 	return p.proxyServer, nil
-}
-
-func (p *passiveTransferHandler) Open() (*ProxyServer, error) {
-	return p.ConnectionWait(time.Minute)
 }
 
 func (p *passiveTransferHandler) Close() error {

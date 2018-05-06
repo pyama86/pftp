@@ -22,6 +22,15 @@ func (c *clientHandler) handleUSER() *result {
 
 	c.controleProxy = p
 
+	// read welcome message
+	if _, err := p.ReadFromOrigin(); err != nil {
+		return &result{
+			code: 530,
+			msg:  "I can't deal with you (proxy error)",
+			err:  err,
+		}
+	}
+
 	if err := p.SendToOrigin(c.line); err != nil {
 		return &result{
 			code: 530,
