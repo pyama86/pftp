@@ -130,7 +130,10 @@ func (c *clientHandler) HandleCommands() {
 			}
 			return
 		}
-		c.handleCommand(line)
+		commandResponse := c.handleCommand(line)
+		if commandResponse != nil {
+			commandResponse.Response(c)
+		}
 	}
 }
 
@@ -146,26 +149,24 @@ func (c *clientHandler) writeMessage(code int, message string) {
 	c.writeLine(line)
 }
 
-func (c *clientHandler) handleCommand(line string) {
+func (c *clientHandler) handleCommand(line string) (r *result) {
 	c.parseLine(line)
 	cmd := handlers[c.command]
 	defer func() {
 		if r := recover(); r != nil {
-			res := result{
+			r = &result{
 				code: 500,
 				msg:  fmt.Sprintf("Internal error: %s", r),
 			}
-			res.Response(c)
 		}
 	}()
 
 	if c.middleware[c.command] != nil {
 		if err := c.middleware[c.command](c.context, c.param); err != nil {
-			res := result{
+			return &result{
 				code: 500,
 				msg:  fmt.Sprintf("Internal error: %s", err),
 			}
-			res.Response(c)
 		}
 	}
 
@@ -177,16 +178,15 @@ func (c *clientHandler) handleCommand(line string) {
 		}
 		res := cmd.f(c)
 		if res != nil {
-			res.Response(c)
+			return res
 		}
 	} else {
 		if c.controleProxy != nil {
 			if err := c.controleProxy.SendToOrigin(line); err != nil {
-				res := result{
+				return &result{
 					code: 500,
 					msg:  fmt.Sprintf("Internal error: %s", err),
 				}
-				res.Response(c)
 			}
 		}
 	}
@@ -194,6 +194,7 @@ func (c *clientHandler) handleCommand(line string) {
 	if c.controleProxy != nil {
 		c.controleProxy.Unsuspend()
 	}
+	return nil
 }
 
 func (c *clientHandler) parseLine(line string) {
