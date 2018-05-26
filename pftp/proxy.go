@@ -89,12 +89,13 @@ func (s *ProxyServer) SendToClient(line string) error {
 
 }
 
-func (s *ProxyServer) Start(isUpload bool) error {
+func (s *ProxyServer) UploadProxy() error {
 	defer s.Close()
+	return s.start(s.client, s.origin)
+}
 
-	if isUpload {
-		return s.start(s.client, s.origin)
-	}
+func (s *ProxyServer) DownloadProxy() error {
+	defer s.Close()
 	return s.start(s.origin, s.client)
 }
 

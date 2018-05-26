@@ -84,7 +84,7 @@ func (c *clientHandler) HandleCommands() {
 	go func() {
 		for {
 			if c.controleProxy != nil {
-				if err := c.controleProxy.Start(false); err != nil {
+				if err := c.controleProxy.DownloadProxy(); err != nil {
 					logrus.Errorf("Response Proxy error: %s", err)
 					break
 				}
@@ -187,8 +187,8 @@ func (c *clientHandler) handleCommand(line string) {
 					code: 500,
 					msg:  fmt.Sprintf("Internal error: %s", err),
 				}
+				res.Response(c)
 			}
-			res.Response(c)
 		}
 	}
 

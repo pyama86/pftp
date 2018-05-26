@@ -35,10 +35,6 @@ func (c *clientHandler) handleRETR() *result {
 	return c.download()
 }
 
-func (c *clientHandler) upload() *result {
-	return c.transferFile(true)
-}
-
 func (c *clientHandler) handleLIST() *result {
 	r := c.download()
 	for {
@@ -70,9 +66,14 @@ func (c *clientHandler) handleLIST() *result {
 	return r
 }
 
+func (c *clientHandler) upload() *result {
+	return c.transferFile(true)
+}
+
 func (c *clientHandler) download() *result {
 	return c.transferFile(false)
 }
+
 func (c *clientHandler) transferFile(isUpload bool) *result {
 	var err error
 	var proxy *ProxyServer
@@ -93,7 +94,11 @@ func (c *clientHandler) transferFile(isUpload bool) *result {
 
 	if proxy, err = c.TransferOpen(); err == nil {
 		defer c.TransferClose()
-		err = proxy.Start(isUpload)
+		if isUpload {
+			err = proxy.UploadProxy()
+		} else {
+			err = proxy.DownloadProxy()
+		}
 	}
 
 	if err != nil {
