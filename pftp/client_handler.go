@@ -151,7 +151,7 @@ func (c *clientHandler) handleCommand(line string) {
 
 	if c.middleware[c.command] != nil {
 		if err := c.middleware[c.command](c.context, c.param); err != nil {
-			c.writeMessage(500, fmt.Sprintf("Internal error: %s", err.Error))
+			c.writeMessage(500, fmt.Sprintf("Internal error: %v", err))
 		}
 	}
 
