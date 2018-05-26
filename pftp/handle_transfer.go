@@ -85,7 +85,12 @@ func (c *clientHandler) transferFile(isUpload bool) *result {
 		}
 	}
 
-	c.writeMessage(150, "Using transfer connection")
+	r := result{
+		code: 150,
+		msg:  "Using transfer connection",
+	}
+	r.Response(c)
+
 	if proxy, err = c.TransferOpen(); err == nil {
 		defer c.TransferClose()
 		err = proxy.Start(isUpload)

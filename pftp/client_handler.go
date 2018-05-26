@@ -105,7 +105,13 @@ func (c *clientHandler) HandleCommands() {
 				if err.Timeout() {
 					c.conn.SetDeadline(time.Now().Add(time.Minute))
 					logrus.Info("IDLE timeout")
-					c.writeMessage(421, fmt.Sprintf("command timeout (%d seconds): closing control connection", c.config.IdleTimeout))
+					r := result{
+						code: 421,
+						msg:  fmt.Sprintf("command timeout (%d seconds): closing control connection", c.config.IdleTimeout),
+						err:  err,
+					}
+					r.Response(c)
+
 					if err := c.writer.Flush(); err != nil {
 						logrus.Error("Network flush error")
 					}
@@ -145,13 +151,21 @@ func (c *clientHandler) handleCommand(line string) {
 	cmd := handlers[c.command]
 	defer func() {
 		if r := recover(); r != nil {
-			c.writeMessage(500, fmt.Sprintf("Internal error: %s", r))
+			res := result{
+				code: 500,
+				msg:  fmt.Sprintf("Internal error: %s", r),
+			}
+			res.Response(c)
 		}
 	}()
 
 	if c.middleware[c.command] != nil {
 		if err := c.middleware[c.command](c.context, c.param); err != nil {
-			c.writeMessage(500, fmt.Sprintf("Internal error: %v", err))
+			res := result{
+				code: 500,
+				msg:  fmt.Sprintf("Internal error: %s", err),
+			}
+			res.Response(c)
 		}
 	}
 
@@ -169,8 +183,12 @@ func (c *clientHandler) handleCommand(line string) {
 	} else {
 		if c.controleProxy != nil {
 			if err := c.controleProxy.SendToOrigin(line); err != nil {
-				c.writeMessage(500, fmt.Sprintf("Internal error: %s", err.Error()))
+				res := result{
+					code: 500,
+					msg:  fmt.Sprintf("Internal error: %s", err),
+				}
 			}
+			res.Response(c)
 		}
 	}
 
