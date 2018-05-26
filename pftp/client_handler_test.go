@@ -123,6 +123,7 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 			fields: fields{
 				config: &config{
 					IdleTimeout: 3,
+					remoteAddr:  "127.0.0.1:21",
 				},
 			},
 			args: args{

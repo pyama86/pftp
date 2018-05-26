@@ -175,7 +175,6 @@ func (c *clientHandler) handleCommand(line string) {
 				c.controleProxy.Suspend()
 			}
 		}
-
 		res := cmd.f(c)
 		if res != nil {
 			res.Response(c)
