@@ -31,7 +31,7 @@ vet: ## Exec go vet
 
 lint: ## Exec golint
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Linting$(RESET)"
-	golint -set_exit_status $(TEST)
+	golint -min_confidence 1.1 -set_exit_status $(TEST)
 
 server: ## Run server with gin
 	go run main.go
