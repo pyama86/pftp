@@ -49,7 +49,7 @@ type clientHandler struct {
 	context       *Context
 }
 
-func (ftp *FtpServer) newClientHandler(connection net.Conn, c *config, m middleware) *clientHandler {
+func newClientHandler(connection net.Conn, c *config, m middleware) *clientHandler {
 	p := &clientHandler{
 		conn:       connection,
 		config:     c,
@@ -94,7 +94,7 @@ func (c *clientHandler) HandleCommands() {
 
 	for {
 		if c.config.IdleTimeout > 0 {
-			c.conn.SetDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(c.config.IdleTimeout))))
+			c.conn.SetDeadline(time.Now().Add(time.Duration(c.config.IdleTimeout) * time.Second))
 		}
 
 		line, err := c.reader.ReadString('\n')

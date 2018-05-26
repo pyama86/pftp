@@ -1,49 +1,82 @@
 package pftp
 
 import (
-	"bufio"
 	"net"
+	"strings"
 	"testing"
 )
 
 func Test_clientHandler_HandleCommands(t *testing.T) {
+	var conn net.Conn
+	var server net.Listener
+	done := make(chan struct{})
+	serverready := make(chan struct{})
+	clientready := make(chan struct{})
+
+	go func() {
+		s, err := net.Listen("tcp", ":18080")
+		if err != nil {
+			t.Fatal(err)
+		}
+		server = s
+		defer server.Close()
+
+		serverready <- struct{}{}
+		for {
+			c, err := server.Accept()
+			if err != nil {
+				done <- struct{}{}
+				if strings.Index(err.Error(), "use of closed network connection") == -1 {
+					t.Fatal(err)
+				}
+				break
+			}
+
+			conn = c
+			clientready <- struct{}{}
+		}
+	}()
+
 	type fields struct {
-		conn          net.Conn
-		config        *config
-		middleware    middleware
-		writer        *bufio.Writer
-		reader        *bufio.Reader
-		line          string
-		command       string
-		param         string
-		transfer      transferHandler
-		transferTLS   bool
-		controleProxy *ProxyServer
-		context       *Context
+		config *config
 	}
+
 	tests := []struct {
-		name   string
-		fields fields
+		name    string
+		fields  fields
+		command string
 	}{
-		// TODO: Add test cases.
+		{
+			name: "user ok",
+			fields: fields{
+				config: &config{
+					IdleTimeout: 3,
+				},
+			},
+			command: "user pftp",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &clientHandler{
-				conn:          tt.fields.conn,
-				config:        tt.fields.config,
-				middleware:    tt.fields.middleware,
-				writer:        tt.fields.writer,
-				reader:        tt.fields.reader,
-				line:          tt.fields.line,
-				command:       tt.fields.command,
-				param:         tt.fields.param,
-				transfer:      tt.fields.transfer,
-				transferTLS:   tt.fields.transferTLS,
-				controleProxy: tt.fields.controleProxy,
-				context:       tt.fields.context,
+			<-serverready
+			c, err := net.Dial("tcp", "127.0.0.1:18080")
+			if err != nil {
+				panic(err)
 			}
-			c.HandleCommands()
+			defer c.Close()
+			<-clientready
+			clientHandler := newClientHandler(
+				conn,
+				tt.fields.config,
+				nil,
+			)
+
+			c.Write([]byte(tt.command))
+
+			clientHandler.HandleCommands()
 		})
 	}
+
+	server.Close()
+	<-done
 }
