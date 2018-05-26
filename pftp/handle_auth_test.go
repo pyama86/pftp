@@ -93,7 +93,7 @@ func Test_clientHandler_handleUSER(t *testing.T) {
 				conn:   c,
 				config: &config{},
 				context: &Context{
-					RemoteAddr: "127.0.0.1:18080",
+					RemoteAddr: "127.0.0.1:28080",
 				},
 				line: "user pftp",
 			},

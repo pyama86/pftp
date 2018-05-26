@@ -9,6 +9,8 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"net"
+	"testing"
 	"time"
 )
 
@@ -55,4 +57,12 @@ func GetCertificate() (*tls.Certificate, error) {
 	}
 	c, err := tls.X509KeyPair(certPem.Bytes(), keyPem.Bytes())
 	return &c, err
+}
+
+func LaunchTestServer(t *testing.T) net.Listener {
+	s, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
 }
