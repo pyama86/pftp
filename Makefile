@@ -49,4 +49,15 @@ dist: build ## Upload to Github releases
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(INFO_COLOR)%-30s$(RESET) %s\n", $$1, $$2}'
 
+vsftpd: vsftpd-cleanup
+	docker pull fauria/vsftpd &> /dev/null
+	docker run -d -v "`pwd`/test/data":/home/vsftpd \
+	-p 20:20 -p 21:21 -p 21100-21110:21100-21110 \
+	-e FTP_USER=pftp -e FTP_PASS=pftp \
+	-e PASV_ADDRESS=127.0.0.1 -e PASV_MIN_PORT=21100 -e PASV_MAX_PORT=21110 \
+	--name vsftpd --restart=always fauria/vsftpd
+
+vsftpd-cleanup:
+	docker rm -f vsftpd | true
+
 .PHONY: default dist test deps
