@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/k0kubun/pp"
 	"github.com/pyama86/pftp/test"
 )
 
@@ -112,8 +111,6 @@ func Test_clientHandler_handleUSER(t *testing.T) {
 				context: tt.fields.context,
 			}
 			got := c.handleUSER()
-			pp.Println(got)
-			pp.Println(tt.want)
 			if (got != nil && tt.want == nil) || (tt.want != nil && (got.code != tt.want.code || got.msg != tt.want.msg)) {
 				t.Errorf("clientHandler.handleUSER() = %v, want %v", got, tt.want)
 			}
