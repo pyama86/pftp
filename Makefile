@@ -7,7 +7,8 @@ RESET=\033[0m
 BOLD=\033[1m
 
 default: build
-ci: depsdev test vet lint ## Run test and more...
+#ci: depsdev test vet lint ## Run test and more...
+ci: depsdev test lint ## Run test and more...
 
 deps: ## Install dependencies
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Installing Dependencies$(RESET)"
@@ -19,7 +20,7 @@ depsdev: deps ## Installing dependencies for development
 	go get -u github.com/tcnksm/ghr
 	go get github.com/mitchellh/gox
 
-test: ## Run test
+test: vsftpd ## Run test
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Testing$(RESET)"
 	go test -v $(TEST) -timeout=30s -parallel=4
 	go test -race $(TEST)
@@ -30,7 +31,7 @@ vet: ## Exec go vet
 
 lint: ## Exec golint
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Linting$(RESET)"
-	golint -set_exit_status $(TEST)
+	golint -min_confidence 1.1 -set_exit_status $(TEST)
 
 server: ## Run server with gin
 	go run main.go
@@ -48,5 +49,16 @@ dist: build ## Upload to Github releases
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(INFO_COLOR)%-30s$(RESET) %s\n", $$1, $$2}'
+
+vsftpd: vsftpd-cleanup
+	docker pull fauria/vsftpd &> /dev/null
+	docker run -d -v "`pwd`/test/data":/home/vsftpd \
+	-p 20:20 -p 21:21 -p 21100-21110:21100-21110 \
+	-e FTP_USER=pftp -e FTP_PASS=pftp \
+	-e PASV_ADDRESS=127.0.0.1 -e PASV_MIN_PORT=21100 -e PASV_MAX_PORT=21110 \
+	--name vsftpd --restart=always fauria/vsftpd
+
+vsftpd-cleanup:
+	docker rm -f vsftpd | true
 
 .PHONY: default dist test deps

@@ -49,7 +49,7 @@ type clientHandler struct {
 	context       *Context
 }
 
-func (ftp *FtpServer) newClientHandler(connection net.Conn, c *config, m middleware) *clientHandler {
+func newClientHandler(connection net.Conn, c *config, m middleware) *clientHandler {
 	p := &clientHandler{
 		conn:       connection,
 		config:     c,
@@ -84,7 +84,7 @@ func (c *clientHandler) HandleCommands() {
 	go func() {
 		for {
 			if c.controleProxy != nil {
-				if err := c.controleProxy.Start(false); err != nil {
+				if err := c.controleProxy.DownloadProxy(); err != nil {
 					logrus.Errorf("Response Proxy error: %s", err)
 					break
 				}
@@ -94,7 +94,7 @@ func (c *clientHandler) HandleCommands() {
 
 	for {
 		if c.config.IdleTimeout > 0 {
-			c.conn.SetDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(c.config.IdleTimeout))))
+			c.conn.SetDeadline(time.Now().Add(time.Duration(c.config.IdleTimeout) * time.Second))
 		}
 
 		line, err := c.reader.ReadString('\n')
@@ -105,7 +105,13 @@ func (c *clientHandler) HandleCommands() {
 				if err.Timeout() {
 					c.conn.SetDeadline(time.Now().Add(time.Minute))
 					logrus.Info("IDLE timeout")
-					c.writeMessage(421, fmt.Sprintf("command timeout (%d seconds): closing control connection", c.config.IdleTimeout))
+					r := result{
+						code: 421,
+						msg:  fmt.Sprintf("command timeout (%d seconds): closing control connection", c.config.IdleTimeout),
+						err:  err,
+					}
+					r.Response(c)
+
 					if err := c.writer.Flush(); err != nil {
 						logrus.Error("Network flush error")
 					}
@@ -124,7 +130,10 @@ func (c *clientHandler) HandleCommands() {
 			}
 			return
 		}
-		c.handleCommand(line)
+		commandResponse := c.handleCommand(line)
+		if commandResponse != nil {
+			commandResponse.Response(c)
+		}
 	}
 }
 
@@ -140,18 +149,24 @@ func (c *clientHandler) writeMessage(code int, message string) {
 	c.writeLine(line)
 }
 
-func (c *clientHandler) handleCommand(line string) {
+func (c *clientHandler) handleCommand(line string) (r *result) {
 	c.parseLine(line)
 	cmd := handlers[c.command]
 	defer func() {
 		if r := recover(); r != nil {
-			c.writeMessage(500, fmt.Sprintf("Internal error: %s", r))
+			r = &result{
+				code: 500,
+				msg:  fmt.Sprintf("Internal error: %s", r),
+			}
 		}
 	}()
 
 	if c.middleware[c.command] != nil {
 		if err := c.middleware[c.command](c.context, c.param); err != nil {
-			c.writeMessage(500, fmt.Sprintf("Internal error: %s", err.Error))
+			return &result{
+				code: 500,
+				msg:  fmt.Sprintf("Internal error: %s", err),
+			}
 		}
 	}
 
@@ -161,15 +176,17 @@ func (c *clientHandler) handleCommand(line string) {
 				c.controleProxy.Suspend()
 			}
 		}
-
 		res := cmd.f(c)
 		if res != nil {
-			res.Response(c)
+			return res
 		}
 	} else {
 		if c.controleProxy != nil {
 			if err := c.controleProxy.SendToOrigin(line); err != nil {
-				c.writeMessage(500, fmt.Sprintf("Internal error: %s", err.Error()))
+				return &result{
+					code: 500,
+					msg:  fmt.Sprintf("Internal error: %s", err),
+				}
 			}
 		}
 	}
@@ -177,6 +194,7 @@ func (c *clientHandler) handleCommand(line string) {
 	if c.controleProxy != nil {
 		c.controleProxy.Unsuspend()
 	}
+	return nil
 }
 
 func (c *clientHandler) parseLine(line string) {

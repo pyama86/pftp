@@ -9,7 +9,7 @@ import (
 )
 
 func (c *clientHandler) handlePORT() *result {
-	raddr, err := parseRemoteAddr(c.param)
+	raddr, err := parseremoteAddr(c.param)
 
 	if err != nil {
 		return &result{
@@ -103,7 +103,7 @@ func (a *activeTransferHandler) Close() error {
 	return nil
 }
 
-func parseRemoteAddr(param string) (*net.TCPAddr, error) {
+func parseremoteAddr(param string) (*net.TCPAddr, error) {
 	params := strings.Split(param, ",")
 	if len(params) != 6 {
 		return nil, errors.New("bad number of args")
