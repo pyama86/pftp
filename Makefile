@@ -22,7 +22,7 @@ depsdev: deps ## Installing dependencies for development
 
 test: vsftpd ## Run test
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Testing$(RESET)"
-	go test -v $(TEST) -timeout=30s -parallel=1
+	go test -v $(TEST) -timeout=30s -parallel=4
 	go test -race $(TEST)
 
 vet: ## Exec go vet

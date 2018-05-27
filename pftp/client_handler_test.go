@@ -9,10 +9,9 @@ import (
 )
 
 func Test_clientHandler_HandleCommands(t *testing.T) {
-	var conn net.Conn
 	var server net.Listener
 	serverready := make(chan struct{})
-	clientready := make(chan struct{})
+	conn := make(chan net.Conn)
 	done := make(chan struct{})
 
 	go func() {
@@ -29,8 +28,7 @@ func Test_clientHandler_HandleCommands(t *testing.T) {
 				break
 			}
 
-			conn = c
-			clientready <- struct{}{}
+			conn <- c
 		}
 		done <- struct{}{}
 	}()
@@ -55,6 +53,7 @@ func Test_clientHandler_HandleCommands(t *testing.T) {
 		},
 	}
 	<-serverready
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c, err := net.Dial("tcp", server.Addr().String())
@@ -62,9 +61,9 @@ func Test_clientHandler_HandleCommands(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer c.Close()
-			<-clientready
+
 			clientHandler := newClientHandler(
-				conn,
+				<-conn,
 				tt.fields.config,
 				nil,
 			)
@@ -80,11 +79,10 @@ func Test_clientHandler_HandleCommands(t *testing.T) {
 }
 
 func Test_clientHandler_handleCommand(t *testing.T) {
-	var conn net.Conn
 	var server net.Listener
+	conn := make(chan net.Conn)
 	done := make(chan struct{})
 	serverready := make(chan struct{})
-	clientready := make(chan struct{})
 
 	go func() {
 		server = test.LaunchTestServer(t)
@@ -100,8 +98,7 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 				break
 			}
 
-			conn = c
-			clientready <- struct{}{}
+			conn <- c
 		}
 		done <- struct{}{}
 	}()
@@ -113,6 +110,7 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 	type args struct {
 		line string
 	}
+
 	tests := []struct {
 		name   string
 		fields fields
@@ -148,6 +146,7 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 			},
 		},
 	}
+
 	<-serverready
 
 	for _, tt := range tests {
@@ -157,10 +156,9 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer c.Close()
-			<-clientready
 
 			clientHandler := newClientHandler(
-				conn,
+				<-conn,
 				tt.fields.config,
 				nil,
 			)
@@ -171,6 +169,7 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 			}
 		})
 	}
+
 	server.Close()
 	<-done
 }
