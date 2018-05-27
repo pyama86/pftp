@@ -12,7 +12,7 @@ type portRange struct {
 }
 type config struct {
 	ListenAddr               string
-	remoteAddr               string
+	RemoteAddr               string
 	IdleTimeout              int
 	ProxyTimeout             int
 	DataPortRange            *portRange  `toml:"port_range"`

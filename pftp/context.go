@@ -6,6 +6,6 @@ type Context struct {
 
 func newContext(c *config) *Context {
 	return &Context{
-		RemoteAddr: c.remoteAddr,
+		RemoteAddr: c.RemoteAddr,
 	}
 }
