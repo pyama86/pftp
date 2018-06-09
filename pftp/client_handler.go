@@ -2,8 +2,8 @@ package pftp
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
-	"io"
 	"net"
 	"strings"
 	"time"
@@ -69,7 +69,8 @@ func (c *clientHandler) WelcomeUser() *result {
 	}
 }
 
-func (c *clientHandler) HandleCommands() {
+func (c *clientHandler) HandleCommands() error {
+	var proxyError error
 	defer func() {
 		if c.controleProxy != nil {
 			c.controleProxy.Close()
@@ -80,12 +81,12 @@ func (c *clientHandler) HandleCommands() {
 	if res != nil {
 		res.Response(c)
 	}
-
 	go func() {
 		for {
 			if c.controleProxy != nil {
 				if err := c.controleProxy.DownloadProxy(); err != nil {
 					logrus.Errorf("Response Proxy error: %s", err)
+					proxyError = err
 					break
 				}
 			}
@@ -93,6 +94,10 @@ func (c *clientHandler) HandleCommands() {
 	}()
 
 	for {
+		if proxyError != nil {
+			return proxyError
+		}
+
 		if c.config.IdleTimeout > 0 {
 			c.conn.SetDeadline(time.Now().Add(time.Duration(c.config.IdleTimeout) * time.Second))
 		}
@@ -118,17 +123,12 @@ func (c *clientHandler) HandleCommands() {
 					if err := c.conn.Close(); err != nil {
 						logrus.Error("Network close error")
 					}
-					break
+					return errors.New("idle timeout")
 				}
-				logrus.Error("Network error ftp.net_error")
+				return err
 			default:
-				if err == io.EOF {
-					logrus.Debug("TCP disconnect")
-				} else {
-					logrus.Error("Read error")
-				}
+				return err
 			}
-			return
 		}
 		commandResponse := c.handleCommand(line)
 		if commandResponse != nil {

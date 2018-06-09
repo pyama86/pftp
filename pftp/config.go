@@ -15,6 +15,7 @@ type config struct {
 	RemoteAddr               string
 	IdleTimeout              int
 	ProxyTimeout             int
+	DataConnectionTimeout    int
 	DataPortRange            *portRange  `toml:"port_range"`
 	MaxConnections           uint32      `toml:"max_connections"`
 	tls                      *tlsPair    `toml:"tls"`
