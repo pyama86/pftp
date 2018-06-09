@@ -20,7 +20,7 @@ depsdev: deps ## Installing dependencies for development
 	go get -u github.com/tcnksm/ghr
 	go get github.com/mitchellh/gox
 
-test: vsftpd ## Run test
+test: ## Run test
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Testing$(RESET)"
 	go test -v $(TEST) -timeout=30s -parallel=4
 	go test -race $(TEST)
