@@ -71,9 +71,12 @@ func (c *clientHandler) WelcomeUser() *result {
 
 func (c *clientHandler) HandleCommands() error {
 	var proxyError error
+	done := make(chan struct{})
+
 	defer func() {
 		if c.controleProxy != nil {
 			c.controleProxy.Close()
+			<-done
 		}
 	}()
 
@@ -91,6 +94,7 @@ func (c *clientHandler) HandleCommands() error {
 				}
 			}
 		}
+		done <- struct{}{}
 	}()
 
 	for {
