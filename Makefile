@@ -8,7 +8,7 @@ BOLD=\033[1m
 
 default: build
 #ci: depsdev test vet lint ## Run test and more...
-ci: depsdev test lint ## Run test and more...
+ci: depsdev vsftpd test lint ## Run test and more...
 
 deps: ## Install dependencies
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Installing Dependencies$(RESET)"
@@ -20,7 +20,7 @@ depsdev: deps ## Installing dependencies for development
 	go get -u github.com/tcnksm/ghr
 	go get github.com/mitchellh/gox
 
-test: vsftpd ## Run test
+test: ## Run test
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Testing$(RESET)"
 	go test -v $(TEST) -timeout=30s -parallel=4
 	go test -race $(TEST)

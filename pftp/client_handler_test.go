@@ -4,6 +4,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pyama86/pftp/test"
 )
@@ -41,15 +42,19 @@ func Test_clientHandler_HandleCommands(t *testing.T) {
 		name    string
 		fields  fields
 		command string
+		hook    func()
+		wantErr bool
 	}{
 		{
-			name: "user ok",
+			name: "idle_timeout",
 			fields: fields{
 				config: &config{
-					IdleTimeout: 3,
+					IdleTimeout: 1,
+					RemoteAddr:  "127.0.0.1:21",
 				},
 			},
-			command: "user pftp",
+			hook:    func() { time.Sleep(2 * time.Second) },
+			wantErr: true,
 		},
 	}
 	<-serverready
@@ -61,16 +66,21 @@ func Test_clientHandler_HandleCommands(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer c.Close()
-
 			clientHandler := newClientHandler(
 				<-conn,
 				tt.fields.config,
 				nil,
 			)
 
-			c.Write([]byte(tt.command))
+			if tt.hook != nil {
+				tt.hook()
+			}
 
-			clientHandler.HandleCommands()
+			err = clientHandler.HandleCommands()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("clientHandler.HandleCommands() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
 		})
 	}
 	server.Close()

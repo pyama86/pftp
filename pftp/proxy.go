@@ -63,6 +63,10 @@ func (s *ProxyServer) ReadFromOrigin() (string, error) {
 }
 
 func (s *ProxyServer) SendToOrigin(line string) error {
+	if s.timeout > 0 {
+		s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
+	}
+
 	logrus.Debug("send to origin:", line)
 	if _, err := s.origin.Write([]byte(line)); err != nil {
 		return err
@@ -153,6 +157,11 @@ func (s *ProxyServer) start(from, to net.Conn) error {
 			}
 			break
 		} else {
+
+			if s.timeout > 0 {
+				s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
+			}
+
 			read <- buff[:n]
 		}
 	}

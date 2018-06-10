@@ -12,7 +12,7 @@ import (
 )
 
 type transferHandler interface {
-	Open() (*ProxyServer, error)
+	Open(int) (*ProxyServer, error)
 	Close() error
 }
 
@@ -144,7 +144,7 @@ func (c *clientHandler) handlePASV() *result {
 	return r
 }
 
-func (p *passiveTransferHandler) Open() (*ProxyServer, error) {
+func (p *passiveTransferHandler) Open(timeout int) (*ProxyServer, error) {
 	if p.proxyServer == nil {
 		p.tcpListener.SetDeadline(time.Now().Add(time.Minute))
 		var err error
@@ -153,7 +153,7 @@ func (p *passiveTransferHandler) Open() (*ProxyServer, error) {
 			return nil, err
 		}
 
-		proxy, err := NewProxyServer(60, connection, p.originAddr+":"+strconv.Itoa(p.originTransferPort))
+		proxy, err := NewProxyServer(timeout, connection, p.originAddr+":"+strconv.Itoa(p.originTransferPort))
 
 		if err != nil {
 			return nil, err

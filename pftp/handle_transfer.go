@@ -2,6 +2,7 @@ package pftp
 
 import (
 	"errors"
+	"time"
 )
 
 func (c *clientHandler) TransferOpen() (*ProxyServer, error) {
@@ -9,7 +10,7 @@ func (c *clientHandler) TransferOpen() (*ProxyServer, error) {
 		return nil, errors.New("no passive connection declared")
 	}
 
-	conn, err := c.transfer.Open()
+	conn, err := c.transfer.Open(c.config.ProxyTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -91,6 +92,10 @@ func (c *clientHandler) transferFile(isUpload bool) *result {
 		msg:  "Using transfer connection",
 	}
 	r.Response(c)
+
+	if c.config.DataConnectionTimeout > 0 {
+		c.conn.SetDeadline(time.Now().Add(time.Duration(c.config.DataConnectionTimeout) * time.Second))
+	}
 
 	if proxy, err = c.TransferOpen(); err == nil {
 		defer c.TransferClose()

@@ -75,8 +75,7 @@ type activeTransferHandler struct {
 	proxyServer *ProxyServer
 }
 
-func (a *activeTransferHandler) Open() (*ProxyServer, error) {
-
+func (a *activeTransferHandler) Open(timeout int) (*ProxyServer, error) {
 	conn, err := a.listener.Accept()
 	if err != nil {
 		return nil, err
@@ -84,7 +83,7 @@ func (a *activeTransferHandler) Open() (*ProxyServer, error) {
 
 	if a.proxyServer == nil {
 		var err error
-		proxy, err := NewProxyServer(60, conn, a.clientAddr.String())
+		proxy, err := NewProxyServer(timeout, conn, a.clientAddr.String())
 
 		if err != nil {
 			return nil, err
