@@ -10,7 +10,7 @@ func (c *clientHandler) TransferOpen() (*ProxyServer, error) {
 		return nil, errors.New("no passive connection declared")
 	}
 
-	conn, err := c.transfer.Open()
+	conn, err := c.transfer.Open(c.config.ProxyTimeout)
 	if err != nil {
 		return nil, err
 	}
