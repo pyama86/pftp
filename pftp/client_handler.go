@@ -92,6 +92,8 @@ func (c *clientHandler) HandleCommands() error {
 					proxyError = err
 					break
 				}
+			} else {
+				break
 			}
 		}
 		done <- struct{}{}
