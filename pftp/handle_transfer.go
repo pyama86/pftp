@@ -91,7 +91,14 @@ func (c *clientHandler) transferFile(isUpload bool) *result {
 		code: 150,
 		msg:  "Using transfer connection",
 	}
-	r.Response(c)
+
+	if err := r.Response(c); err != nil {
+		return &result{
+			code: 550,
+			msg:  "Could not transfer file: " + err.Error(),
+			err:  err,
+		}
+	}
 
 	if c.config.DataConnectionTimeout > 0 {
 		c.conn.SetDeadline(time.Now().Add(time.Duration(c.config.DataConnectionTimeout) * time.Second))

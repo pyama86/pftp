@@ -82,7 +82,9 @@ func (c *clientHandler) HandleCommands() error {
 
 	res := c.WelcomeUser()
 	if res != nil {
-		res.Response(c)
+		if err := res.Response(c); err != nil {
+			return err
+		}
 	}
 	go func() {
 		for {
@@ -121,7 +123,9 @@ func (c *clientHandler) HandleCommands() error {
 						msg:  fmt.Sprintf("command timeout (%d seconds): closing control connection", c.config.IdleTimeout),
 						err:  err,
 					}
-					r.Response(c)
+					if err := r.Response(c); err != nil {
+						return err
+					}
 
 					if err := c.writer.Flush(); err != nil {
 						logrus.Error("Network flush error")
@@ -138,21 +142,30 @@ func (c *clientHandler) HandleCommands() error {
 		}
 		commandResponse := c.handleCommand(line)
 		if commandResponse != nil {
-			commandResponse.Response(c)
+			if err := commandResponse.Response(c); err != nil {
+				return err
+			}
 		}
 	}
 }
 
-func (c *clientHandler) writeLine(line string) {
-	c.writer.Write([]byte(line))
+func (c *clientHandler) writeLine(line string) error {
+	if _, err := c.writer.Write([]byte(line)); err != nil {
+		return err
+	}
 	logrus.Debug("send to client:", line)
-	c.writer.Write([]byte("\r\n"))
-	c.writer.Flush()
+	if _, err := c.writer.Write([]byte("\r\n")); err != nil {
+		return err
+	}
+	if err := c.writer.Flush(); err != nil {
+		return err
+	}
+	return nil
 }
 
-func (c *clientHandler) writeMessage(code int, message string) {
+func (c *clientHandler) writeMessage(code int, message string) error {
 	line := fmt.Sprintf("%d %s", code, message)
-	c.writeLine(line)
+	return c.writeLine(line)
 }
 
 func (c *clientHandler) handleCommand(line string) (r *result) {
