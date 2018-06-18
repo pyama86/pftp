@@ -8,12 +8,13 @@ type result struct {
 	err  error
 }
 
-func (r *result) Response(handler *clientHandler) {
+func (r *result) Response(handler *clientHandler) error {
 	if r.err != nil {
 		logrus.Errorf("command error response: %s", r.err)
 	}
 
 	if r.code != 0 {
-		handler.writeMessage(r.code, r.msg)
+		return handler.writeMessage(r.code, r.msg)
 	}
+	return nil
 }
