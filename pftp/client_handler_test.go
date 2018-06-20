@@ -56,9 +56,20 @@ func Test_clientHandler_HandleCommands(t *testing.T) {
 			hook:    func() { time.Sleep(2 * time.Second) },
 			wantErr: true,
 		},
+		{
+			name: "max_connection",
+			fields: fields{
+				config: &config{
+					IdleTimeout:    1,
+					MaxConnections: 0,
+					RemoteAddr:     "127.0.0.1:21",
+				},
+			},
+			wantErr: true,
+		},
 	}
 	<-serverready
-
+	var cn int32
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c, err := net.Dial("tcp", server.Addr().String())
@@ -70,6 +81,7 @@ func Test_clientHandler_HandleCommands(t *testing.T) {
 				<-conn,
 				tt.fields.config,
 				nil,
+				&cn,
 			)
 
 			if tt.hook != nil {
@@ -159,6 +171,7 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 
 	<-serverready
 
+	var cn int32
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c, err := net.Dial("tcp", server.Addr().String())
@@ -171,6 +184,7 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 				<-conn,
 				tt.fields.config,
 				nil,
+				&cn,
 			)
 
 			got := clientHandler.handleCommand(tt.args.line)
