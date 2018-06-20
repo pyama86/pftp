@@ -17,7 +17,7 @@ type config struct {
 	ProxyTimeout             int
 	DataConnectionTimeout    int
 	DataPortRange            *portRange  `toml:"port_range"`
-	MaxConnections           uint32      `toml:"max_connections"`
+	MaxConnections           int32       `toml:"max_connections"`
 	tls                      *tlsPair    `toml:"tls"`
 	TLSConfig                *tls.Config `toml:"-"`
 	UseUnknownActiveDataPort bool        `toml:"use_unknown_active_dataport"`

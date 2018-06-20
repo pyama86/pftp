@@ -12,7 +12,7 @@ type middleware map[string]middlewareFunc
 
 type FtpServer struct {
 	listener      net.Listener
-	ClientCounter uint32
+	clientCounter uint32
 	config        *config
 	middleware    middleware
 }
@@ -46,15 +46,19 @@ func (server *FtpServer) Listen() (err error) {
 }
 
 func (server *FtpServer) Serve() error {
+	var currentConnection int32
+	currentConnection = 0
 	for {
-		connection, err := server.listener.Accept()
+		conn, err := server.listener.Accept()
 		if err != nil {
 			if server.listener != nil {
 				return err
 			}
 		}
-
-		server.clientArrival(connection)
+		server.clientCounter++
+		c := newClientHandler(conn, server.config, server.middleware, &currentConnection)
+		logrus.Info("FTP Client connected ", "clientIp ", conn.RemoteAddr())
+		go c.HandleCommands()
 	}
 	return nil
 }
@@ -73,12 +77,4 @@ func (server *FtpServer) Stop() {
 	if server.listener != nil {
 		server.listener.Close()
 	}
-}
-
-func (server *FtpServer) clientArrival(conn net.Conn) error {
-	c := newClientHandler(conn, server.config, server.middleware)
-	logrus.Info("FTP Client connected ", "clientIp ", conn.RemoteAddr())
-	go c.HandleCommands()
-
-	return nil
 }

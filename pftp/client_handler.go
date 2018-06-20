@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -35,41 +36,55 @@ func init() {
 }
 
 type clientHandler struct {
-	conn          net.Conn
-	config        *config
-	middleware    middleware
-	writer        *bufio.Writer
-	reader        *bufio.Reader
-	line          string
-	command       string
-	param         string
-	transfer      transferHandler
-	transferTLS   bool
-	controleProxy *ProxyServer
-	context       *Context
+	conn              net.Conn
+	config            *config
+	middleware        middleware
+	writer            *bufio.Writer
+	reader            *bufio.Reader
+	line              string
+	command           string
+	param             string
+	transfer          transferHandler
+	transferTLS       bool
+	controleProxy     *ProxyServer
+	context           *Context
+	currentConnection *int32
 }
 
-func newClientHandler(connection net.Conn, c *config, m middleware) *clientHandler {
+func newClientHandler(connection net.Conn, c *config, m middleware, currentConnection *int32) *clientHandler {
 	p := &clientHandler{
-		conn:       connection,
-		config:     c,
-		middleware: m,
-		writer:     bufio.NewWriter(connection),
-		reader:     bufio.NewReader(connection),
-		context:    newContext(c),
+		conn:              connection,
+		config:            c,
+		middleware:        m,
+		writer:            bufio.NewWriter(connection),
+		reader:            bufio.NewReader(connection),
+		context:           newContext(c),
+		currentConnection: currentConnection,
 	}
 
 	return p
 }
 
 func (c *clientHandler) WelcomeUser() *result {
+	current := atomic.AddInt32(c.currentConnection, 1)
+	if current > c.config.MaxConnections {
+		return &result{
+			code: 500,
+			msg:  "Cannot accept any additional client",
+			err:  fmt.Errorf("too many clients: %d > %d", current, c.config.MaxConnections),
+		}
+	}
 	return &result{
 		code: 220,
 		msg:  "Welcome on ftpserver",
 	}
 }
 
+func (c *clientHandler) end() {
+	atomic.AddInt32(c.currentConnection, -1)
+}
 func (c *clientHandler) HandleCommands() error {
+	defer c.end()
 	var proxyError error
 	done := make(chan struct{})
 
