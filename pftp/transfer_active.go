@@ -35,6 +35,7 @@ func (c *clientHandler) handlePORT() *result {
 	}
 
 	c.transfer = &activeTransferHandler{
+		id:         c.id,
 		listener:   tcpListener,
 		clientAddr: raddr,
 	}
@@ -70,6 +71,7 @@ func (c *clientHandler) handlePORT() *result {
 }
 
 type activeTransferHandler struct {
+	id          int
 	listener    net.Listener
 	clientAddr  *net.TCPAddr
 	proxyServer *ProxyServer
@@ -83,7 +85,7 @@ func (a *activeTransferHandler) Open(timeout int) (*ProxyServer, error) {
 
 	if a.proxyServer == nil {
 		var err error
-		proxy, err := NewProxyServer(timeout, conn, a.clientAddr.String())
+		proxy, err := NewProxyServer(timeout, conn, a.clientAddr.String(), a.id)
 
 		if err != nil {
 			return nil, err

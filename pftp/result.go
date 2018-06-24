@@ -10,7 +10,7 @@ type result struct {
 
 func (r *result) Response(handler *clientHandler) error {
 	if r.err != nil {
-		logrus.Errorf("command error response: %s", r.err)
+		logrus.Errorf("[%d]command error response: %s", handler.id, r.err)
 	}
 
 	if r.code != 0 {

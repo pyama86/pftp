@@ -7,7 +7,7 @@ import (
 )
 
 func (c *clientHandler) handleUSER() *result {
-	p, err := NewProxyServer(c.config.ProxyTimeout, c.conn, c.context.RemoteAddr)
+	p, err := NewProxyServer(c.config.ProxyTimeout, c.conn, c.context.RemoteAddr, c.id)
 	if err != nil {
 		return &result{
 			code: 530,

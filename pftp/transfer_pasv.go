@@ -17,6 +17,7 @@ type transferHandler interface {
 }
 
 type passiveTransferHandler struct {
+	id                 int
 	listener           net.Listener
 	tcpListener        *net.TCPListener
 	Port               int
@@ -116,6 +117,7 @@ func (c *clientHandler) handlePASV() *result {
 	}
 
 	p := &passiveTransferHandler{
+		id:                 c.id,
 		tcpListener:        tcpListener,
 		listener:           listener,
 		Port:               tcpListener.Addr().(*net.TCPAddr).Port,
@@ -153,7 +155,7 @@ func (p *passiveTransferHandler) Open(timeout int) (*ProxyServer, error) {
 			return nil, err
 		}
 
-		proxy, err := NewProxyServer(timeout, connection, p.originAddr+":"+strconv.Itoa(p.originTransferPort))
+		proxy, err := NewProxyServer(timeout, connection, p.originAddr+":"+strconv.Itoa(p.originTransferPort), p.id)
 
 		if err != nil {
 			return nil, err

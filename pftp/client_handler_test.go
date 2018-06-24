@@ -81,6 +81,7 @@ func Test_clientHandler_HandleCommands(t *testing.T) {
 				<-conn,
 				tt.fields.config,
 				nil,
+				1,
 				&cn,
 			)
 
@@ -184,6 +185,7 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 				<-conn,
 				tt.fields.config,
 				nil,
+				1,
 				&cn,
 			)
 
