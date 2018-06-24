@@ -15,6 +15,7 @@ const (
 )
 
 type ProxyServer struct {
+	id      int
 	timeout int
 	client  net.Conn
 	origin  net.Conn
@@ -22,13 +23,14 @@ type ProxyServer struct {
 	pipe    chan []byte
 }
 
-func NewProxyServer(timeout int, client net.Conn, originAddr string) (*ProxyServer, error) {
+func NewProxyServer(timeout int, client net.Conn, originAddr string, id int) (*ProxyServer, error) {
 	c, err := net.Dial("tcp", originAddr)
 	if err != nil {
 		return nil, err
 	}
 
 	p := &ProxyServer{
+		id:      id,
 		client:  client,
 		origin:  c,
 		timeout: timeout,
@@ -55,7 +57,7 @@ func (s *ProxyServer) ReadFromOrigin() (string, error) {
 		if response, err := reader.ReadString('\n'); err != nil {
 			return "", err
 		} else {
-			logrus.Debug("read from origin:", response)
+			logrus.Debug("[%d]read from origin:", s.id, response)
 			return response, nil
 		}
 	}
@@ -67,7 +69,7 @@ func (s *ProxyServer) SendToOrigin(line string) error {
 		s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
 	}
 
-	logrus.Debug("send to origin:", line)
+	logrus.Debug("[%d]send to origin:", s.id, line)
 	if _, err := s.origin.Write([]byte(line)); err != nil {
 		return err
 	}
@@ -85,7 +87,7 @@ func (s *ProxyServer) SendAndReadFromOrigin(line string) (string, error) {
 }
 
 func (s *ProxyServer) SendToClient(line string) error {
-	logrus.Debug("send to client:", line)
+	logrus.Debug("[%d]send to client:", s.id, line)
 	if _, err := s.client.Write([]byte(line)); err != nil {
 		return err
 	}
@@ -104,7 +106,7 @@ func (s *ProxyServer) DownloadProxy() error {
 }
 
 func (s *ProxyServer) Suspend() {
-	logrus.Debug("suspend")
+	logrus.Debug("[%d]suspend", s.id)
 	s.doProxy = false
 }
 
@@ -118,7 +120,7 @@ func (s *ProxyServer) Close() {
 }
 
 func (s *ProxyServer) start(from, to net.Conn) error {
-	logrus.Debug("relay start from=", from.LocalAddr(), " to=", from.RemoteAddr())
+	logrus.Debug("[%d]relay start from=%s to=%s", s.id, from.LocalAddr(), from.RemoteAddr())
 	defer to.Close()
 	defer from.Close()
 

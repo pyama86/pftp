@@ -36,6 +36,7 @@ func init() {
 }
 
 type clientHandler struct {
+	id                int
 	conn              net.Conn
 	config            *config
 	middleware        middleware
@@ -51,8 +52,9 @@ type clientHandler struct {
 	currentConnection *int32
 }
 
-func newClientHandler(connection net.Conn, c *config, m middleware, currentConnection *int32) *clientHandler {
+func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32) *clientHandler {
 	p := &clientHandler{
+		id:                id,
 		conn:              connection,
 		config:            c,
 		middleware:        m,
@@ -105,7 +107,7 @@ func (c *clientHandler) HandleCommands() error {
 		for {
 			if c.controleProxy != nil {
 				if err := c.controleProxy.DownloadProxy(); err != nil {
-					logrus.Errorf("Response Proxy error: %s", err)
+					logrus.Errorf("[%d]Response Proxy error: %s", c.id, err)
 					proxyError = err
 					break
 				}
@@ -126,13 +128,13 @@ func (c *clientHandler) HandleCommands() error {
 		}
 
 		line, err := c.reader.ReadString('\n')
-		logrus.Debug("read from client:", line)
+		logrus.Debug("[%d]read from client:", c.id, line)
 		if err != nil {
 			switch err := err.(type) {
 			case net.Error:
 				if err.Timeout() {
 					c.conn.SetDeadline(time.Now().Add(time.Minute))
-					logrus.Info("IDLE timeout")
+					logrus.Info("[%d]IDLE timeout", c.id)
 					r := result{
 						code: 421,
 						msg:  fmt.Sprintf("command timeout (%d seconds): closing control connection", c.config.IdleTimeout),
@@ -143,10 +145,10 @@ func (c *clientHandler) HandleCommands() error {
 					}
 
 					if err := c.writer.Flush(); err != nil {
-						logrus.Error("Network flush error")
+						logrus.Error("[%d]Network flush error", c.id)
 					}
 					if err := c.conn.Close(); err != nil {
-						logrus.Error("Network close error")
+						logrus.Error("[%d]Network close error", c.id)
 					}
 					return errors.New("idle timeout")
 				}
@@ -168,7 +170,7 @@ func (c *clientHandler) writeLine(line string) error {
 	if _, err := c.writer.Write([]byte(line)); err != nil {
 		return err
 	}
-	logrus.Debug("send to client:", line)
+	logrus.Debug("[%d]send to client:", c.id, line)
 	if _, err := c.writer.Write([]byte("\r\n")); err != nil {
 		return err
 	}
