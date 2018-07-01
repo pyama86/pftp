@@ -21,6 +21,8 @@ type ProxyServer struct {
 	origin  net.Conn
 	doProxy bool
 	pipe    chan []byte
+	CloseOk bool
+	Switch  bool
 }
 
 func NewProxyServer(timeout int, client net.Conn, originAddr string, id int) (*ProxyServer, error) {
@@ -37,6 +39,9 @@ func NewProxyServer(timeout int, client net.Conn, originAddr string, id int) (*P
 		doProxy: true,
 		pipe:    make(chan []byte, BUFFER_SIZE),
 	}
+	p.CloseOk = false
+	p.Switch = false
+
 	return p, err
 }
 
@@ -113,6 +118,7 @@ func (s *ProxyServer) Unsuspend() {
 }
 
 func (s *ProxyServer) Close() {
+	s.CloseOk = true
 	s.client.Close()
 	s.origin.Close()
 }
@@ -132,6 +138,7 @@ func (s *ProxyServer) SwitchOrigin(originAddr string) error {
 	old := s.origin
 	s.origin = c
 
+	s.Switch = true
 	old.Close()
 
 	return nil
@@ -175,7 +182,6 @@ func (s *ProxyServer) start(from, to net.Conn) error {
 			}
 			break
 		} else {
-
 			if s.timeout > 0 {
 				s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
 			}

@@ -77,11 +77,9 @@ func (c *clientHandler) HandleCommands() error {
 	defer c.end()
 	done := make(chan struct{})
 	proxyError := make(chan error)
-	closeOk := false
 
 	defer func() {
 		if c.controleProxy != nil {
-			closeOk = true
 			c.controleProxy.Close()
 			<-done
 		}
@@ -102,7 +100,11 @@ func (c *clientHandler) HandleCommands() error {
 	go func() {
 		for {
 			if err := c.controleProxy.DownloadProxy(); err != nil {
-				if !closeOk {
+				if c.controleProxy.CloseOk && c.controleProxy.Switch {
+					c.controleProxy.CloseOk = false
+					c.controleProxy.Switch = false
+					continue
+				} else if !c.controleProxy.CloseOk {
 					proxyError <- err
 				}
 				break
