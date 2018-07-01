@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/jlaffaye/ftp"
+	"github.com/pyama86/pftp/test"
 )
 
 var (
@@ -18,13 +18,24 @@ func TestMain(m *testing.M) {
 	os.Exit(result)
 }
 
-func TestConnectOK(t *testing.T) {
+func TestConnect(t *testing.T) {
 	if !*integration {
 		t.Skip()
 	}
-	client, err := ftp.Connect("localhost:2121")
-	if err != nil {
-		panic(err)
-	}
+	client := test.LocalConnect(2121, t)
 	defer client.Quit()
+}
+
+func TestAuth(t *testing.T) {
+	if !*integration {
+		t.Skip()
+	}
+	client := test.LocalConnect(2121, t)
+	defer client.Quit()
+
+	err := client.Login("pftp", "pftp")
+	if err != nil {
+		t.Errorf("integration.TestAuth() error = %v, wantErr %v", err, nil)
+	}
+
 }

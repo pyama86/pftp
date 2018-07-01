@@ -1,5 +1,5 @@
 max_connections = 10
-idle_timeout = 10
+idle_timeout = 60
 remote_addr = "127.0.0.1:21"
 
 

@@ -152,22 +152,6 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 				line: "user pftp",
 			},
 		},
-		{
-			name: "not connect",
-			fields: fields{
-				config: &config{
-					IdleTimeout: 3,
-					RemoteAddr:  "127.0.0.1:28080",
-				},
-			},
-			args: args{
-				line: "user pftp",
-			},
-			wantR: &result{
-				code: 530,
-				msg:  "I can't deal with you (proxy error)",
-			},
-		},
 	}
 
 	<-serverready

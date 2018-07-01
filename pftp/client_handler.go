@@ -21,18 +21,8 @@ var handlers map[string]*handleFunc
 
 func init() {
 	handlers = make(map[string]*handleFunc)
-	handlers["USER"] = &handleFunc{(*clientHandler).handleUSER, false}
+	handlers["USER"] = &handleFunc{(*clientHandler).handleUSER, true}
 	handlers["AUTH"] = &handleFunc{(*clientHandler).handleAUTH, true}
-	handlers["EPSV"] = &handleFunc{(*clientHandler).handlePASV, true}
-	handlers["PASV"] = &handleFunc{(*clientHandler).handlePASV, true}
-	handlers["PORT"] = &handleFunc{(*clientHandler).handlePORT, true}
-	handlers["MLSD"] = &handleFunc{(*clientHandler).handleLIST, true}
-
-	// transfer files
-	handlers["RETR"] = &handleFunc{(*clientHandler).handleRETR, false}
-	handlers["STOR"] = &handleFunc{(*clientHandler).handleSTOR, false}
-	handlers["APPE"] = &handleFunc{(*clientHandler).handleAPPE, false}
-	handlers["LIST"] = &handleFunc{(*clientHandler).handleLIST, true}
 }
 
 type clientHandler struct {
@@ -45,8 +35,6 @@ type clientHandler struct {
 	line              string
 	command           string
 	param             string
-	transfer          transferHandler
-	transferTLS       bool
 	controleProxy     *ProxyServer
 	context           *Context
 	currentConnection *int32
@@ -87,13 +75,13 @@ func (c *clientHandler) end() {
 }
 func (c *clientHandler) HandleCommands() error {
 	defer c.end()
-	closeOK := false
 	done := make(chan struct{})
 	proxyError := make(chan error)
+	closeOk := false
 
 	defer func() {
 		if c.controleProxy != nil {
-			closeOK = true
+			closeOk = true
 			c.controleProxy.Close()
 			<-done
 		}
@@ -110,13 +98,11 @@ func (c *clientHandler) HandleCommands() error {
 			return err
 		}
 	}
-
-	// クライアントからのレスポンスはSuspendしない限り自動で返却される
+	// サーバからのレスポンスはSuspendしない限り自動で返却される
 	go func() {
 		for {
 			if err := c.controleProxy.DownloadProxy(); err != nil {
-				if !closeOK {
-					logrus.Errorf("[%d]Response Proxy error: %s", c.id, err)
+				if !closeOk {
 					proxyError <- err
 				}
 				break
@@ -219,6 +205,7 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 	if cmd != nil {
 		if cmd.suspend {
 			c.controleProxy.Suspend()
+			defer c.controleProxy.Unsuspend()
 		}
 		res := cmd.f(c)
 		if res != nil {
@@ -233,21 +220,23 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 		}
 	}
 
-	c.controleProxy.Unsuspend()
 	return nil
 }
 
 func (c *clientHandler) connectControlProxy() error {
-	p, err := NewProxyServer(c.config.ProxyTimeout, c.conn, c.context.RemoteAddr, c.id)
-	if err != nil {
-		return err
-	}
-
 	if c.controleProxy != nil {
-		c.controleProxy.Close()
+		err := c.controleProxy.SwitchOrigin(c.context.RemoteAddr)
+		if err != nil {
+			return err
+		}
+	} else {
+		p, err := NewProxyServer(c.config.ProxyTimeout, c.conn, c.context.RemoteAddr, c.id)
+		if err != nil {
+			return err
+		}
+		c.controleProxy = p
 	}
 
-	c.controleProxy = p
 	return nil
 }
 
