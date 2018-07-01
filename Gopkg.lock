@@ -8,6 +8,24 @@
   version = "v0.3.0"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/Gurpartap/logrus-stack"
+  packages = ["."]
+  revision = "89c00d8a28f43c567d92eb81a2945301a6a9fbb9"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/facebookgo/stack"
+  packages = ["."]
+  revision = "751773369052141c013c6e827a71e8f35c07879c"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/jlaffaye/ftp"
+  packages = ["."]
+  revision = "2403248fa8cc9f7909862627aa7337f13f8e0bf1"
+
+[[projects]]
   name = "github.com/sirupsen/logrus"
   packages = ["."]
   revision = "c155da19408a8799da419ed3eeb0cb5db0ad5dbc"
@@ -17,7 +35,7 @@
   branch = "master"
   name = "golang.org/x/crypto"
   packages = ["ssh/terminal"]
-  revision = "88942b9c40a4c9d203b82b3731787b672d6e809b"
+  revision = "a49355c7e3f8fe157a85be2f77e6e269a0f89602"
 
 [[projects]]
   branch = "master"
@@ -26,11 +44,11 @@
     "unix",
     "windows"
   ]
-  revision = "91ee8cde435411ca3f1cd365e8f20131aed4d0a1"
+  revision = "7138fd3d9dc8335c567ca206f4333fb75eb05d56"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "c2920c8d75d3d1221555c9dcdfa779c1b08d6d25b77007397469062b49bbceeb"
+  inputs-digest = "bcb12555ef9fd39395b72eab2e430257296ccec01d51454346a41da928d2262a"
   solver-name = "gps-cdcl"
   solver-version = 1
