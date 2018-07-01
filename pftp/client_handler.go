@@ -87,15 +87,22 @@ func (c *clientHandler) end() {
 }
 func (c *clientHandler) HandleCommands() error {
 	defer c.end()
-	var proxyError error
+	closeOK := false
 	done := make(chan struct{})
+	proxyError := make(chan error)
 
 	defer func() {
 		if c.controleProxy != nil {
+			closeOK = true
 			c.controleProxy.Close()
 			<-done
 		}
 	}()
+
+	err := c.connectControlProxy()
+	if err != nil {
+		return err
+	}
 
 	res := c.WelcomeUser()
 	if res != nil {
@@ -103,15 +110,15 @@ func (c *clientHandler) HandleCommands() error {
 			return err
 		}
 	}
+
+	// クライアントからのレスポンスはSuspendしない限り自動で返却される
 	go func() {
 		for {
-			if c.controleProxy != nil {
-				if err := c.controleProxy.DownloadProxy(); err != nil {
+			if err := c.controleProxy.DownloadProxy(); err != nil {
+				if !closeOK {
 					logrus.Errorf("[%d]Response Proxy error: %s", c.id, err)
-					proxyError = err
-					break
+					proxyError <- err
 				}
-			} else {
 				break
 			}
 		}
@@ -119,48 +126,51 @@ func (c *clientHandler) HandleCommands() error {
 	}()
 
 	for {
-		if proxyError != nil {
-			return proxyError
-		}
-
-		if c.config.IdleTimeout > 0 {
-			c.conn.SetDeadline(time.Now().Add(time.Duration(c.config.IdleTimeout) * time.Second))
-		}
-
-		line, err := c.reader.ReadString('\n')
-		logrus.Debug("[%d]read from client:", c.id, line)
-		if err != nil {
-			switch err := err.(type) {
-			case net.Error:
-				if err.Timeout() {
-					c.conn.SetDeadline(time.Now().Add(time.Minute))
-					logrus.Info("[%d]IDLE timeout", c.id)
-					r := result{
-						code: 421,
-						msg:  fmt.Sprintf("command timeout (%d seconds): closing control connection", c.config.IdleTimeout),
-						err:  err,
-					}
-					if err := r.Response(c); err != nil {
-						return err
-					}
-
-					if err := c.writer.Flush(); err != nil {
-						logrus.Error("[%d]Network flush error", c.id)
-					}
-					if err := c.conn.Close(); err != nil {
-						logrus.Error("[%d]Network close error", c.id)
-					}
-					return errors.New("idle timeout")
-				}
-				return err
-			default:
-				return err
+		select {
+		case e := <-proxyError:
+			return e
+		default:
+			if c.config.IdleTimeout > 0 {
+				c.conn.SetDeadline(time.Now().Add(time.Duration(c.config.IdleTimeout) * time.Second))
 			}
-		}
-		commandResponse := c.handleCommand(line)
-		if commandResponse != nil {
-			if err := commandResponse.Response(c); err != nil {
-				return err
+
+			line, err := c.reader.ReadString('\n')
+
+			logrus.Debugf("[%d]read from client: %s", c.id, line)
+			if err != nil {
+				switch err := err.(type) {
+				case net.Error:
+					if err.Timeout() {
+						c.conn.SetDeadline(time.Now().Add(time.Minute))
+						logrus.Infof("[%d]IDLE timeout", c.id)
+						r := result{
+							code: 421,
+							msg:  fmt.Sprintf("command timeout (%d seconds): closing control connection", c.config.IdleTimeout),
+							err:  err,
+						}
+						if err := r.Response(c); err != nil {
+							return err
+						}
+
+						if err := c.writer.Flush(); err != nil {
+							logrus.Errorf("[%d]Network flush error", c.id)
+						}
+						if err := c.conn.Close(); err != nil {
+							logrus.Errorf("[%d]Network close error", c.id)
+						}
+						return errors.New("idle timeout")
+					}
+					return err
+				default:
+					return err
+				}
+			}
+
+			commandResponse := c.handleCommand(line)
+			if commandResponse != nil {
+				if err := commandResponse.Response(c); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -170,7 +180,7 @@ func (c *clientHandler) writeLine(line string) error {
 	if _, err := c.writer.Write([]byte(line)); err != nil {
 		return err
 	}
-	logrus.Debug("[%d]send to client:", c.id, line)
+	logrus.Debugf("[%d]send to client:%s", c.id, line)
 	if _, err := c.writer.Write([]byte("\r\n")); err != nil {
 		return err
 	}
@@ -187,7 +197,6 @@ func (c *clientHandler) writeMessage(code int, message string) error {
 
 func (c *clientHandler) handleCommand(line string) (r *result) {
 	c.parseLine(line)
-	cmd := handlers[c.command]
 	defer func() {
 		if r := recover(); r != nil {
 			r = &result{
@@ -206,30 +215,39 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 		}
 	}
 
+	cmd := handlers[c.command]
 	if cmd != nil {
-		if c.controleProxy != nil {
-			if cmd.suspend {
-				c.controleProxy.Suspend()
-			}
+		if cmd.suspend {
+			c.controleProxy.Suspend()
 		}
 		res := cmd.f(c)
 		if res != nil {
 			return res
 		}
 	} else {
-		if c.controleProxy != nil {
-			if err := c.controleProxy.SendToOrigin(line); err != nil {
-				return &result{
-					code: 500,
-					msg:  fmt.Sprintf("Internal error: %s", err),
-				}
+		if err := c.controleProxy.SendToOrigin(line); err != nil {
+			return &result{
+				code: 500,
+				msg:  fmt.Sprintf("Internal error: %s", err),
 			}
 		}
 	}
 
-	if c.controleProxy != nil {
-		c.controleProxy.Unsuspend()
+	c.controleProxy.Unsuspend()
+	return nil
+}
+
+func (c *clientHandler) connectControlProxy() error {
+	p, err := NewProxyServer(c.config.ProxyTimeout, c.conn, c.context.RemoteAddr, c.id)
+	if err != nil {
+		return err
 	}
+
+	if c.controleProxy != nil {
+		c.controleProxy.Close()
+	}
+
+	c.controleProxy = p
 	return nil
 }
 

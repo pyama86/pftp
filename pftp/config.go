@@ -11,11 +11,11 @@ type portRange struct {
 	End   int
 }
 type config struct {
-	ListenAddr               string
-	RemoteAddr               string
-	IdleTimeout              int
-	ProxyTimeout             int
-	DataConnectionTimeout    int
+	ListenAddr               string      `toml:"listen_addr"`
+	RemoteAddr               string      `toml:"remote_addr"`
+	IdleTimeout              int         `toml:"idle_timeout"`
+	ProxyTimeout             int         `toml:"proxy_timeout"`
+	DataConnectionTimeout    int         `toml:"data_connection_timeout"`
 	DataPortRange            *portRange  `toml:"port_range"`
 	MaxConnections           int32       `toml:"max_connections"`
 	tls                      *tlsPair    `toml:"tls"`
