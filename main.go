@@ -5,6 +5,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	logrus_stack "github.com/Gurpartap/logrus-stack"
 	"github.com/pyama86/pftp/pftp"
 	"github.com/sirupsen/logrus"
 )
@@ -13,6 +14,8 @@ var ftpServer *pftp.FtpServer
 
 func init() {
 	logrus.SetLevel(logrus.DebugLevel)
+	stackLevels := []logrus.Level{logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel}
+	logrus.AddHook(logrus_stack.NewHook(stackLevels, stackLevels))
 }
 
 func main() {
