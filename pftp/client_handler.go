@@ -100,7 +100,7 @@ func (c *clientHandler) HandleCommands() error {
 	go func() {
 		for {
 			if err := c.controleProxy.DownloadProxy(); err != nil {
-				if c.controleProxy.CloseOk && c.controleProxy.Switch {
+				if c.controleProxy.CloseOk || c.controleProxy.Switch {
 					c.controleProxy.CloseOk = false
 					c.controleProxy.Switch = false
 					continue
