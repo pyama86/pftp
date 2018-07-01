@@ -7,7 +7,7 @@ import (
 )
 
 func (c *clientHandler) handleUSER() *result {
-	p, err := NewProxyServer(c.config.ProxyTimeout, c.conn, c.context.RemoteAddr, c.id)
+	err := c.connectControlProxy()
 	if err != nil {
 		return &result{
 			code: 530,
@@ -16,22 +16,7 @@ func (c *clientHandler) handleUSER() *result {
 		}
 	}
 
-	if c.controleProxy != nil {
-		c.controleProxy.Close()
-	}
-
-	c.controleProxy = p
-
-	// read welcome message
-	if _, err := p.ReadFromOrigin(); err != nil {
-		return &result{
-			code: 530,
-			msg:  "I can't deal with you (proxy error)",
-			err:  err,
-		}
-	}
-
-	if err := p.SendToOrigin(c.line); err != nil {
+	if err := c.controleProxy.SendToOrigin(c.line); err != nil {
 		return &result{
 			code: 530,
 			msg:  "I can't deal with you (proxy error)",

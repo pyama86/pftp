@@ -8,7 +8,7 @@ BOLD=\033[1m
 
 default: build
 #ci: depsdev test vet lint ## Run test and more...
-ci: depsdev vsftpd test lint ## Run test and more...
+ci: depsdev vsftpd test lint integration ## Run test and more...
 
 deps: ## Install dependencies
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Installing Dependencies$(RESET)"
@@ -61,4 +61,9 @@ vsftpd: vsftpd-cleanup
 vsftpd-cleanup:
 	docker rm -f vsftpd | true
 
+integration:
+	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Integration Testing$(RESET)"
+	./misc/server start
+	go test $(VERBOSE) -integration $(TEST) $(TEST_OPTIONS)
+	./misc/server stop
 .PHONY: default dist test deps

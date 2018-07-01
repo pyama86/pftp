@@ -8,8 +8,8 @@ Vagrant.configure("2") do |config|
   yum -y install vsftpd
   sleep 3
   chkconfig vsftpd on | true
-  useradd test | true
-  echo -n 'test:pftp' | chpasswd
+  useradd pftp | true
+  echo -n 'pftp:pftp' | chpasswd
   sed -i 's/userlist_enable=YES/userlist_enable=NO/g' /etc/vsftpd/vsftpd.conf
   sed -i 's/tcp_wrappers=YES/tcp_wrappers=NO/g' /etc/vsftpd/vsftpd.conf
   if ! grep 'log_ftp_protocol=YES' '/etc/vsftpd/vsftpd.conf' >/dev/null; then

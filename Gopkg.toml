@@ -1,6 +1,6 @@
 # Gopkg.toml example
 #
-# Refer to https://github.com/golang/dep/blob/master/docs/Gopkg.toml.md
+# Refer to https://golang.github.io/dep/docs/Gopkg.toml.html
 # for detailed Gopkg.toml documentation.
 #
 # required = ["github.com/user/thing/cmd/thing"]
@@ -26,12 +26,16 @@
 
 
 [[constraint]]
-  name = "github.com/go-kit/kit"
-  version = "0.7.0"
+  name = "github.com/BurntSushi/toml"
+  version = "0.3.0"
 
 [[constraint]]
-  name = "github.com/pyama86/ftpserver"
-  version = "0.5.0"
+  branch = "master"
+  name = "github.com/Gurpartap/logrus-stack"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/jlaffaye/ftp"
 
 [[constraint]]
   name = "github.com/sirupsen/logrus"
