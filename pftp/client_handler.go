@@ -55,21 +55,6 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 	return p
 }
 
-func (c *clientHandler) WelcomeUser() *result {
-	current := atomic.AddInt32(c.currentConnection, 1)
-	if current > c.config.MaxConnections {
-		return &result{
-			code: 500,
-			msg:  "Cannot accept any additional client",
-			err:  fmt.Errorf("too many clients: %d > %d", current, c.config.MaxConnections),
-		}
-	}
-	return &result{
-		code: 220,
-		msg:  "Welcome on ftpserver",
-	}
-}
-
 func (c *clientHandler) end() {
 	atomic.AddInt32(c.currentConnection, -1)
 }
@@ -90,12 +75,6 @@ func (c *clientHandler) HandleCommands() error {
 		return err
 	}
 
-	res := c.WelcomeUser()
-	if res != nil {
-		if err := res.Response(c); err != nil {
-			return err
-		}
-	}
 	// サーバからのレスポンスはSuspendしない限り自動で返却される
 	go func() {
 		for {

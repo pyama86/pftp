@@ -16,15 +16,6 @@ func (c *clientHandler) handleUSER() *result {
 		}
 	}
 
-	// read welcome message
-	if _, err := c.controleProxy.ReadFromOrigin(); err != nil {
-		return &result{
-			code: 530,
-			msg:  "I can't deal with you (proxy error)",
-			err:  err,
-		}
-	}
-
 	if err := c.controleProxy.SendToOrigin(c.line); err != nil {
 		return &result{
 			code: 530,

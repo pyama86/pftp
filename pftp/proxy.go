@@ -138,6 +138,12 @@ func (s *ProxyServer) SwitchOrigin(originAddr string) error {
 	old := s.origin
 	s.origin = c
 
+	reader := bufio.NewReader(c)
+	// read welcome message
+	if _, err := reader.ReadString('\n'); err != nil {
+		return err
+	}
+
 	s.Switch = true
 	old.Close()
 
