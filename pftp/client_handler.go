@@ -149,13 +149,13 @@ func (c *clientHandler) writeLine(line string) error {
 	if _, err := c.writer.Write([]byte(line)); err != nil {
 		return err
 	}
-	logrus.Debugf("[%d]send to client:%s", c.id, line)
 	if _, err := c.writer.Write([]byte("\r\n")); err != nil {
 		return err
 	}
 	if err := c.writer.Flush(); err != nil {
 		return err
 	}
+	logrus.Debugf("[%d]send to client:%s", c.id, line)
 	return nil
 }
 
