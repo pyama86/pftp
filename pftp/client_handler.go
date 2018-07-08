@@ -56,6 +56,7 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 }
 
 func (c *clientHandler) end() {
+	c.conn.Close()
 	atomic.AddInt32(c.currentConnection, -1)
 }
 func (c *clientHandler) HandleCommands() error {
@@ -124,6 +125,7 @@ func (c *clientHandler) HandleCommands() error {
 						if err := c.writer.Flush(); err != nil {
 							logrus.Errorf("[%d]Network flush error", c.id)
 						}
+
 						if err := c.conn.Close(); err != nil {
 							logrus.Errorf("[%d]Network close error", c.id)
 						}
@@ -213,7 +215,7 @@ func (c *clientHandler) connectControlProxy() error {
 			return err
 		}
 	} else {
-		p, err := NewProxyServer(c.config.ProxyTimeout, c.conn, c.context.RemoteAddr, c.id)
+		p, err := NewProxyServer(c.config.ProxyTimeout, c.reader, c.writer, c.context.RemoteAddr, c.id)
 		if err != nil {
 			return err
 		}

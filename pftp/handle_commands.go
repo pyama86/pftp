@@ -52,8 +52,8 @@ func (c *clientHandler) handleAUTH() *result {
 		}
 
 		c.conn = tlsConn
-		c.reader = bufio.NewReader(c.conn)
-		c.writer = bufio.NewWriter(c.conn)
+		*c.reader = *(bufio.NewReader(c.conn))
+		*c.writer = *(bufio.NewWriter(c.conn))
 		return nil
 	}
 	return &result{

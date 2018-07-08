@@ -15,29 +15,36 @@ const (
 )
 
 type ProxyServer struct {
-	id      int
-	timeout int
-	client  net.Conn
-	origin  net.Conn
-	doProxy bool
-	pipe    chan []byte
-	CloseOk bool
-	Switch  bool
+	id           int
+	timeout      int
+	clientReader *bufio.Reader
+	clientWriter *bufio.Writer
+	originReader *bufio.Reader
+	originWriter *bufio.Writer
+	origin       net.Conn
+	doProxy      bool
+	pipe         chan []byte
+	CloseOk      bool
+	Switch       bool
 }
 
-func NewProxyServer(timeout int, client net.Conn, originAddr string, id int) (*ProxyServer, error) {
+func NewProxyServer(timeout int, clientReader *bufio.Reader, clientWriter *bufio.Writer, originAddr string, id int) (*ProxyServer, error) {
 	c, err := net.Dial("tcp", originAddr)
 	if err != nil {
 		return nil, err
 	}
 
+	logrus.Debugf("[%d]new proxy from=%s to=%s", id, c.LocalAddr(), c.RemoteAddr())
 	p := &ProxyServer{
-		id:      id,
-		client:  client,
-		origin:  c,
-		timeout: timeout,
-		doProxy: true,
-		pipe:    make(chan []byte, BUFFER_SIZE),
+		id:           id,
+		clientReader: clientReader,
+		clientWriter: clientWriter,
+		originWriter: bufio.NewWriter(c),
+		originReader: bufio.NewReader(c),
+		origin:       c,
+		timeout:      timeout,
+		doProxy:      true,
+		pipe:         make(chan []byte, BUFFER_SIZE),
 	}
 	p.CloseOk = false
 	p.Switch = false
@@ -81,30 +88,26 @@ func (s *ProxyServer) SendToOrigin(line string) error {
 	return nil
 }
 
-// オリジンにコマンドを投げてから結果を受け取る
-func (s *ProxyServer) SendAndReadFromOrigin(line string) (string, error) {
-	err := s.SendToOrigin(line)
-	if err != nil {
-		return "", err
-	}
-	return s.ReadFromOrigin()
-}
-
 func (s *ProxyServer) SendToClient(line string) error {
 	logrus.Debugf("[%d]send to client:%s", s.id, line)
-	if _, err := s.client.Write([]byte(line)); err != nil {
+	if _, err := s.clientWriter.Write([]byte(line)); err != nil {
 		return err
 	}
+
+	if err := s.clientWriter.Flush(); err != nil {
+		return err
+	}
+
 	return nil
 
 }
 
 func (s *ProxyServer) UploadProxy() error {
-	return s.start(s.client, s.origin)
+	return s.start(s.clientReader, s.originWriter)
 }
 
 func (s *ProxyServer) DownloadProxy() error {
-	return s.start(s.origin, s.client)
+	return s.start(s.originReader, s.clientWriter)
 }
 
 func (s *ProxyServer) Suspend() {
@@ -119,7 +122,6 @@ func (s *ProxyServer) Unsuspend() {
 
 func (s *ProxyServer) Close() {
 	s.CloseOk = true
-	s.client.Close()
 	s.origin.Close()
 }
 
@@ -139,10 +141,14 @@ func (s *ProxyServer) SwitchOrigin(originAddr string) error {
 	s.origin = c
 
 	reader := bufio.NewReader(c)
+	writer := bufio.NewWriter(c)
 	// read welcome message
 	if _, err := reader.ReadString('\n'); err != nil {
 		return err
 	}
+
+	*s.originReader = *reader
+	*s.originWriter = *writer
 
 	s.Switch = true
 	old.Close()
@@ -150,8 +156,7 @@ func (s *ProxyServer) SwitchOrigin(originAddr string) error {
 	return nil
 }
 
-func (s *ProxyServer) start(from, to net.Conn) error {
-	logrus.Debugf("[%d]relay start from=%s to=%s", s.id, from.LocalAddr(), from.RemoteAddr())
+func (s *ProxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 
 	buff := make([]byte, BUFFER_SIZE)
 	read := make(chan []byte, BUFFER_SIZE)
@@ -170,6 +175,11 @@ func (s *ProxyServer) start(from, to net.Conn) error {
 				if s.doProxy {
 					_, err := to.Write(b)
 					if err != nil {
+						lastError = err
+						break loop
+					}
+
+					if err := to.Flush(); err != nil {
 						lastError = err
 						break loop
 					}
