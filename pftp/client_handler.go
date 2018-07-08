@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"sync/atomic"
@@ -106,8 +107,11 @@ func (c *clientHandler) HandleCommands() error {
 
 			line, err := c.reader.ReadString('\n')
 
-			logrus.Debugf("[%d]read from client: %s", c.id, line)
 			if err != nil {
+				if err == io.EOF {
+					logrus.Infof("[%d]client disconnect", c.id)
+					return nil
+				}
 				switch err := err.(type) {
 				case net.Error:
 					if err.Timeout() {
@@ -137,6 +141,7 @@ func (c *clientHandler) HandleCommands() error {
 				}
 			}
 
+			logrus.Debugf("[%d]read from client: %s", c.id, line)
 			commandResponse := c.handleCommand(line)
 			if commandResponse != nil {
 				if err := commandResponse.Response(c); err != nil {
