@@ -1,17 +1,12 @@
 package pftp
 
 import (
-	"crypto/tls"
 	"net"
 	"reflect"
 	"testing"
-
-	"github.com/pyama86/pftp/test"
 )
 
 func Test_clientHandler_handleAUTH(t *testing.T) {
-	cert, _ := test.GetCertificate()
-
 	type fields struct {
 		config *config
 	}
@@ -20,21 +15,6 @@ func Test_clientHandler_handleAUTH(t *testing.T) {
 		fields fields
 		want   *result
 	}{
-		{
-			name: "ok",
-			fields: fields{
-				config: &config{
-					TLSConfig: &tls.Config{
-						NextProtos:   []string{"ftp"},
-						Certificates: []tls.Certificate{*cert},
-					},
-				},
-			},
-			want: &result{
-				code: 234,
-				msg:  "AUTH command ok. Expecting TLS Negotiation.",
-			},
-		},
 		{
 			name: "undefined",
 			fields: fields{
