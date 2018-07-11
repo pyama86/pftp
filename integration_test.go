@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"os"
 	"testing"
 
+	"github.com/marcobeierer/ftps"
 	"github.com/pyama86/pftp/test"
 )
 
@@ -26,7 +28,7 @@ func TestConnect(t *testing.T) {
 	defer client.Quit()
 }
 
-func TestAuth(t *testing.T) {
+func TestLogin(t *testing.T) {
 	if !*integration {
 		t.Skip()
 	}
@@ -35,7 +37,26 @@ func TestAuth(t *testing.T) {
 
 	err := client.Login("pftp", "pftp")
 	if err != nil {
+		t.Errorf("integration.TestLogin() error = %v, wantErr %v", err, nil)
+	}
+
+}
+
+func TestAuth(t *testing.T) {
+	if !*integration {
+		t.Skip()
+	}
+	client := new(ftps.FTPS)
+	client.Debug = true
+	client.TLSConfig.InsecureSkipVerify = true
+
+	err := client.Connect("localhost", 2121)
+	if err != nil {
 		t.Errorf("integration.TestAuth() error = %v, wantErr %v", err, nil)
 	}
 
+	err = client.Login("pftp", "pftp")
+	if err == nil {
+		t.Errorf("integration.TestAuth() error = %v, wantErr %v", err, errors.New("550 Permission denied."))
+	}
 }

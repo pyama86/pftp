@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,12 +63,32 @@ func GetCertificate() (*tls.Certificate, error) {
 	return &c, err
 }
 
-func LaunchTestServer(t *testing.T) net.Listener {
+func launchTestServer(t *testing.T) net.Listener {
 	s, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return s
+}
+
+func LaunchTestServer(server *net.Listener, conn chan net.Conn, done chan struct{}, serverready chan struct{}, t *testing.T) {
+	*server = launchTestServer(t)
+	defer (*server).Close()
+
+	serverready <- struct{}{}
+	for {
+		c, err := (*server).Accept()
+		if err != nil {
+			if strings.Index(err.Error(), "use of closed network connection") == -1 {
+				t.Fatal(err)
+			}
+			break
+		}
+
+		conn <- c
+	}
+	done <- struct{}{}
+
 }
 
 func LocalConnect(port int, t *testing.T) *ftp.ServerConn {

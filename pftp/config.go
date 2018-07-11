@@ -16,13 +16,13 @@ type config struct {
 	IdleTimeout    int         `toml:"idle_timeout"`
 	ProxyTimeout   int         `toml:"proxy_timeout"`
 	MaxConnections int32       `toml:"max_connections"`
-	tls            *tlsPair    `toml:"tls"`
+	TLS            *tlsPair    `toml:"tls"`
 	TLSConfig      *tls.Config `toml:"-"`
 }
 
 type tlsPair struct {
-	cert string
-	key  string
+	CERT string
+	Key  string
 }
 
 func loadConfig(path string) (*config, error) {
@@ -34,8 +34,8 @@ func loadConfig(path string) (*config, error) {
 		return nil, err
 	}
 
-	if c.tls != nil {
-		if cert, err := tls.LoadX509KeyPair(c.tls.cert, c.tls.key); err == nil {
+	if c.TLS != nil {
+		if cert, err := tls.LoadX509KeyPair(c.TLS.CERT, c.TLS.Key); err == nil {
 			c.TLSConfig = &tls.Config{
 				NextProtos:   []string{"ftp"},
 				Certificates: []tls.Certificate{cert},

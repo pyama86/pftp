@@ -2,7 +2,6 @@ package pftp
 
 import (
 	"net"
-	"strings"
 	"testing"
 	"time"
 
@@ -15,24 +14,7 @@ func Test_clientHandler_HandleCommands(t *testing.T) {
 	conn := make(chan net.Conn)
 	done := make(chan struct{})
 
-	go func() {
-		server = test.LaunchTestServer(t)
-		defer server.Close()
-
-		serverready <- struct{}{}
-		for {
-			c, err := server.Accept()
-			if err != nil {
-				if strings.Index(err.Error(), "use of closed network connection") == -1 {
-					t.Fatal(err)
-				}
-				break
-			}
-
-			conn <- c
-		}
-		done <- struct{}{}
-	}()
+	go test.LaunchTestServer(&server, conn, done, serverready, t)
 
 	type fields struct {
 		config *config
@@ -107,24 +89,7 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 	done := make(chan struct{})
 	serverready := make(chan struct{})
 
-	go func() {
-		server = test.LaunchTestServer(t)
-		defer server.Close()
-
-		serverready <- struct{}{}
-		for {
-			c, err := server.Accept()
-			if err != nil {
-				if strings.Index(err.Error(), "use of closed network connection") == -1 {
-					t.Fatal(err)
-				}
-				break
-			}
-
-			conn <- c
-		}
-		done <- struct{}{}
-	}()
+	go test.LaunchTestServer(&server, conn, done, serverready, t)
 
 	type fields struct {
 		conn   net.Conn
