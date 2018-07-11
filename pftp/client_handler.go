@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -39,6 +40,7 @@ type clientHandler struct {
 	controleProxy     *ProxyServer
 	context           *Context
 	currentConnection *int32
+	mutex             *sync.Mutex
 }
 
 func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32) *clientHandler {
@@ -51,6 +53,7 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		reader:            bufio.NewReader(connection),
 		context:           newContext(c),
 		currentConnection: currentConnection,
+		mutex:             &sync.Mutex{},
 	}
 
 	return p
@@ -153,6 +156,8 @@ func (c *clientHandler) HandleCommands() error {
 }
 
 func (c *clientHandler) writeLine(line string) error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
 	if _, err := c.writer.Write([]byte(line)); err != nil {
 		return err
 	}
@@ -220,7 +225,7 @@ func (c *clientHandler) connectControlProxy() error {
 			return err
 		}
 	} else {
-		p, err := NewProxyServer(c.config.ProxyTimeout, c.reader, c.writer, c.context.RemoteAddr, c.id)
+		p, err := NewProxyServer(c.config.ProxyTimeout, c.reader, c.writer, c.context.RemoteAddr, c.id, c.mutex)
 		if err != nil {
 			return err
 		}

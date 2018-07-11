@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -26,9 +27,10 @@ type ProxyServer struct {
 	pipe         chan []byte
 	CloseOk      bool
 	Switch       bool
+	mutex        *sync.Mutex
 }
 
-func NewProxyServer(timeout int, clientReader *bufio.Reader, clientWriter *bufio.Writer, originAddr string, id int) (*ProxyServer, error) {
+func NewProxyServer(timeout int, clientReader *bufio.Reader, clientWriter *bufio.Writer, originAddr string, id int, m *sync.Mutex) (*ProxyServer, error) {
 	c, err := net.Dial("tcp", originAddr)
 	if err != nil {
 		return nil, err
@@ -45,6 +47,7 @@ func NewProxyServer(timeout int, clientReader *bufio.Reader, clientWriter *bufio
 		timeout:      timeout,
 		doProxy:      true,
 		pipe:         make(chan []byte, BUFFER_SIZE),
+		mutex:        m,
 	}
 	p.CloseOk = false
 	p.Switch = false
@@ -173,16 +176,20 @@ func (s *ProxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 				}
 
 				if s.doProxy {
+					s.mutex.Lock()
 					_, err := to.Write(b)
 					if err != nil {
 						lastError = err
+						s.mutex.Unlock()
 						break loop
 					}
 
 					if err := to.Flush(); err != nil {
 						lastError = err
+						s.mutex.Unlock()
 						break loop
 					}
+					s.mutex.Unlock()
 				} else {
 					s.pipe <- b
 				}
