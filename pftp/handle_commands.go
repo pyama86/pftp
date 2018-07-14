@@ -13,6 +13,7 @@ func (c *clientHandler) handleUSER() *result {
 			code: 530,
 			msg:  "I can't deal with you (proxy error)",
 			err:  err,
+			log:  c.log,
 		}
 	}
 
@@ -21,6 +22,7 @@ func (c *clientHandler) handleUSER() *result {
 			code: 530,
 			msg:  "I can't deal with you (proxy error)",
 			err:  err,
+			log:  c.log,
 		}
 	}
 	return nil
@@ -38,6 +40,7 @@ func (c *clientHandler) handleAUTH() *result {
 				code: 550,
 				msg:  fmt.Sprint("Client Response Error"),
 				err:  err,
+				log:  c.log,
 			}
 		}
 
@@ -48,6 +51,7 @@ func (c *clientHandler) handleAUTH() *result {
 				code: 550,
 				msg:  fmt.Sprint("TLS Handshake Error"),
 				err:  err,
+				log:  c.log,
 			}
 		}
 

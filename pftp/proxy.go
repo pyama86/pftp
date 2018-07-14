@@ -7,8 +7,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -28,17 +26,16 @@ type ProxyServer struct {
 	CloseOk      bool
 	Switch       bool
 	mutex        *sync.Mutex
+	log          *logger
 }
 
-func NewProxyServer(timeout int, clientReader *bufio.Reader, clientWriter *bufio.Writer, originAddr string, id int, m *sync.Mutex) (*ProxyServer, error) {
+func NewProxyServer(timeout int, clientReader *bufio.Reader, clientWriter *bufio.Writer, originAddr string, m *sync.Mutex, l *logger) (*ProxyServer, error) {
 	c, err := net.Dial("tcp", originAddr)
 	if err != nil {
 		return nil, err
 	}
 
-	logrus.Debugf("[%d]new proxy from=%s to=%s", id, c.LocalAddr(), c.RemoteAddr())
 	p := &ProxyServer{
-		id:           id,
 		clientReader: clientReader,
 		clientWriter: clientWriter,
 		originWriter: bufio.NewWriter(c),
@@ -48,9 +45,11 @@ func NewProxyServer(timeout int, clientReader *bufio.Reader, clientWriter *bufio
 		doProxy:      true,
 		pipe:         make(chan []byte, BUFFER_SIZE),
 		mutex:        m,
+		log:          l,
 	}
 	p.CloseOk = false
 	p.Switch = false
+	l.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
 
 	return p, err
 }
@@ -71,7 +70,7 @@ func (s *ProxyServer) ReadFromOrigin() (string, error) {
 		if response, err := reader.ReadString('\n'); err != nil {
 			return "", err
 		} else {
-			logrus.Debugf("[%d]read from origin:%s", s.id, response)
+			s.log.debug("read from origin:%s", response)
 			return response, nil
 		}
 	}
@@ -83,7 +82,7 @@ func (s *ProxyServer) SendToOrigin(line string) error {
 		s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
 	}
 
-	logrus.Debugf("[%d]send to origin:%s", s.id, line)
+	s.log.debug("send to origin:%s", line)
 	if _, err := s.origin.Write([]byte(line)); err != nil {
 		return err
 	}
@@ -92,7 +91,7 @@ func (s *ProxyServer) SendToOrigin(line string) error {
 }
 
 func (s *ProxyServer) SendToClient(line string) error {
-	logrus.Debugf("[%d]send to client:%s", s.id, line)
+	s.log.debug("send to client:%s", line)
 	if _, err := s.clientWriter.Write([]byte(line)); err != nil {
 		return err
 	}
@@ -114,12 +113,12 @@ func (s *ProxyServer) DownloadProxy() error {
 }
 
 func (s *ProxyServer) Suspend() {
-	logrus.Debugf("[%d]suspend proxy", s.id)
+	s.log.debug("suspend proxy")
 	s.doProxy = false
 }
 
 func (s *ProxyServer) Unsuspend() {
-	logrus.Debugf("[%d]unsuspend proxy", s.id)
+	s.log.debug("unsuspend proxy")
 	s.doProxy = true
 }
 
@@ -129,7 +128,7 @@ func (s *ProxyServer) Close() {
 }
 
 func (s *ProxyServer) SwitchOrigin(originAddr string) error {
-	logrus.Debugf("[%d]switch origin to: %s", s.id, originAddr)
+	s.log.debug("switch origin to: %s", originAddr)
 
 	if s.doProxy {
 		s.Suspend()
