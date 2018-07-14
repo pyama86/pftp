@@ -14,7 +14,7 @@ var ftpServer *pftp.FtpServer
 
 func init() {
 	logrus.SetLevel(logrus.DebugLevel)
-	stackLevels := []logrus.Level{logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel}
+	stackLevels := []logrus.Level{logrus.PanicLevel, logrus.FatalLevel}
 	logrus.AddHook(logrus_stack.NewHook(stackLevels, stackLevels))
 }
 
