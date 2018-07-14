@@ -2,53 +2,81 @@
 
 
 [[projects]]
+  digest = "1:282acb7fe0ca456de4ea5c3174c2691a2bd74008462e966b69094ad0b2c23e6e"
   name = "github.com/BurntSushi/toml"
   packages = ["."]
+  pruneopts = "UT"
   revision = "b26d9c308763d68093482582cea63d69be07a0f0"
   version = "v0.3.0"
 
 [[projects]]
   branch = "master"
+  digest = "1:33217548884728c0ef67dea74a130c18af2b1b1c53c399dd42dc285eaf67f3a8"
   name = "github.com/Gurpartap/logrus-stack"
   packages = ["."]
+  pruneopts = "UT"
   revision = "89c00d8a28f43c567d92eb81a2945301a6a9fbb9"
 
 [[projects]]
   branch = "master"
+  digest = "1:9a023ac8c30a6871d3fc94c9c0b5a0639ede096c351fd6cdcd7268fe9cb95af2"
   name = "github.com/facebookgo/stack"
   packages = ["."]
+  pruneopts = "UT"
   revision = "751773369052141c013c6e827a71e8f35c07879c"
 
 [[projects]]
   branch = "master"
+  digest = "1:ad77408855d35ad5bbe75947b22bf8e7df920646bd16364177761cb14d892a15"
   name = "github.com/jlaffaye/ftp"
   packages = ["."]
+  pruneopts = "UT"
   revision = "2403248fa8cc9f7909862627aa7337f13f8e0bf1"
 
 [[projects]]
+  branch = "master"
+  digest = "1:a880aff67fee106ff57d000f4b1d3a80bc251f6a69f3039c622d5b7c59918e11"
+  name = "github.com/marcobeierer/ftps"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "60e520f5feed5eaa0951aeecfc772a35bbe9f83d"
+
+[[projects]]
+  digest = "1:9e9193aa51197513b3abcb108970d831fbcf40ef96aa845c4f03276e1fa316d2"
   name = "github.com/sirupsen/logrus"
   packages = ["."]
+  pruneopts = "UT"
   revision = "c155da19408a8799da419ed3eeb0cb5db0ad5dbc"
   version = "v1.0.5"
 
 [[projects]]
   branch = "master"
+  digest = "1:3f3a05ae0b95893d90b9b3b5afdb79a9b3d96e4e36e099d841ae602e4aca0da8"
   name = "golang.org/x/crypto"
   packages = ["ssh/terminal"]
+  pruneopts = "UT"
   revision = "a49355c7e3f8fe157a85be2f77e6e269a0f89602"
 
 [[projects]]
   branch = "master"
+  digest = "1:c6026af29863bef3d7f476755d52df0799592b0054a11c6ae80b1f37472f1eec"
   name = "golang.org/x/sys"
   packages = [
     "unix",
-    "windows"
+    "windows",
   ]
+  pruneopts = "UT"
   revision = "7138fd3d9dc8335c567ca206f4333fb75eb05d56"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "bcb12555ef9fd39395b72eab2e430257296ccec01d51454346a41da928d2262a"
+  input-imports = [
+    "github.com/BurntSushi/toml",
+    "github.com/Gurpartap/logrus-stack",
+    "github.com/jlaffaye/ftp",
+    "github.com/marcobeierer/ftps",
+    "github.com/sirupsen/logrus",
+  ]
   solver-name = "gps-cdcl"
   solver-version = 1
