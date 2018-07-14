@@ -10,8 +10,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 type handleFunc struct {
@@ -41,6 +39,7 @@ type clientHandler struct {
 	context           *Context
 	currentConnection *int32
 	mutex             *sync.Mutex
+	log               *logger
 }
 
 func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32) *clientHandler {
@@ -54,6 +53,7 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		context:           newContext(c),
 		currentConnection: currentConnection,
 		mutex:             &sync.Mutex{},
+		log:               &logger{fromip: connection.RemoteAddr().String(), id: id},
 	}
 
 	return p
@@ -112,29 +112,30 @@ func (c *clientHandler) HandleCommands() error {
 
 			if err != nil {
 				if err == io.EOF {
-					logrus.Infof("[%d]client disconnect", c.id)
+					c.log.info("client disconnect")
 					return nil
 				}
 				switch err := err.(type) {
 				case net.Error:
 					if err.Timeout() {
 						c.conn.SetDeadline(time.Now().Add(time.Minute))
-						logrus.Infof("[%d]IDLE timeout", c.id)
+						c.log.info("IDLE timeout")
 						r := result{
 							code: 421,
 							msg:  fmt.Sprintf("command timeout (%d seconds): closing control connection", c.config.IdleTimeout),
 							err:  err,
+							log:  c.log,
 						}
 						if err := r.Response(c); err != nil {
 							return err
 						}
 
 						if err := c.writer.Flush(); err != nil {
-							logrus.Errorf("[%d]Network flush error", c.id)
+							c.log.err("Network flush error")
 						}
 
 						if err := c.conn.Close(); err != nil {
-							logrus.Errorf("[%d]Network close error", c.id)
+							c.log.err("Network close error")
 						}
 						return errors.New("idle timeout")
 					}
@@ -144,7 +145,7 @@ func (c *clientHandler) HandleCommands() error {
 				}
 			}
 
-			logrus.Debugf("[%d]read from client: %s", c.id, line)
+			c.log.debug("read from client: %s", line)
 			commandResponse := c.handleCommand(line)
 			if commandResponse != nil {
 				if err := commandResponse.Response(c); err != nil {
@@ -167,7 +168,7 @@ func (c *clientHandler) writeLine(line string) error {
 	if err := c.writer.Flush(); err != nil {
 		return err
 	}
-	logrus.Debugf("[%d]send to client:%s", c.id, line)
+	c.log.debug("send to client:%s", line)
 	return nil
 }
 
@@ -225,7 +226,7 @@ func (c *clientHandler) connectControlProxy() error {
 			return err
 		}
 	} else {
-		p, err := NewProxyServer(c.config.ProxyTimeout, c.reader, c.writer, c.context.RemoteAddr, c.id, c.mutex)
+		p, err := NewProxyServer(c.config.ProxyTimeout, c.reader, c.writer, c.context.RemoteAddr, c.mutex, c.log)
 		if err != nil {
 			return err
 		}

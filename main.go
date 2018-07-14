@@ -5,7 +5,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	logrus_stack "github.com/Gurpartap/logrus-stack"
+	"github.com/Gurpartap/logrus-stack"
 	"github.com/pyama86/pftp/pftp"
 	"github.com/sirupsen/logrus"
 )
