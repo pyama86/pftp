@@ -108,6 +108,7 @@ func (c *clientHandler) HandleCommands() error {
 		default:
 			if c.config.IdleTimeout > 0 {
 				c.conn.SetDeadline(time.Now().Add(time.Duration(c.config.IdleTimeout) * time.Second))
+
 			}
 
 			line, err := c.reader.ReadString('\n')
@@ -124,7 +125,7 @@ func (c *clientHandler) HandleCommands() error {
 						c.log.info("IDLE timeout")
 						r := result{
 							code: 421,
-							msg:  fmt.Sprintf("command timeout (%d seconds): closing control connection", c.config.IdleTimeout),
+							msg:  "command timeout : closing control connection",
 							err:  err,
 							log:  c.log,
 						}
