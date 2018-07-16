@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"crypto/tls"
 	"fmt"
-	"time"
 )
 
 func (c *clientHandler) handleUSER() *result {
@@ -69,8 +68,9 @@ func (c *clientHandler) handleAUTH() *result {
 
 func (c *clientHandler) handleTransfer() *result {
 	if c.config.TransferTimeout > 0 {
-		c.conn.SetDeadline(time.Now().Add(time.Duration(c.config.TransferTimeout) * time.Second))
+		c.setClientDeadLine(c.config.TransferTimeout)
 	}
+
 	if err := c.controleProxy.SendToOrigin(c.line); err != nil {
 		return &result{
 			code: 500,
