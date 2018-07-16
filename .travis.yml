@@ -8,5 +8,8 @@ script:
 - make ci
 go:
   - 1.10.2
+cache:
+  directories:
+    misc/test/data/pftp
 notifications:
   slack: pepabo:urThJPQ6Vh8m3cI7riDpYAbn
