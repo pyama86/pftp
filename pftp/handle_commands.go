@@ -5,8 +5,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 func (c *clientHandler) handleUSER() *result {
@@ -70,7 +68,6 @@ func (c *clientHandler) handleAUTH() *result {
 }
 
 func (c *clientHandler) handleTransfer() *result {
-	logrus.Info("transfer=", c.config.TransferTimeout)
 	if c.config.TransferTimeout > 0 {
 		c.conn.SetDeadline(time.Now().Add(time.Duration(c.config.TransferTimeout) * time.Second))
 	}
