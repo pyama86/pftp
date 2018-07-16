@@ -214,6 +214,10 @@ func TestUpload(t *testing.T) {
 			}
 			defer f.Close()
 
+			if err := os.MkdirAll(fmt.Sprintf("%s/stor", testDir), 0777); err != nil {
+				return err
+			}
+
 			err = client.Stor(fmt.Sprintf("stor/%d", num), f)
 			if err != nil {
 				return err
