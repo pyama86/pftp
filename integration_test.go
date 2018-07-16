@@ -124,8 +124,8 @@ func makeRandomFiles(t *testing.T) {
 		eg.Go(func() error {
 			f := fmt.Sprintf("%s/%d", testDir, num)
 			if !fileExists(f) {
-				// make 10M files
-				out, err := exec.Command("dd", "if=/dev/urandom", fmt.Sprintf("of=%s", f), "bs=1024", "count=10000").CombinedOutput()
+				// make 1G files
+				out, err := exec.Command("dd", "if=/dev/urandom", fmt.Sprintf("of=%s", f), "bs=1024", "count=1000000").CombinedOutput()
 				if err != nil {
 					return errors.New(string(out))
 				}
