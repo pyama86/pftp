@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -89,17 +90,18 @@ func TestAuth(t *testing.T) {
 
 const testDir = "misc/test/data/pftp"
 
-func resetTestDir(t *testing.T) {
-	filepath.Walk(testDir,
-		func(path string, info os.FileInfo, err error) error {
-			rel, err := filepath.Rel(testDir, path)
+func removeDirFiles(t *testing.T, dir string) {
+	f := path.Join(testDir, dir)
+	filepath.Walk(f,
+		func(fpath string, info os.FileInfo, err error) error {
+			rel, err := filepath.Rel(f, fpath)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if rel == `.` || rel == `..` {
 				return nil
 			}
-			out, err := exec.Command("rm", "-f", path).CombinedOutput()
+			out, err := exec.Command("rm", "-f", fpath).CombinedOutput()
 			if err != nil {
 				t.Fatal(string(out))
 			}
@@ -110,17 +112,23 @@ func resetTestDir(t *testing.T) {
 
 const testNumber = 2
 
-func TestDownload(t *testing.T) {
-	resetTestDir(t)
+func fileExists(filename string) bool {
+	_, err := os.Stat(filename)
+	return err == nil
+}
 
+func makeRandomFiles(t *testing.T) {
 	eg := errgroup.Group{}
 	for i := 0; i < testNumber; i++ {
 		num := i
 		eg.Go(func() error {
-			// make 10M files
-			out, err := exec.Command("dd", "if=/dev/urandom", fmt.Sprintf("of=%s/%d", testDir, num), "bs=1024", "count=10000").CombinedOutput()
-			if err != nil {
-				return errors.New(string(out))
+			f := fmt.Sprintf("%s/%d", testDir, num)
+			if !fileExists(f) {
+				// make 10M files
+				out, err := exec.Command("dd", "if=/dev/urandom", fmt.Sprintf("of=%s", f), "bs=1024", "count=10000").CombinedOutput()
+				if err != nil {
+					return errors.New(string(out))
+				}
 			}
 			return nil
 		})
@@ -129,6 +137,16 @@ func TestDownload(t *testing.T) {
 	if err := eg.Wait(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestDownload(t *testing.T) {
+	if !*integration {
+		t.Skip()
+	}
+	eg := errgroup.Group{}
+
+	makeRandomFiles(t)
+
 	c := make(chan bool, 3)
 	for i := 0; i < testNumber; i++ {
 		c <- true
@@ -160,6 +178,64 @@ func TestDownload(t *testing.T) {
 			}
 			if !reflect.DeepEqual(a.Sum(nil), b.Sum(nil)) {
 				errors.New(fmt.Sprintf("download file check sum error: %d", num))
+			}
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUpload(t *testing.T) {
+	if !*integration {
+		t.Skip()
+	}
+
+	removeDirFiles(t, "stor")
+
+	eg := errgroup.Group{}
+	c := make(chan bool, 3)
+	for i := 0; i < testNumber; i++ {
+		c <- true
+		num := i
+		eg.Go(func() error {
+			defer func() { <-c }()
+			a := md5.New()
+			b := md5.New()
+
+			client := loggedin(2121, t)
+			defer client.Quit()
+
+			f, err := os.Open(fmt.Sprintf("%s/%d", testDir, num))
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+
+			err = client.Stor(fmt.Sprintf("stor/%d", num), f)
+			if err != nil {
+				return err
+			}
+
+			s, err := os.Open(fmt.Sprintf("%s/stor/%d", testDir, num))
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+
+			_, err = io.Copy(a, s)
+			if err != nil {
+				return err
+			}
+
+			_, err = io.Copy(b, f)
+			if err != nil {
+				return err
+			}
+			if !reflect.DeepEqual(a.Sum(nil), b.Sum(nil)) {
+				errors.New(fmt.Sprintf("upload file check sum error: %d", num))
 			}
 			return nil
 		})
