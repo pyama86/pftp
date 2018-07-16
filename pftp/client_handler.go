@@ -23,6 +23,8 @@ func init() {
 	handlers = make(map[string]*handleFunc)
 	handlers["USER"] = &handleFunc{(*clientHandler).handleUSER, true}
 	handlers["AUTH"] = &handleFunc{(*clientHandler).handleAUTH, true}
+	handlers["RETR"] = &handleFunc{(*clientHandler).handleTransfer, false}
+	handlers["STOR"] = &handleFunc{(*clientHandler).handleTransfer, false}
 }
 
 type clientHandler struct {

@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"crypto/tls"
 	"fmt"
+	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 func (c *clientHandler) handleUSER() *result {
@@ -64,4 +67,18 @@ func (c *clientHandler) handleAUTH() *result {
 		code: 550,
 		msg:  fmt.Sprint("Cannot get a TLS config"),
 	}
+}
+
+func (c *clientHandler) handleTransfer() *result {
+	logrus.Info("transfer=", c.config.TransferTimeout)
+	if c.config.TransferTimeout > 0 {
+		c.conn.SetDeadline(time.Now().Add(time.Duration(c.config.TransferTimeout) * time.Second))
+	}
+	if err := c.controleProxy.SendToOrigin(c.line); err != nil {
+		return &result{
+			code: 500,
+			msg:  fmt.Sprintf("Internal error: %s", err),
+		}
+	}
+	return nil
 }
