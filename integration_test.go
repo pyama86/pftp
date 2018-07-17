@@ -15,6 +15,7 @@ import (
 
 	"github.com/jlaffaye/ftp"
 	"github.com/marcobeierer/ftps"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -222,6 +223,13 @@ func TestUpload(t *testing.T) {
 			if err != nil {
 				return err
 			}
+
+			out, err := exec.Command("ls", "-ltr", fmt.Sprintf("%s/stor", testDir)).CombinedOutput()
+			if err != nil {
+				t.Fatal(string(out))
+			}
+
+			logrus.Info(string(out))
 
 			s, err := os.Open(fmt.Sprintf("%s/stor/%d", testDir, num))
 			if err != nil {
