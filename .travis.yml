@@ -4,7 +4,7 @@ services:
   - docker
 before_install:
 - sudo apt-get -qqy update
-- sudo mkdir -p misc/test/data/pftp
+- sudo mkdir -p misc/test/data/pftp/stor
 - sudo chown -R travis misc/test/data/pftp
 script:
 - make ci
