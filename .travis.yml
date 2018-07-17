@@ -5,7 +5,7 @@ services:
 before_install:
 - sudo apt-get -qqy update
 - sudo mkdir -p misc/test/data/pftp
-- sudo chrown -R travis misc/test/data/pftp
+- sudo chown -R travis misc/test/data/pftp
 script:
 - make ci
 go:
