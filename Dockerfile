@@ -8,6 +8,8 @@ ENV LOG_STDOUT **Boolean**
 VOLUME /home/vsftpd
 VOLUME /var/log/vsftpd
 RUN echo "log_ftp_protocol=YES" >> /etc/vsftpd/vsftpd.conf
+RUN echo "file_open_mode=0777" >> /etc/vsftpd/vsftpd.conf
+RUN echo "local_umask=000" >> /etc/vsftpd/vsftpd.conf
 EXPOSE 20 21
 
 CMD ["/usr/sbin/run-vsftpd.sh"]

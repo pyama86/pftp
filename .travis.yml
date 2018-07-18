@@ -4,9 +4,14 @@ services:
   - docker
 before_install:
 - sudo apt-get -qqy update
+- sudo mkdir -p misc/test/data/pftp/stor
+- sudo chown -R travis misc/test/data/pftp
 script:
 - make ci
 go:
   - 1.10.2
+cache:
+  directories:
+    misc/test/data/pftp
 notifications:
   slack: pepabo:urThJPQ6Vh8m3cI7riDpYAbn

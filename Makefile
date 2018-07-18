@@ -52,7 +52,7 @@ help:
 
 vsftpd: vsftpd-cleanup
 	docker build -t pftp:test .
-	docker run -d -v "`pwd`/test/data":/home/vsftpd \
+	docker run -d -v "`pwd`/misc/test/data":/home/vsftpd \
 	-p 20:20 -p 21:21 -p 21100-21110:21100-21110 \
 	-e FTP_USER=pftp -e FTP_PASS=pftp \
 	-e PASV_ADDRESS=127.0.0.1 -e PASV_MIN_PORT=21100 -e PASV_MAX_PORT=21110 \

@@ -8,14 +8,11 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"fmt"
 	"math/big"
 	"net"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/jlaffaye/ftp"
 )
 
 // This method is quoted
@@ -89,12 +86,4 @@ func LaunchTestServer(server *net.Listener, conn chan net.Conn, done chan struct
 	}
 	done <- struct{}{}
 
-}
-
-func LocalConnect(port int, t *testing.T) *ftp.ServerConn {
-	client, err := ftp.Connect(fmt.Sprintf("localhost:%d", port))
-	if err != nil {
-		t.Errorf("integration.TestConnect() error = %v, wantErr %v", err, nil)
-	}
-	return client
 }

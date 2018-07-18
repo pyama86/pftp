@@ -65,3 +65,17 @@ func (c *clientHandler) handleAUTH() *result {
 		msg:  fmt.Sprint("Cannot get a TLS config"),
 	}
 }
+
+func (c *clientHandler) handleTransfer() *result {
+	if c.config.TransferTimeout > 0 {
+		c.setClientDeadLine(c.config.TransferTimeout)
+	}
+
+	if err := c.controleProxy.SendToOrigin(c.line); err != nil {
+		return &result{
+			code: 500,
+			msg:  fmt.Sprintf("Internal error: %s", err),
+		}
+	}
+	return nil
+}

@@ -23,6 +23,8 @@ func init() {
 	handlers = make(map[string]*handleFunc)
 	handlers["USER"] = &handleFunc{(*clientHandler).handleUSER, true}
 	handlers["AUTH"] = &handleFunc{(*clientHandler).handleAUTH, true}
+	handlers["RETR"] = &handleFunc{(*clientHandler).handleTransfer, false}
+	handlers["STOR"] = &handleFunc{(*clientHandler).handleTransfer, false}
 }
 
 type clientHandler struct {
@@ -40,6 +42,7 @@ type clientHandler struct {
 	currentConnection *int32
 	mutex             *sync.Mutex
 	log               *logger
+	deadline          time.Time
 }
 
 func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32) *clientHandler {
@@ -63,6 +66,15 @@ func (c *clientHandler) end() {
 	c.conn.Close()
 	atomic.AddInt32(c.currentConnection, -1)
 }
+
+func (c *clientHandler) setClientDeadLine(t int) {
+	d := time.Now().Add(time.Duration(t) * time.Second)
+	if c.deadline.Unix() < d.Unix() {
+		c.deadline = d
+		c.conn.SetDeadline(d)
+	}
+}
+
 func (c *clientHandler) HandleCommands() error {
 	defer c.end()
 	done := make(chan struct{})
@@ -105,7 +117,7 @@ func (c *clientHandler) HandleCommands() error {
 			return e
 		default:
 			if c.config.IdleTimeout > 0 {
-				c.conn.SetDeadline(time.Now().Add(time.Duration(c.config.IdleTimeout) * time.Second))
+				c.setClientDeadLine(c.config.IdleTimeout)
 			}
 
 			line, err := c.reader.ReadString('\n')
@@ -122,7 +134,7 @@ func (c *clientHandler) HandleCommands() error {
 						c.log.info("IDLE timeout")
 						r := result{
 							code: 421,
-							msg:  fmt.Sprintf("command timeout (%d seconds): closing control connection", c.config.IdleTimeout),
+							msg:  "command timeout : closing control connection",
 							err:  err,
 							log:  c.log,
 						}
