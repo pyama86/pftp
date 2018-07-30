@@ -25,6 +25,7 @@ func main() {
 	if err != nil {
 		logrus.Fatal(err)
 	}
+	go signalHandler()
 
 	ftpServer.Use("user", User)
 	if err := ftpServer.ListenAndServe(); err != nil {
