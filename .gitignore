@@ -2,4 +2,4 @@ vendor/*
 .vagrant
 pftp.pid
 misc/test/data/pftp
-main
+pftp_bin
