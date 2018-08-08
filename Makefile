@@ -48,10 +48,11 @@ dist: build ## Upload to Github releases
 	@test -z $(GITHUB_TOKEN) || test -z $(GITHUB_API) || $(MAKE) ghr
 
 help:
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(INFO_COLOR)%-30s$(RESET) %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(INFO_COLOR)%-30s$(RESET) %s\n", $$1, $$2}'
+
 
 vsftpd: vsftpd-cleanup
-	docker build -t pftp:test .
+	docker build -t pftp:test ./
 	docker run -d -v "`pwd`/misc/test/data":/home/vsftpd \
 	-p 20:20 -p 21:21 -p 21100-21110:21100-21110 \
 	-e FTP_USER=pftp -e FTP_PASS=pftp \
@@ -60,6 +61,16 @@ vsftpd: vsftpd-cleanup
 
 vsftpd-cleanup:
 	docker rm -f vsftpd | true
+
+proftpd: proftpd-cleanup
+	docker build -t proftpd-server:test -f Dockerfile-proftpd ./
+	docker run -d -v "`pwd`/misc/test/data":/home/proftpd -v "`pwd`/misc/log/proftpd":/var/log/proftpd \
+	-p 20-21:20-21 -p 21100-21110:21100-21110 \
+	--name proftpd --restart=always proftpd-server:test
+
+proftpd-cleanup:
+	docker rm -f proftpd | true
+	rm -rf "`pwd`/misc/log"
 
 integration:
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Integration Testing$(RESET)"
