@@ -8,7 +8,7 @@ BOLD=\033[1m
 
 default: build
 #ci: depsdev test vet lint ## Run test and more...
-ci: depsdev vsftpd test lint integration ## Run test and more...
+ci: depsdev proftpd test lint integration ## Run test and more...
 
 deps: ## Install dependencies
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Installing Dependencies$(RESET)"
@@ -50,9 +50,8 @@ dist: build ## Upload to Github releases
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(INFO_COLOR)%-30s$(RESET) %s\n", $$1, $$2}'
 
-
-vsftpd: vsftpd-cleanup
-	docker build -t pftp:test ./
+vsftpd: vsftpd-cleanup proftpd-cleanup
+	docker build -t pftp:test -f Dockerfile-vsftpd ./
 	docker run -d -v "`pwd`/misc/test/data":/home/vsftpd \
 	-p 20:20 -p 21:21 -p 21100-21110:21100-21110 \
 	-e FTP_USER=pftp -e FTP_PASS=pftp \
@@ -62,9 +61,10 @@ vsftpd: vsftpd-cleanup
 vsftpd-cleanup:
 	docker rm -f vsftpd | true
 
-proftpd: proftpd-cleanup
-	docker build -t proftpd-server:test -f Dockerfile-proftpd ./
-	docker run -d -v "`pwd`/misc/test/data":/home/proftpd -v "`pwd`/misc/log/proftpd":/var/log/proftpd \
+proftpd: vsftpd-cleanup proftpd-cleanup
+	docker build -t proftpd-server:test ./
+	docker run -d \
+	-v "`pwd`/misc/test/data/pftp":/home/pftp -v "`pwd`/misc/log/proftpd":/var/log/proftpd \
 	-p 20-21:20-21 -p 21100-21110:21100-21110 \
 	--name proftpd --restart=always proftpd-server:test
 
