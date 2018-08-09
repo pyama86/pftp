@@ -208,32 +208,38 @@ func TestUpload(t *testing.T) {
 			client := loggedin(2121, t)
 			defer client.Quit()
 
+			fmt.Sprintf("@ File open : %d", num)
 			f, err := os.Open(fmt.Sprintf("%s/%d", testDir, num))
 			if err != nil {
 				return err
 			}
 			defer f.Close()
 
+			fmt.Println("@ Make stor directory on client")
 			if err := os.MkdirAll(fmt.Sprintf("%s/stor", testDir), 0777); err != nil {
 				return err
 			}
 
+			fmt.Sprintf("@ Stor file to ftp : stor/%d", num)
 			err = client.Stor(fmt.Sprintf("stor/%d", num), f)
 			if err != nil {
 				return err
 			}
 
+			fmt.Sprintf("@ File open : stor/%d", num)
 			s, err := os.Open(fmt.Sprintf("%s/stor/%d", testDir, num))
 			if err != nil {
 				return err
 			}
 			defer s.Close()
 
+			fmt.Sprintf("@ Read file : stor/%d", num)
 			_, err = io.Copy(a, s)
 			if err != nil {
 				return err
 			}
 
+			fmt.Sprintf("@ Read file : %d", num)
 			_, err = io.Copy(b, f)
 			if err != nil {
 				return err
