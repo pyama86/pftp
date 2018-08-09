@@ -5,7 +5,7 @@ services:
 before_install:
 - sudo apt-get -qqy update
 - sudo mkdir -p misc/test/data/pftp/stor
-- sudo chmod 777 misc/test/data/pftp
+- sudo chmod -R 777 misc/test/data/pftp
 
 script:
 - make ci
