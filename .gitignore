@@ -1,6 +1,5 @@
 vendor/*
 .vagrant
 pftp.pid
-misc/test/data/pftp
-misc/log
+misc/test/data
 pftp_bin

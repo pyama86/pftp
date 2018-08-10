@@ -8,7 +8,7 @@ BOLD=\033[1m
 
 default: build
 #ci: depsdev test vet lint ## Run test and more...
-ci: depsdev proftpd test lint integration ## Run test and more...
+ci: depsdev ftp test lint integration ## Run test and more...
 
 deps: ## Install dependencies
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Installing Dependencies$(RESET)"
@@ -50,27 +50,29 @@ dist: build ## Upload to Github releases
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(INFO_COLOR)%-30s$(RESET) %s\n", $$1, $$2}'
 
-vsftpd: vsftpd-cleanup proftpd-cleanup
-	docker build -t pftp:test -f Dockerfile-vsftpd ./
+vsftpd: vsftpd-cleanup
+	docker build -t vsftpd-server:test -f Dockerfile-vsftpd ./
 	docker run -d -v "`pwd`/misc/test/data":/home/vsftpd \
-	-p 20:20 -p 21:21 -p 21100-21110:21100-21110 \
-	-e FTP_USER=pftp -e FTP_PASS=pftp \
-	-e PASV_ADDRESS=127.0.0.1 -e PASV_MIN_PORT=21100 -e PASV_MAX_PORT=21110 \
-	--name vsftpd --restart=always pftp:test
+	-p 20-21:20-21 -p 11100-11110:11100-11110 \
+	-e FTP_USER=vsuser -e FTP_PASS=vsuser \
+	-e PASV_ADDRESS=127.0.0.1 -e PASV_MIN_PORT=11100 -e PASV_MAX_PORT=11110 \
+	--name vsftpd --restart=always vsftpd-server:test
 
 vsftpd-cleanup:
 	docker rm -f vsftpd | true
 
-proftpd: vsftpd-cleanup proftpd-cleanup
-	docker build -t proftpd-server:test ./
-	docker run -d \
-	-v "`pwd`/misc/test/data/pftp":/home/pftp -v "`pwd`/misc/log/proftpd":/var/log/proftpd \
-	-p 20-21:20-21 -p 21100-21110:21100-21110 \
+proftpd: proftpd-cleanup
+	docker build -t proftpd-server:test -f Dockerfile-proftpd ./
+	docker run -d -v "`pwd`/misc/test/data/prouser":/home/prouser \
+	-p 20020-20021:20-21 -p 21100-21110:21100-21110 \
 	--name proftpd --restart=always proftpd-server:test
 
 proftpd-cleanup:
 	docker rm -f proftpd | true
-	rm -rf "`pwd`/misc/log"
+
+ftp: vsftpd proftpd
+
+ftp-cleanup: vsftpd-cleanup proftpd-cleanup
 
 integration:
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Integration Testing$(RESET)"
