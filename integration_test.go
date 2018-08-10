@@ -74,10 +74,8 @@ func TestLogin(t *testing.T) {
 
 	var err error
 	// If Login failed with vsftpd & proftpd user, Return Error
-	for i := 0; i < testCount; i++ {
-		testIndex := i % len(testset)
-
-		err = client.Login(testset[testIndex].User, testset[testIndex].User)
+	for i := 0; i < len(testset); i++ {
+		err = client.Login(testset[i].User, testset[i].User)
 		if err != nil {
 			t.Errorf("integration.TestLogin() error = %v, wantErr %v", err, nil)
 		}
@@ -85,8 +83,10 @@ func TestLogin(t *testing.T) {
 
 	// If Login success with unregistered user, Return Error
 	err = client.Login("hoge", "moge")
-	if err == nil {
-		t.Errorf("integration.TestLogin() error = %v, wantErr %v", err, nil)
+	if err != nil {
+		if err.Error() != "530 Login incorrect." {
+			t.Errorf("integration.TestLogin() error = %v, wantErr %v", err, nil)
+		}
 	}
 }
 
@@ -105,10 +105,8 @@ func TestAuth(t *testing.T) {
 	}
 
 	// If Login failed with vsftpd & proftpd user, Return Error
-	for i := 0; i < testCount; i++ {
-		testIndex := i % len(testset)
-
-		err = client.Login(testset[testIndex].User, testset[testIndex].User)
+	for i := 0; i < len(testset); i++ {
+		err = client.Login(testset[i].User, testset[i].User)
 		if err == nil {
 			t.Errorf("integration.TestAuth() wantErr %v", errors.New("550 Permission denied."))
 		}
