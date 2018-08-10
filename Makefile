@@ -70,7 +70,7 @@ proftpd: proftpd-cleanup
 proftpd-cleanup:
 	docker rm -f proftpd | true
 
-ftp: vsftpd proftpd
+ftp: vsftpd interval proftpd
 
 ftp-cleanup: vsftpd-cleanup proftpd-cleanup
 
@@ -80,3 +80,6 @@ integration:
 	go test $(VERBOSE) -integration $(TEST) $(TEST_OPTIONS)
 	./misc/server stop
 .PHONY: default dist test deps
+
+interval:
+	sleep 5

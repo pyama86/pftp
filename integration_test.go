@@ -22,15 +22,20 @@ var (
 	integration = flag.Bool("integration", false, "run integration tests")
 )
 
-const testCount = 4
+const testCount = 5
+
+type userInfo struct {
+	ID   string
+	Pass string
+}
 
 type testSet struct {
-	User string
+	User userInfo
 	Dir  string
 }
 
 var testset = []testSet{
-	testSet{"vsuser", "misc/test/data/vsuser"},
+	testSet{userInfo{"vsuser", "vsuser"}, "misc/test/data/vsuser"},
 }
 
 func localConnect(port int, t *testing.T) *ftp.ServerConn {
@@ -41,10 +46,10 @@ func localConnect(port int, t *testing.T) *ftp.ServerConn {
 	return client
 }
 
-func loggedin(port int, t *testing.T, username string) *ftp.ServerConn {
+func loggedin(port int, t *testing.T, user userInfo) *ftp.ServerConn {
 	client := localConnect(port, t)
 
-	err := client.Login(username, username)
+	err := client.Login(user.ID, user.Pass)
 	if err != nil {
 		t.Fatalf("integration.loggedin() error = %v, wantErr %v", err, nil)
 	}
@@ -75,13 +80,12 @@ func TestLogin(t *testing.T) {
 	var err error
 	// If Login failed with vsftpd & proftpd user, Return Error
 	for i := 0; i < len(testset); i++ {
-		err = client.Login(testset[i].User, testset[i].User)
+		err = client.Login(testset[i].User.ID, testset[i].User.Pass)
 		if err != nil {
 			t.Errorf("integration.TestLogin() error = %v, wantErr %v", err, nil)
 		}
 	}
 
-	// If Login success with unregistered user, Return Error
 	err = client.Login("hoge", "moge")
 	if err != nil {
 		if err.Error() != "530 Login incorrect." {
@@ -106,18 +110,18 @@ func TestAuth(t *testing.T) {
 
 	// If Login failed with vsftpd & proftpd user, Return Error
 	for i := 0; i < len(testset); i++ {
-		err = client.Login(testset[i].User, testset[i].User)
+		err = client.Login(testset[i].User.ID, testset[i].User.Pass)
 		if err == nil {
-			t.Errorf("integration.TestAuth() wantErr %v", errors.New("550 Permission denied."))
+			if err.Error() != "530 Login incorrect." {
+				t.Errorf("integration.TestAuth() wantErr %v", errors.New("550 Permission denied."))
+			}
 		}
 	}
 }
 
 func removeDirFiles(t *testing.T, dir string) {
-	for i := 0; i < testCount; i++ {
-		testIndex := i % len(testset)
-
-		f := path.Join(testset[testIndex].Dir, dir)
+	for i := 0; i < len(testset); i++ {
+		f := path.Join(testset[i].Dir, dir)
 		filepath.Walk(f,
 			func(fpath string, info os.FileInfo, err error) error {
 				rel, err := filepath.Rel(f, fpath)
@@ -151,7 +155,7 @@ func makeRandomFiles(t *testing.T) {
 			f := fmt.Sprintf("%s/%d", testset[testIndex].Dir, num)
 			if !fileExists(f) {
 				// make 500MB files
-				out, err := exec.Command("dd", "if=/dev/urandom", fmt.Sprintf("of=%s", f), "bs=1024", "count=500000").CombinedOutput()
+				out, err := exec.Command("dd", "if=/dev/urandom", fmt.Sprintf("of=%s", f), "bs=1024", "count=50000").CombinedOutput()
 				if err != nil {
 					return errors.New(string(out))
 				}
@@ -173,7 +177,7 @@ func TestDownload(t *testing.T) {
 
 	makeRandomFiles(t)
 
-	c := make(chan bool, 3)
+	c := make(chan bool, testCount+1)
 	for i := 0; i < testCount; i++ {
 		c <- true
 		num := i
@@ -223,11 +227,11 @@ func TestUpload(t *testing.T) {
 	if !*integration {
 		t.Skip()
 	}
+	eg := errgroup.Group{}
 
 	removeDirFiles(t, "stor")
 
-	eg := errgroup.Group{}
-	c := make(chan bool, 3)
+	c := make(chan bool, testCount+1)
 	for i := 0; i < testCount; i++ {
 		c <- true
 		num := i
