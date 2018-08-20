@@ -22,7 +22,7 @@ var (
 	integration = flag.Bool("integration", false, "run integration tests")
 )
 
-const testCount = 5
+const testCount = 2
 
 type userInfo struct {
 	ID   string
@@ -155,7 +155,7 @@ func makeRandomFiles(t *testing.T) {
 			f := fmt.Sprintf("%s/%d", testset[testIndex].Dir, num)
 			if !fileExists(f) {
 				// make 500MB files
-				out, err := exec.Command("dd", "if=/dev/urandom", fmt.Sprintf("of=%s", f), "bs=1024", "count=50000").CombinedOutput()
+				out, err := exec.Command("dd", "if=/dev/urandom", fmt.Sprintf("of=%s", f), "bs=1024", "count=500000").CombinedOutput()
 				if err != nil {
 					return errors.New(string(out))
 				}
