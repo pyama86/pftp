@@ -39,7 +39,7 @@ var testset = []testSet{
 }
 
 func localConnect(port int, t *testing.T) *ftp.ServerConn {
-	client, err := ftp.Connect(fmt.Sprintf("localhost:%d", port))
+	client, err := ftp.Dial(fmt.Sprintf("localhost:%d", port))
 	if err != nil {
 		t.Fatalf("integration.localConnect() error = %v, wantErr %v", err, nil)
 	}
@@ -108,7 +108,7 @@ func TestAuth(t *testing.T) {
 		t.Errorf("integration.TestAuth() error = %v, wantErr %v", err, nil)
 	}
 
-	// If Login failed with vsftpd & proftpd user, Return Error
+	// If Login failed with vsftpd user, Return Error
 	for i := 0; i < len(testset); i++ {
 		err = client.Login(testset[i].User.ID, testset[i].User.Pass)
 		if err == nil {
@@ -177,7 +177,7 @@ func TestDownload(t *testing.T) {
 
 	makeRandomFiles(t)
 
-	c := make(chan bool, testCount+1)
+	c := make(chan bool, 1)
 	for i := 0; i < testCount; i++ {
 		c <- true
 		num := i
@@ -231,7 +231,7 @@ func TestUpload(t *testing.T) {
 
 	removeDirFiles(t, "stor")
 
-	c := make(chan bool, testCount+1)
+	c := make(chan bool, 1)
 	for i := 0; i < testCount; i++ {
 		c <- true
 		num := i
