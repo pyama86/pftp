@@ -78,8 +78,6 @@ func TestLogin(t *testing.T) {
 	}
 	eg := errgroup.Group{}
 
-	//userCount := len(testset)
-
 	c := make(chan bool, len(testset)+1)
 	for i := 0; i < len(testset); i++ {
 		index := i
@@ -109,8 +107,6 @@ func TestAuth(t *testing.T) {
 		t.Skip()
 	}
 	eg := errgroup.Group{}
-
-	//userCount := len(testset)
 
 	c := make(chan bool, len(testset)+1)
 	for i := 0; i < len(testset); i++ {
