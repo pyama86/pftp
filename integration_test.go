@@ -36,6 +36,7 @@ type testSet struct {
 
 var testset = []testSet{
 	testSet{userInfo{"prouser", "prouser"}, "misc/test/data/prouser"},
+	testSet{userInfo{"vsuser", "vsuser"}, "misc/test/data/vsuser"},
 }
 
 const dataPath = "misc/test/data"

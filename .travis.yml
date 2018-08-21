@@ -5,6 +5,7 @@ services:
 before_install:
 - sudo apt-get -qqy update
 - sudo mkdir -p misc/test/data/prouser/stor
+- sudo mkdir -p misc/test/data/vsuser/stor
 - sudo chmod -R 777 misc/test/data
 
 script:
