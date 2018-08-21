@@ -4,8 +4,8 @@ services:
   - docker
 before_install:
 - sudo apt-get -qqy update
-- sudo mkdir -p misc/test/data/pftp/stor
-- sudo chmod 777 misc/test/data/pftp
+- sudo mkdir -p misc/test/data/prouser/stor
+- sudo chmod -R 777 misc/test/data
 
 script:
 - make ci
@@ -13,6 +13,6 @@ go:
   - 1.10.2
 cache:
   directories:
-    misc/test/data/pftp
+    misc/test/data
 notifications:
   slack: pepabo:urThJPQ6Vh8m3cI7riDpYAbn
