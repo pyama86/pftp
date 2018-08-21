@@ -53,7 +53,7 @@ help:
 vsftpd: vsftpd-cleanup
 	docker build -t vsftpd-server:test -f Dockerfile-vsftpd ./
 	docker run -d -v "`pwd`/misc/test/data":/home/vsftpd \
-	-p 20-21:20-21 -p 11100-11110:11100-11110 \
+	-p 10020-10021:20-21 -p 11100-11110:11100-11110 \
 	-e FTP_USER=vsuser -e FTP_PASS=vsuser \
 	-e PASV_ADDRESS=127.0.0.1 -e PASV_MIN_PORT=11100 -e PASV_MAX_PORT=11110 \
 	--name vsftpd --restart=always vsftpd-server:test
@@ -64,13 +64,13 @@ vsftpd-cleanup:
 proftpd: proftpd-cleanup
 	docker build -t proftpd-server:test -f Dockerfile-proftpd ./
 	docker run -d -v "`pwd`/misc/test/data/prouser":/home/prouser \
-	-p 20020-20021:20-21 -p 21100-21110:21100-21110 \
+	-p 20-21:20-21 -p 21100-21110:21100-21110 \
 	--name proftpd --restart=always proftpd-server:test
 
 proftpd-cleanup:
 	docker rm -f proftpd | true
 
-ftp: vsftpd interval proftpd
+ftp: vsftpd proftpd
 
 ftp-cleanup: vsftpd-cleanup proftpd-cleanup
 
@@ -80,6 +80,3 @@ integration:
 	go test $(VERBOSE) -integration $(TEST) $(TEST_OPTIONS)
 	./misc/server stop
 .PHONY: default dist test deps
-
-interval:
-	sleep 5

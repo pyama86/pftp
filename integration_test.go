@@ -35,7 +35,7 @@ type testSet struct {
 }
 
 var testset = []testSet{
-	testSet{userInfo{"vsuser", "vsuser"}, "misc/test/data/vsuser"},
+	testSet{userInfo{"prouser", "prouser"}, "misc/test/data/prouser"},
 }
 
 const dataPath = "misc/test/data"
@@ -204,7 +204,7 @@ func TestUpload(t *testing.T) {
 
 	removeDirFiles(t, "stor")
 
-	c := make(chan bool, (testCount*userCount)+1)
+	c := make(chan bool, (testCount * userCount))
 	for u := 0; u < userCount; u++ {
 		for i := 0; i < testCount; i++ {
 			c <- true
@@ -278,7 +278,7 @@ func TestDownload(t *testing.T) {
 
 	userCount := len(testset)
 
-	c := make(chan bool, (testCount*userCount)+1)
+	c := make(chan bool, (testCount * userCount))
 	for u := 0; u < userCount; u++ {
 		for i := 0; i < testCount; i++ {
 			c <- true
