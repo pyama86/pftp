@@ -11,6 +11,10 @@ import (
 )
 
 type Config struct {
+	Apiserver ServerConfig `toml:"apiserver"`
+}
+
+type ServerConfig struct {
 	URI  string `toml:"uri"`
 	PORT string `toml:"port"`
 	API  string `toml:"api"`
@@ -23,14 +27,14 @@ type Response struct {
 }
 
 // Request to server for get domain from username.
-func GetDomainFromAPI(path string, param string) (*string, error) {
+func GetDomainFromWebAPI(path string, param string) (*string, error) {
 	var conf Config
 	_, err := toml.DecodeFile(path, &conf)
 	if err != nil {
 		return nil, err
 	}
 
-	req := fmt.Sprintf("%s:%s%s?username=%s", conf.URI, conf.PORT, conf.API, param)
+	req := fmt.Sprintf("%s:%s%s?username=%s", conf.Apiserver.URI, conf.Apiserver.PORT, conf.Apiserver.API, param)
 
 	resp, err := http.Get(req)
 	if err != nil {

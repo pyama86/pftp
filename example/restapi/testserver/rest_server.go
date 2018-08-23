@@ -64,7 +64,7 @@ func HttpResponse(rw http.ResponseWriter, req *http.Request, res Response) {
 }
 
 func AddResource(router *httprouter.Router, resource Resource) {
-	fmt.Println("\"" + resource.Uri() + "\" api is registerd")
+	fmt.Println("\"" + resource.Uri() + "\" api is registerd for test")
 
 	router.GET(resource.Uri(), func(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		res := resource.Get(rw, r, ps)

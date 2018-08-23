@@ -6,13 +6,15 @@ import (
 	"syscall"
 
 	"github.com/Gurpartap/logrus-stack"
-	"github.com/pyama86/pftp/example"
-	"github.com/pyama86/pftp/example/server"
+	"github.com/pyama86/pftp/example/restapi"
+	"github.com/pyama86/pftp/example/restapi/testserver"
 	"github.com/pyama86/pftp/pftp"
 	"github.com/sirupsen/logrus"
 )
 
 var ftpServer *pftp.FtpServer
+
+var confFile = "./config.toml"
 
 func init() {
 	logrus.SetLevel(logrus.DebugLevel)
@@ -24,8 +26,6 @@ func main() {
 	go func() {
 		restServer.NewRestServer()
 	}()
-
-	confFile := "./example.toml"
 
 	ftpServer, err := pftp.NewFtpServer(confFile)
 	if err != nil {
@@ -52,10 +52,7 @@ func signalHandler() {
 }
 
 func User(c *pftp.Context, param string) error {
-	confFile := "./config.toml"
-
-	// Get origin domain by Rest API
-	host, err := restapi.GetDomainFromAPI(confFile, param)
+	host, err := restapi.GetDomainFromWebAPI(confFile, param)
 	if err == nil {
 		c.RemoteAddr = *host
 	}
