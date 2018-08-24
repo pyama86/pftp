@@ -8,13 +8,12 @@ import (
 )
 
 func Test_restapi_RequestToServer(t *testing.T) {
-	serverready := make(chan struct{})
-
 	type fields struct {
 		config string
 	}
 
-	go test.NewRestServer_Test(serverready, t)
+	testsrv := test.NewRestServer_Test(t)
+	defer testsrv.Close()
 
 	tests := []struct {
 		name    string
@@ -25,7 +24,7 @@ func Test_restapi_RequestToServer(t *testing.T) {
 		{
 			name: "vsuser",
 			fields: fields{
-				config: "http://127.0.0.1:8080/getDomain",
+				config: testsrv.URL,
 			},
 			want: &Response{
 				Code:    200,
@@ -37,7 +36,7 @@ func Test_restapi_RequestToServer(t *testing.T) {
 		{
 			name: "prouser",
 			fields: fields{
-				config: "http://127.0.0.1:8080/getDomain",
+				config: testsrv.URL,
 			},
 			want: &Response{
 				Code:    200,
@@ -49,7 +48,7 @@ func Test_restapi_RequestToServer(t *testing.T) {
 		{
 			name: "hogemoge",
 			fields: fields{
-				config: "http://127.0.0.1:8080/getDomain",
+				config: testsrv.URL,
 			},
 			want: &Response{
 				Code:    400,
@@ -60,10 +59,9 @@ func Test_restapi_RequestToServer(t *testing.T) {
 		},
 	}
 
-	<-serverready
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := RequestToServer(tt.fields.config, tt.name)
+			got, err := RequestToServer(tt.fields.config+"/getDomain", tt.name)
 			if err != nil {
 				if !tt.wantErr || (err.Error() != tt.want.Message) {
 					t.Errorf("got error when request to server = %v", err)

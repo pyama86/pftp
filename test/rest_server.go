@@ -4,8 +4,8 @@ package test
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/julienschmidt/httprouter"
@@ -115,7 +115,6 @@ func (GetUserDomain) Get(rw http.ResponseWriter, r *http.Request, ps httprouter.
 
 func NewRestServer() (*http.Server, error) {
 	router := httprouter.New()
-
 	AddResource(router, new(GetUserDomain))
 
 	srv := &http.Server{Addr: "127.0.0.1:8080", Handler: router}
@@ -129,14 +128,11 @@ func NewRestServer() (*http.Server, error) {
 	return srv, nil
 }
 
-func NewRestServer_Test(serverready chan struct{}, t *testing.T) {
-	srv, err := NewRestServer()
-	if err != nil {
-		t.Fatal(err)
-	} else {
-		fmt.Println("Rest server now running!")
-	}
-	defer srv.Close()
+func NewRestServer_Test(t *testing.T) *httptest.Server {
+	router := httprouter.New()
+	AddResource(router, new(GetUserDomain))
 
-	serverready <- struct{}{}
+	srv := httptest.NewServer(router)
+
+	return srv
 }
