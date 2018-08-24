@@ -5,11 +5,12 @@ transfer_timeout = 600
 remote_addr = "127.0.0.1:21"
 get_origin = "WebAPI"
 
+    [pftpserver.tls]
+    cert = "./tls/server.crt"
+    key = "./tls/server.key"
+
 [apiserver]
 uri = "http://127.0.0.1"
 port = "8080"
 api = "/getDomain"
 
-[tls]
-cert = "./tls/server.crt"
-key = "./tls/server.key"

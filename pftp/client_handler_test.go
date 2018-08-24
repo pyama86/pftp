@@ -17,7 +17,7 @@ func Test_clientHandler_HandleCommands(t *testing.T) {
 	go test.LaunchTestServer(&server, conn, done, serverready, t)
 
 	type fields struct {
-		config *config
+		config *pftpConfig
 	}
 
 	tests := []struct {
@@ -30,7 +30,7 @@ func Test_clientHandler_HandleCommands(t *testing.T) {
 		{
 			name: "idle_timeout",
 			fields: fields{
-				config: &config{
+				config: &pftpConfig{
 					IdleTimeout: 1,
 					RemoteAddr:  "127.0.0.1:21",
 				},
@@ -41,7 +41,7 @@ func Test_clientHandler_HandleCommands(t *testing.T) {
 		{
 			name: "max_connection",
 			fields: fields{
-				config: &config{
+				config: &pftpConfig{
 					IdleTimeout:    1,
 					MaxConnections: 0,
 					RemoteAddr:     "127.0.0.1:21",
@@ -93,7 +93,7 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 
 	type fields struct {
 		conn   net.Conn
-		config *config
+		config *pftpConfig
 	}
 	type args struct {
 		line string
@@ -108,7 +108,7 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 		{
 			name: "ok",
 			fields: fields{
-				config: &config{
+				config: &pftpConfig{
 					IdleTimeout: 3,
 					RemoteAddr:  "127.0.0.1:21",
 				},

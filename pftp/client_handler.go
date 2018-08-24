@@ -45,11 +45,11 @@ type clientHandler struct {
 	deadline          time.Time
 }
 
-func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32) *clientHandler {
+func newClientHandler(connection net.Conn, c *pftpConfig, m middleware, id int, currentConnection *int32) *clientHandler {
 	p := &clientHandler{
 		id:                id,
 		conn:              connection,
-		config:            &c.Pftp,
+		config:            c,
 		middleware:        m,
 		writer:            bufio.NewWriter(connection),
 		reader:            bufio.NewReader(connection),

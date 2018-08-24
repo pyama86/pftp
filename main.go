@@ -6,9 +6,9 @@ import (
 	"syscall"
 
 	"github.com/Gurpartap/logrus-stack"
-	"github.com/pyama86/pftp/example/restapi"
-	"github.com/pyama86/pftp/example/restapi/testserver"
+	"github.com/pyama86/pftp/example/webapi"
 	"github.com/pyama86/pftp/pftp"
+	"github.com/pyama86/pftp/test"
 	"github.com/sirupsen/logrus"
 )
 
@@ -23,8 +23,9 @@ func init() {
 }
 
 func main() {
+	// Will remove when ghost api has ready!
 	go func() {
-		restServer.NewRestServer()
+		test.NewRestServer()
 	}()
 
 	ftpServer, err := pftp.NewFtpServer(confFile)
@@ -52,9 +53,9 @@ func signalHandler() {
 }
 
 func User(c *pftp.Context, param string) error {
-	host, err := restapi.GetDomainFromWebAPI(confFile, param)
+	res, err := webapi.GetDomainFromWebAPI(confFile, param)
 	if err == nil {
-		c.RemoteAddr = *host
+		c.RemoteAddr = *res
 	}
 
 	return nil

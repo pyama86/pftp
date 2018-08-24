@@ -1,6 +1,6 @@
 // This is test server for get domain name
 
-package restServer
+package test
 
 import (
 	"encoding/json"

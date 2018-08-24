@@ -8,7 +8,7 @@ import (
 
 func Test_clientHandler_handleAUTH(t *testing.T) {
 	type fields struct {
-		config *config
+		config *pftpConfig
 	}
 	tests := []struct {
 		name   string
@@ -18,7 +18,7 @@ func Test_clientHandler_handleAUTH(t *testing.T) {
 		{
 			name: "undefined",
 			fields: fields{
-				config: &config{},
+				config: &pftpConfig{},
 			},
 			want: &result{
 				code: 550,
@@ -47,7 +47,7 @@ func Test_clientHandler_handleUSER(t *testing.T) {
 
 	type fields struct {
 		conn    net.Conn
-		config  *config
+		config  *pftpConfig
 		context *Context
 		line    string
 	}
@@ -60,7 +60,7 @@ func Test_clientHandler_handleUSER(t *testing.T) {
 			name: "ok",
 			fields: fields{
 				conn:   c,
-				config: &config{},
+				config: &pftpConfig{},
 				context: &Context{
 					RemoteAddr: "127.0.0.1:21",
 				},
@@ -71,7 +71,7 @@ func Test_clientHandler_handleUSER(t *testing.T) {
 			name: "not connect",
 			fields: fields{
 				conn:   c,
-				config: &config{},
+				config: &pftpConfig{},
 				context: &Context{
 					RemoteAddr: "127.0.0.1:28080",
 				},

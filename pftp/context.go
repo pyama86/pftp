@@ -4,8 +4,8 @@ type Context struct {
 	RemoteAddr string
 }
 
-func newContext(c *config) *Context {
+func newContext(c *pftpConfig) *Context {
 	return &Context{
-		RemoteAddr: c.Pftp.RemoteAddr,
+		RemoteAddr: c.RemoteAddr,
 	}
 }

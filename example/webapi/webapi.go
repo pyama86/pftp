@@ -1,4 +1,4 @@
-package restapi
+package webapi
 
 import (
 	"encoding/json"
@@ -27,16 +27,10 @@ type Response struct {
 }
 
 // Request to server for get domain from username.
-func GetDomainFromWebAPI(path string, param string) (*string, error) {
-	var conf Config
-	_, err := toml.DecodeFile(path, &conf)
-	if err != nil {
-		return nil, err
-	}
+func RequestToServer(serverURL string, param string) (*Response, error) {
+	requestURI := fmt.Sprintf("%s?username=%s", serverURL, param)
 
-	req := fmt.Sprintf("%s:%s%s?username=%s", conf.Apiserver.URI, conf.Apiserver.PORT, conf.Apiserver.API, param)
-
-	resp, err := http.Get(req)
+	resp, err := http.Get(requestURI)
 	if err != nil {
 		return nil, err
 	}
@@ -54,5 +48,22 @@ func GetDomainFromWebAPI(path string, param string) (*string, error) {
 		return nil, errors.New(decodedBody.Message)
 	}
 
-	return &decodedBody.Data, nil
+	return decodedBody, nil
+}
+
+func GetDomainFromWebAPI(path string, param string) (*string, error) {
+	var conf Config
+	_, err := toml.DecodeFile(path, &conf)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL := fmt.Sprintf("%s:%s%s", conf.Apiserver.URI, conf.Apiserver.PORT, conf.Apiserver.API)
+
+	domain, err := RequestToServer(serverURL, param)
+	if err != nil {
+		return nil, err
+	}
+
+	return &domain.Data, nil
 }
