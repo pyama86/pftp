@@ -118,7 +118,7 @@ func NewRestServer() (*http.Server, error) {
 
 	AddResource(router, new(GetUserDomain))
 
-	srv := &http.Server{Addr: ":8080", Handler: router}
+	srv := &http.Server{Addr: "127.0.0.1:8080", Handler: router}
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil {
