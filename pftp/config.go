@@ -22,7 +22,6 @@ type pftpConfig struct {
 	ProxyTimeout    int         `toml:"proxy_timeout"`
 	TransferTimeout int         `toml:"transfer_timeout"`
 	MaxConnections  int32       `toml:"max_connections"`
-	GetOrigin       string      `toml:"get_origin"`
 	TLS             *tlsPair    `toml:"tls"`
 	TLSConfig       *tls.Config `toml:"-"`
 }

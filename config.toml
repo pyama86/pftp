@@ -3,7 +3,6 @@ max_connections = 10
 idle_timeout = 60
 transfer_timeout = 600
 remote_addr = "127.0.0.1:21"
-get_origin = "WebAPI"
 
     [pftpserver.tls]
     cert = "./tls/server.crt"
