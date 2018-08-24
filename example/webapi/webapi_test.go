@@ -8,11 +8,13 @@ import (
 )
 
 func Test_restapi_RequestToServer(t *testing.T) {
+	serverready := make(chan struct{})
+
 	type fields struct {
 		config string
 	}
 
-	go test.NewRestServer()
+	go test.NewRestServer_Test(serverready, t)
 
 	tests := []struct {
 		name    string
@@ -57,6 +59,8 @@ func Test_restapi_RequestToServer(t *testing.T) {
 			wantErr: true,
 		},
 	}
+
+	<-serverready
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := RequestToServer(tt.fields.config, tt.name)

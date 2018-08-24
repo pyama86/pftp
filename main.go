@@ -24,9 +24,11 @@ func init() {
 
 func main() {
 	// Will remove when ghost api has ready!
-	go func() {
-		test.NewRestServer()
-	}()
+	srv, err := test.NewRestServer()
+	if err != nil {
+		logrus.Fatal(err)
+	}
+	defer srv.Close()
 
 	ftpServer, err := pftp.NewFtpServer(confFile)
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"testing"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/sirupsen/logrus"
@@ -64,8 +65,6 @@ func HttpResponse(rw http.ResponseWriter, req *http.Request, res Response) {
 }
 
 func AddResource(router *httprouter.Router, resource Resource) {
-	fmt.Println("\"" + resource.Uri() + "\" api is registerd for test")
-
 	router.GET(resource.Uri(), func(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		res := resource.Get(rw, r, ps)
 		HttpResponse(rw, r, res)
@@ -114,12 +113,30 @@ func (GetUserDomain) Get(rw http.ResponseWriter, r *http.Request, ps httprouter.
 	return Response{400, "Username not found", ""}
 }
 
-func NewRestServer() {
+func NewRestServer() (*http.Server, error) {
 	router := httprouter.New()
 
 	AddResource(router, new(GetUserDomain))
 
-	if err := http.ListenAndServe(":8080", router); err != nil {
-		logrus.Fatal(err)
+	srv := &http.Server{Addr: ":8080", Handler: router}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil {
+			logrus.Fatal(err)
+		}
+	}()
+
+	return srv, nil
+}
+
+func NewRestServer_Test(serverready chan struct{}, t *testing.T) {
+	srv, err := NewRestServer()
+	if err != nil {
+		t.Fatal(err)
+	} else {
+		fmt.Println("Rest server now running!")
 	}
+	defer srv.Close()
+
+	serverready <- struct{}{}
 }
