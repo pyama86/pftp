@@ -11,24 +11,31 @@ import (
 )
 
 type Config struct {
-	Apiserver ServerConfig `toml:"apiserver"`
+	Apiserver ServerConfig `toml:"webapiserver"`
 }
 
 type ServerConfig struct {
-	URI  string `toml:"uri"`
-	PORT string `toml:"port"`
-	API  string `toml:"api"`
+	URL      string `toml:"url"`
+	Port     string `toml:"port"`
+	Endpoint string `toml:"endpoint"`
 }
 
+// Response from server will contain 3 elements with JSON type.
+// {
+//	  code : http response code
+//	  message : response message from server
+//	  data : destination url
+// }
 type Response struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    string `json:"data"`
 }
 
-// Request to server for get domain from username.
-func RequestToServer(serverURL string, param string) (*Response, error) {
-	requestURI := fmt.Sprintf("%s?username=%s", serverURL, param)
+// RequestToServer will return response data from webapi server
+// If response code doesn't got 2xx, return error.
+func RequestToServer(requestURL string, param string) (*Response, error) {
+	requestURI := fmt.Sprintf("%s?username=%s", requestURL, param)
 
 	resp, err := http.Get(requestURI)
 	if err != nil {
@@ -51,6 +58,8 @@ func RequestToServer(serverURL string, param string) (*Response, error) {
 	return decodedBody, nil
 }
 
+// GetDomainFromWebAPI will return destination url by string.
+// Make request URL from config file and has request to server with username parameter.
 func GetDomainFromWebAPI(path string, param string) (*string, error) {
 	var conf Config
 	_, err := toml.DecodeFile(path, &conf)
@@ -58,9 +67,9 @@ func GetDomainFromWebAPI(path string, param string) (*string, error) {
 		return nil, err
 	}
 
-	serverURL := fmt.Sprintf("%s:%s%s", conf.Apiserver.URI, conf.Apiserver.PORT, conf.Apiserver.API)
+	requestURL := fmt.Sprintf("%s:%s%s", conf.Apiserver.URL, conf.Apiserver.Port, conf.Apiserver.Endpoint)
 
-	domain, err := RequestToServer(serverURL, param)
+	domain, err := RequestToServer(requestURL, param)
 	if err != nil {
 		return nil, err
 	}

@@ -30,7 +30,7 @@ func init() {
 type clientHandler struct {
 	id                int
 	conn              net.Conn
-	config            *pftpConfig
+	config            *config
 	middleware        middleware
 	writer            *bufio.Writer
 	reader            *bufio.Reader
@@ -45,7 +45,7 @@ type clientHandler struct {
 	deadline          time.Time
 }
 
-func newClientHandler(connection net.Conn, c *pftpConfig, m middleware, id int, currentConnection *int32) *clientHandler {
+func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32) *clientHandler {
 	p := &clientHandler{
 		id:                id,
 		conn:              connection,

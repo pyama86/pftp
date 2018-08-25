@@ -35,7 +35,7 @@ func (server *FtpServer) Use(command string, m middlewareFunc) {
 }
 
 func (server *FtpServer) Listen() (err error) {
-	server.listener, err = net.Listen("tcp", server.config.Pftp.ListenAddr)
+	server.listener, err = net.Listen("tcp", server.config.ListenAddr)
 
 	if err != nil {
 		return err
@@ -57,12 +57,12 @@ func (server *FtpServer) Serve() error {
 			}
 		}
 
-		if server.config.Pftp.IdleTimeout > 0 {
-			conn.SetDeadline(time.Now().Add(time.Duration(server.config.Pftp.IdleTimeout) * time.Second))
+		if server.config.IdleTimeout > 0 {
+			conn.SetDeadline(time.Now().Add(time.Duration(server.config.IdleTimeout) * time.Second))
 		}
 
 		server.clientCounter++
-		c := newClientHandler(conn, &server.config.Pftp, server.middleware, server.clientCounter, &currentConnection)
+		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection)
 		logrus.Info("FTP Client connected ", "clientIp ", conn.RemoteAddr())
 		go c.HandleCommands()
 	}
