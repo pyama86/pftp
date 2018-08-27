@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -23,7 +24,7 @@ func init() {
 }
 
 func main() {
-	// Will remove when ghost api has ready!
+	// Will remove when external webapi server has ready!
 	srv, err := test.NewRestServer()
 	if err != nil {
 		logrus.Fatal(err)
@@ -54,9 +55,14 @@ func signalHandler() {
 	}
 }
 
+// User function will setup Origin ftp server domain from ftp username
+// If failed get domain from server, the origin will set by local (localhost:21)
 func User(c *pftp.Context, param string) error {
 	res, err := webapi.GetDomainFromWebAPI(confFile, param)
-	if err == nil {
+	if err != nil {
+		logrus.Debug(fmt.Sprintf("cannot get domain from webapi server:%v", err))
+		c.RemoteAddr = "127.0.0.1:21"
+	} else {
 		c.RemoteAddr = *res
 	}
 
