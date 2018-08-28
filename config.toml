@@ -6,3 +6,7 @@ remote_addr = "127.0.0.1:21"
 [tls]
 cert = "./tls/server.crt"
 key = "./tls/server.key"
+
+[webapiserver]
+# %s replace by username on running
+uri = "http://127.0.0.1:8080/getDomain?username=%s"

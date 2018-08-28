@@ -34,6 +34,14 @@
   revision = "2403248fa8cc9f7909862627aa7337f13f8e0bf1"
 
 [[projects]]
+  digest = "1:ccfa094742ce1c97fd3f6481e1bf98f3d9862510eee2bc0eb56e2745396bd330"
+  name = "github.com/julienschmidt/httprouter"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "8c199fb6259ffc1af525cc3ad52ee60ba8359669"
+  version = "v1.1"
+
+[[projects]]
   branch = "master"
   digest = "1:a880aff67fee106ff57d000f4b1d3a80bc251f6a69f3039c622d5b7c59918e11"
   name = "github.com/marcobeierer/ftps"
@@ -91,6 +99,7 @@
     "github.com/BurntSushi/toml",
     "github.com/Gurpartap/logrus-stack",
     "github.com/jlaffaye/ftp",
+    "github.com/julienschmidt/httprouter",
     "github.com/marcobeierer/ftps",
     "github.com/sirupsen/logrus",
     "golang.org/x/sync/errgroup",

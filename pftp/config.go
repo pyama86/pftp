@@ -10,6 +10,7 @@ type portRange struct {
 	Start int
 	End   int
 }
+
 type config struct {
 	ListenAddr      string      `toml:"listen_addr"`
 	RemoteAddr      string      `toml:"remote_addr"`
@@ -22,8 +23,8 @@ type config struct {
 }
 
 type tlsPair struct {
-	CERT string
-	Key  string
+	Cert string `toml:"cert"`
+	Key  string `toml:"key"`
 }
 
 func loadConfig(path string) (*config, error) {
@@ -36,7 +37,7 @@ func loadConfig(path string) (*config, error) {
 	}
 
 	if c.TLS != nil {
-		if cert, err := tls.LoadX509KeyPair(c.TLS.CERT, c.TLS.Key); err == nil {
+		if cert, err := tls.LoadX509KeyPair(c.TLS.Cert, c.TLS.Key); err == nil {
 			c.TLSConfig = &tls.Config{
 				NextProtos:   []string{"ftp"},
 				Certificates: []tls.Certificate{cert},
