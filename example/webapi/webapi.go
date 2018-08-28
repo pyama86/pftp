@@ -3,6 +3,7 @@ package webapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 
@@ -32,7 +33,7 @@ type Response struct {
 // RequestToServer will return response data from webapi server
 // If response code doesn't got 2xx, return error.
 func RequestToServer(requestURI string, param string) (*Response, error) {
-	resp, err := http.Get(requestURI + param)
+	resp, err := http.Get(fmt.Sprintf(requestURI, param))
 	if err != nil {
 		return nil, err
 	}

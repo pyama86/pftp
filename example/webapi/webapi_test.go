@@ -24,7 +24,7 @@ func Test_restapi_RequestToServer(t *testing.T) {
 		{
 			name: "vsuser",
 			fields: fields{
-				serverURI: testsrv.URL + "/getDomain?username=",
+				serverURI: testsrv.URL + "/getDomain?username=%s",
 			},
 			want: &Response{
 				Code:    200,
@@ -36,7 +36,7 @@ func Test_restapi_RequestToServer(t *testing.T) {
 		{
 			name: "prouser",
 			fields: fields{
-				serverURI: testsrv.URL + "/getDomain?username=",
+				serverURI: testsrv.URL + "/getDomain?username=%s",
 			},
 			want: &Response{
 				Code:    200,
@@ -48,7 +48,7 @@ func Test_restapi_RequestToServer(t *testing.T) {
 		{
 			name: "hogemoge",
 			fields: fields{
-				serverURI: testsrv.URL + "/getDomain?username=",
+				serverURI: testsrv.URL + "/getDomain?username=%s",
 			},
 			want: &Response{
 				Code:    400,
