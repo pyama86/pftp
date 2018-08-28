@@ -3,7 +3,6 @@ package webapi
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 
@@ -15,9 +14,7 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	URL      string `toml:"url"`
-	Port     string `toml:"port"`
-	Endpoint string `toml:"endpoint"`
+	URI string `toml:"uri"`
 }
 
 // Response from server will contain 3 elements with JSON type.
@@ -34,10 +31,8 @@ type Response struct {
 
 // RequestToServer will return response data from webapi server
 // If response code doesn't got 2xx, return error.
-func RequestToServer(requestURL string, param string) (*Response, error) {
-	requestURI := fmt.Sprintf("%s?username=%s", requestURL, param)
-
-	resp, err := http.Get(requestURI)
+func RequestToServer(requestURI string, param string) (*Response, error) {
+	resp, err := http.Get(requestURI + param)
 	if err != nil {
 		return nil, err
 	}
@@ -67,9 +62,7 @@ func GetDomainFromWebAPI(path string, param string) (*string, error) {
 		return nil, err
 	}
 
-	requestURL := fmt.Sprintf("%s:%s%s", conf.Apiserver.URL, conf.Apiserver.Port, conf.Apiserver.Endpoint)
-
-	domain, err := RequestToServer(requestURL, param)
+	domain, err := RequestToServer(conf.Apiserver.URI, param)
 	if err != nil {
 		return nil, err
 	}

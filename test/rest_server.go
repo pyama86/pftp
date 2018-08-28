@@ -4,12 +4,12 @@ package test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/julienschmidt/httprouter"
-	"github.com/sirupsen/logrus"
 )
 
 type Response struct {
@@ -113,7 +113,7 @@ func (GetUserDomain) Get(rw http.ResponseWriter, r *http.Request, ps httprouter.
 	return Response{400, "Username not found", ""}
 }
 
-func NewRestServer() (*http.Server, error) {
+func LaunchTestRestServer() (*http.Server, error) {
 	router := httprouter.New()
 	AddResource(router, new(GetUserDomain))
 
@@ -121,14 +121,14 @@ func NewRestServer() (*http.Server, error) {
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil {
-			logrus.Fatal(err)
+			fmt.Println("unable run test webapi server")
 		}
 	}()
 
 	return srv, nil
 }
 
-func NewRestServer_Test(t *testing.T) *httptest.Server {
+func LaunchUnitTestRestServer(t *testing.T) *httptest.Server {
 	router := httprouter.New()
 	AddResource(router, new(GetUserDomain))
 

@@ -9,7 +9,6 @@ import (
 	"github.com/Gurpartap/logrus-stack"
 	"github.com/pyama86/pftp/example/webapi"
 	"github.com/pyama86/pftp/pftp"
-	"github.com/pyama86/pftp/test"
 	"github.com/sirupsen/logrus"
 )
 
@@ -24,13 +23,6 @@ func init() {
 }
 
 func main() {
-	// Will remove when external webapi server has ready!
-	srv, err := test.NewRestServer()
-	if err != nil {
-		logrus.Fatal(err)
-	}
-	defer srv.Close()
-
 	ftpServer, err := pftp.NewFtpServer(confFile)
 	if err != nil {
 		logrus.Fatal(err)

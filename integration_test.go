@@ -15,6 +15,7 @@ import (
 
 	"github.com/jlaffaye/ftp"
 	"github.com/marcobeierer/ftps"
+	"github.com/pyama86/pftp/test"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -61,6 +62,14 @@ func loggedin(port int, t *testing.T, user userInfo) *ftp.ServerConn {
 
 func TestMain(m *testing.M) {
 	flag.Parse()
+
+	srv, err := test.LaunchTestRestServer()
+	if err != nil {
+		fmt.Println("unable to run test webapi server")
+		os.Exit(1)
+	}
+	defer srv.Close()
+
 	result := m.Run()
 	os.Exit(result)
 }

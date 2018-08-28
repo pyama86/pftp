@@ -8,7 +8,4 @@ cert = "./tls/server.crt"
 key = "./tls/server.key"
 
 [webapiserver]
-url = "http://127.0.0.1"
-port = "8080"
-endpoint = "/getDomain"
-
+uri = "http://127.0.0.1:8080/getDomain?username="
