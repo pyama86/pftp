@@ -14,6 +14,8 @@ go:
   - 1.10.2
 cache:
   directories:
-    misc/test/data
+    - misc/test/data
+    - vendor
+    - /go/src/github.com
 notifications:
   slack: pepabo:urThJPQ6Vh8m3cI7riDpYAbn
