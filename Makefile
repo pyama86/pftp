@@ -76,6 +76,7 @@ ftp-cleanup: vsftpd-cleanup proftpd-cleanup
 
 integration:
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Integration Testing$(RESET)"
+	./misc/server stop || true
 	./misc/server start
 	go test $(VERBOSE) -integration $(TEST) $(TEST_OPTIONS)
 	./misc/server stop

@@ -103,7 +103,6 @@ func (c *clientHandler) HandleCommands() error {
 					c.controleProxy.CloseOk = false
 				} else {
 					proxyError <- err
-
 				}
 				break
 			}
@@ -212,7 +211,13 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 	cmd := handlers[c.command]
 	if cmd != nil {
 		if cmd.suspend {
-			c.controleProxy.Suspend()
+			err := c.controleProxy.Suspend()
+			if err != nil {
+				return &result{
+					code: 500,
+					msg:  fmt.Sprintf("Internal error: %s", err),
+				}
+			}
 			defer c.controleProxy.Unsuspend()
 		}
 		res := cmd.f(c)

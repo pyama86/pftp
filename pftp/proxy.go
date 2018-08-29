@@ -2,7 +2,7 @@ package pftp
 
 import (
 	"bufio"
-	"bytes"
+	"errors"
 	"io"
 	"net"
 	"strconv"
@@ -26,11 +26,11 @@ type ProxyServer struct {
 	originWriter *bufio.Writer
 	origin       net.Conn
 	doProxy      bool
-	pipe         chan []byte
 	CloseOk      bool
 	Switch       bool
 	mutex        *sync.Mutex
 	log          *logger
+	sem          int
 }
 
 func NewProxyServer(timeout int, clientReader *bufio.Reader, clientWriter *bufio.Writer, originAddr string, m *sync.Mutex, l *logger) (*ProxyServer, error) {
@@ -47,7 +47,6 @@ func NewProxyServer(timeout int, clientReader *bufio.Reader, clientWriter *bufio
 		origin:       c,
 		timeout:      timeout,
 		doProxy:      true,
-		pipe:         make(chan []byte, BUFFER_SIZE),
 		mutex:        m,
 		log:          l,
 	}
@@ -67,8 +66,6 @@ func (s *ProxyServer) ReadFromOrigin() (string, error) {
 	var reader *bufio.Reader
 	if s.doProxy {
 		reader = bufio.NewReader(s.origin)
-	} else {
-		reader = bufio.NewReader(bytes.NewBuffer(<-s.pipe))
 	}
 
 	for {
@@ -83,15 +80,28 @@ func (s *ProxyServer) ReadFromOrigin() (string, error) {
 }
 
 func (s *ProxyServer) SendToOrigin(line string) error {
+	cnt := 0
 	if s.timeout > 0 {
 		s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
 	}
 
-	s.log.debug("send to origin:%s", line)
-	if _, err := s.origin.Write([]byte(line)); err != nil {
-		return err
-	}
+	for {
+		if cnt > s.timeout {
+			return errors.New("Could not get semaphore to send to client")
+		}
 
+		s.log.debug("send to origin:%s", line)
+
+		if s.sem < 1 {
+			if _, err := s.origin.Write([]byte(line)); err != nil {
+				return err
+			}
+			s.sem++
+			break
+		}
+		time.Sleep(1 * time.Second)
+		cnt++
+	}
 	return nil
 }
 
@@ -118,9 +128,22 @@ func (s *ProxyServer) DownloadProxy() error {
 	return s.start(s.originReader, s.clientWriter)
 }
 
-func (s *ProxyServer) Suspend() {
+func (s *ProxyServer) Suspend() error {
 	s.log.debug("suspend proxy")
-	s.doProxy = false
+	cnt := 0
+	for {
+		if cnt > s.timeout {
+			return errors.New("Could not get semaphore to send to client")
+		}
+
+		if s.sem < 1 {
+			s.doProxy = false
+			break
+		}
+		time.Sleep(1 * time.Second)
+		cnt++
+	}
+	return nil
 }
 
 func (s *ProxyServer) Unsuspend() {
@@ -137,7 +160,10 @@ func (s *ProxyServer) SwitchOrigin(clientAddr string, originAddr string, proxyPr
 	s.log.debug("switch origin to: %s", originAddr)
 
 	if s.doProxy {
-		s.Suspend()
+		err := s.Suspend()
+		if err != nil {
+			return err
+		}
 		defer s.Unsuspend()
 	}
 
@@ -201,24 +227,20 @@ func (s *ProxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 					break loop
 				}
 
-				if s.doProxy {
-					s.mutex.Lock()
-					_, err := to.Write(b)
-					if err != nil {
-						lastError = err
-						s.mutex.Unlock()
-						break loop
-					}
-
-					if err := to.Flush(); err != nil {
-						lastError = err
-						s.mutex.Unlock()
-						break loop
-					}
+				s.mutex.Lock()
+				_, err := to.Write(b)
+				if err != nil {
+					lastError = err
 					s.mutex.Unlock()
-				} else {
-					s.pipe <- b
+					break loop
 				}
+
+				if err := to.Flush(); err != nil {
+					lastError = err
+					s.mutex.Unlock()
+					break loop
+				}
+				s.mutex.Unlock()
 			}
 		}
 		done <- struct{}{}
@@ -228,15 +250,20 @@ func (s *ProxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 		if n, err := from.Read(buff); err != nil {
 			if err != io.EOF {
 				lastError = err
-			} else {
-
 			}
 			break
 		} else {
 			if s.timeout > 0 {
 				s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
 			}
-			read <- buff[:n]
+
+			if s.doProxy || s.sem > 0 {
+				read <- buff[:n]
+			}
+
+			if s.sem > 0 {
+				s.sem--
+			}
 		}
 	}
 	close(read)
