@@ -58,6 +58,7 @@ func NewProxyServer(timeout int, clientReader *bufio.Reader, clientWriter *bufio
 	return p, err
 }
 
+// TODO: DELETE
 func (s *ProxyServer) ReadFromOrigin() (string, error) {
 	if s.timeout > 0 {
 		s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
@@ -94,6 +95,7 @@ func (s *ProxyServer) SendToOrigin(line string) error {
 	return nil
 }
 
+// TODO: DELETE
 func (s *ProxyServer) SendToClient(line string) error {
 	s.log.debug("send to client:%s", line)
 	if _, err := s.clientWriter.Write([]byte(line)); err != nil {
@@ -226,6 +228,8 @@ func (s *ProxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 		if n, err := from.Read(buff); err != nil {
 			if err != io.EOF {
 				lastError = err
+			} else {
+
 			}
 			break
 		} else {
