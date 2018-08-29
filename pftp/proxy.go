@@ -5,8 +5,12 @@ import (
 	"bytes"
 	"io"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/pires/go-proxyproto"
 )
 
 const (
@@ -127,7 +131,7 @@ func (s *ProxyServer) Close() {
 	s.origin.Close()
 }
 
-func (s *ProxyServer) SwitchOrigin(originAddr string) error {
+func (s *ProxyServer) SwitchOrigin(clientAddr string, originAddr string, proxyProtocol bool) error {
 	s.log.debug("switch origin to: %s", originAddr)
 
 	if s.doProxy {
@@ -139,6 +143,27 @@ func (s *ProxyServer) SwitchOrigin(originAddr string) error {
 	if err != nil {
 		return err
 	}
+
+	// Send proxy protocol v1 header when set proxy protocol true
+	if proxyProtocol {
+		sourceAddr := strings.Split(clientAddr, ":")
+		destinationAddr := strings.Split(originAddr, ":")
+		sourcePort, _ := strconv.Atoi(sourceAddr[1])
+		destinationPort, _ := strconv.Atoi(destinationAddr[1])
+
+		proxyProtocolHeader := proxyproto.Header{
+			Version:            byte(1),
+			Command:            proxyproto.PROXY,
+			TransportProtocol:  proxyproto.TCPv4,
+			SourceAddress:      net.ParseIP(sourceAddr[0]),
+			DestinationAddress: net.ParseIP(destinationAddr[0]),
+			SourcePort:         uint16(sourcePort),
+			DestinationPort:    uint16(destinationPort),
+		}
+
+		proxyProtocolHeader.WriteTo(c)
+	}
+
 	old := s.origin
 	s.origin = c
 

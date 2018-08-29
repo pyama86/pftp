@@ -18,6 +18,7 @@ type config struct {
 	ProxyTimeout    int         `toml:"proxy_timeout"`
 	TransferTimeout int         `toml:"transfer_timeout"`
 	MaxConnections  int32       `toml:"max_connections"`
+	ProxyProtocol   bool        `toml:"proxy_protocol"`
 	TLS             *tlsPair    `toml:"tls"`
 	TLSConfig       *tls.Config `toml:"-"`
 }
@@ -55,4 +56,5 @@ func defaultConfig(config *config) {
 	config.IdleTimeout = 900
 	config.ProxyTimeout = 900
 	config.TransferTimeout = 900
+	config.ProxyProtocol = false
 }

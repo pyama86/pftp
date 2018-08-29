@@ -233,7 +233,7 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 
 func (c *clientHandler) connectControlProxy() error {
 	if c.controleProxy != nil {
-		err := c.controleProxy.SwitchOrigin(c.context.RemoteAddr)
+		err := c.controleProxy.SwitchOrigin(c.conn.RemoteAddr().String(), c.context.RemoteAddr, c.config.ProxyProtocol)
 		if err != nil {
 			return err
 		}
