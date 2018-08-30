@@ -1,8 +1,7 @@
 #!/bin/bash
 
 start_server() {
-  go build -o pftp_bin main.go
-  sudo ./pftp_bin &
+  make server &
   sleep 5
   sudo lsof -i:2121 | tail -1 | awk '{print $2}' > pftp.pid
 }
