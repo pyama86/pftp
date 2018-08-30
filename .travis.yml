@@ -11,7 +11,7 @@ before_install:
 script:
 - make ci
 go:
-  - 1.10.2
+  - 1.11
 cache:
   directories:
     - misc/test/data

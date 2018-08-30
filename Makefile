@@ -1,40 +1,44 @@
-TEST ?= $(shell go list ./... | grep -v vendor)
+TEST ?= $(shell $(GO) list ./... | grep -v vendor)
 VERSION = $(shell cat version)
 REVISION = $(shell git describe --always)
 
 INFO_COLOR=\033[1;34m
 RESET=\033[0m
 BOLD=\033[1m
+ifeq ("$(shell uname)","Darwin")
+GO ?= GO111MODULE=on go
+else
+GO ?= GO111MODULE=on /usr/local/go/bin/go
+endif
 
 default: build
-#ci: depsdev test vet lint ## Run test and more...
 ci: depsdev ftp test lint integration ## Run test and more...
 
 deps: ## Install dependencies
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Installing Dependencies$(RESET)"
-	go get -u github.com/golang/dep/...
+	$(GO) get -u github.com/golang/dep/...
 	dep ensure
 
 depsdev: deps ## Installing dependencies for development
-	go get github.com/golang/lint/golint
-	go get -u github.com/tcnksm/ghr
-	go get github.com/mitchellh/gox
+	$(GO) get github.com/golang/lint/golint
+	$(GO) get -u github.com/tcnksm/ghr
+	$(GO) get github.com/mitchellh/gox
 
 test: ## Run test
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Testing$(RESET)"
-	go test -v $(TEST) -timeout=30s -parallel=4
-	go test -race $(TEST)
+	$(GO) test -v $(TEST) -timeout=30s -parallel=4
+	$(GO) test -race $(TEST)
 
-vet: ## Exec go vet
+vet: ## Exec $(GO) vet
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Vetting$(RESET)"
-	go vet $(TEST)
+	$(GO) vet $(TEST)
 
 lint: ## Exec golint
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Linting$(RESET)"
 	golint -min_confidence 1.1 -set_exit_status $(TEST)
 
 server: ## Run server with gin
-	go run main.go
+	$(GO) run main.go
 
 build: ## Build as linux binary
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Building$(RESET)"
@@ -78,6 +82,6 @@ integration:
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Integration Testing$(RESET)"
 	./misc/server stop || true
 	./misc/server start
-	go test $(VERBOSE) -integration $(TEST) $(TEST_OPTIONS)
+	$(GO) test $(VERBOSE) -integration $(TEST) $(TEST_OPTIONS)
 	./misc/server stop
 .PHONY: default dist test deps
