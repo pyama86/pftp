@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pires/go-proxyproto"
+	proxyproto "github.com/pires/go-proxyproto"
 )
 
 const (
@@ -57,28 +57,6 @@ func NewProxyServer(timeout int, clientReader *bufio.Reader, clientWriter *bufio
 	return p, err
 }
 
-// TODO: DELETE
-func (s *ProxyServer) ReadFromOrigin() (string, error) {
-	if s.timeout > 0 {
-		s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
-	}
-
-	var reader *bufio.Reader
-	if s.doProxy {
-		reader = bufio.NewReader(s.origin)
-	}
-
-	for {
-		if response, err := reader.ReadString('\n'); err != nil {
-			return "", err
-		} else {
-			s.log.debug("read from origin:%s", response)
-			return response, nil
-		}
-	}
-	return "", nil
-}
-
 func (s *ProxyServer) SendToOrigin(line string) error {
 	cnt := 0
 	if s.timeout > 0 {
@@ -103,21 +81,6 @@ func (s *ProxyServer) SendToOrigin(line string) error {
 		cnt++
 	}
 	return nil
-}
-
-// TODO: DELETE
-func (s *ProxyServer) SendToClient(line string) error {
-	s.log.debug("send to client:%s", line)
-	if _, err := s.clientWriter.Write([]byte(line)); err != nil {
-		return err
-	}
-
-	if err := s.clientWriter.Flush(); err != nil {
-		return err
-	}
-
-	return nil
-
 }
 
 func (s *ProxyServer) UploadProxy() error {
