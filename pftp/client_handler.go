@@ -95,7 +95,7 @@ func (c *clientHandler) HandleCommands() error {
 	// サーバからのレスポンスはSuspendしない限り自動で返却される
 	go func() {
 		for {
-			if err := c.proxy.DownloadProxy(); err != nil {
+			if err := c.proxy.responseProxy(); err != nil {
 				if c.proxy.Switch {
 					c.proxy.Switch = false
 					continue

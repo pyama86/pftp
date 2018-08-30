@@ -83,7 +83,7 @@ func (s *ProxyServer) SendToOrigin(line string) error {
 	return nil
 }
 
-func (s *ProxyServer) DownloadProxy() error {
+func (s *ProxyServer) responseProxy() error {
 	return s.start(s.originReader, s.clientWriter)
 }
 
