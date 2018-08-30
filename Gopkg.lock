@@ -50,6 +50,14 @@
   revision = "60e520f5feed5eaa0951aeecfc772a35bbe9f83d"
 
 [[projects]]
+  branch = "master"
+  digest = "1:57e13d10425e24333e3c6df6915fd5dd54aaa533a4a3e336208c2b4cb8405b6d"
+  name = "github.com/pires/go-proxyproto"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "2f38359974ffed92842a86ffcc17001b3f525e34"
+
+[[projects]]
   digest = "1:9e9193aa51197513b3abcb108970d831fbcf40ef96aa845c4f03276e1fa316d2"
   name = "github.com/sirupsen/logrus"
   packages = ["."]
@@ -101,6 +109,7 @@
     "github.com/jlaffaye/ftp",
     "github.com/julienschmidt/httprouter",
     "github.com/marcobeierer/ftps",
+    "github.com/pires/go-proxyproto",
     "github.com/sirupsen/logrus",
     "golang.org/x/sync/errgroup",
   ]
