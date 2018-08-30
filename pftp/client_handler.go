@@ -81,12 +81,12 @@ func (c *clientHandler) handleCommands() error {
 	proxyError := make(chan error)
 
 	defer func() {
+		close(proxyError)
 		if c.proxy != nil {
 			c.proxy.Close()
 			<-done
 		}
 	}()
-	defer close(proxyError)
 
 	err := c.connectProxy()
 	if err != nil {

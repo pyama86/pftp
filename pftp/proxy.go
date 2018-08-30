@@ -259,8 +259,8 @@ loop:
 			break loop
 		case <-s.stopChan:
 			close(errchan)
+			// close read groutine
 			s.origin.Close()
-			lastError = nil
 			s.stop = true
 			break loop
 		}

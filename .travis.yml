@@ -9,7 +9,7 @@ before_install:
 - sudo chmod -R 777 misc/test/data
 
 script:
-- make ci
+- GO="GO111MODULE=on go" make ci
 go:
   - 1.11
 cache:
