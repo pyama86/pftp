@@ -14,12 +14,7 @@ endif
 default: build
 ci: depsdev ftp test lint integration ## Run test and more...
 
-deps: ## Install dependencies
-	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Installing Dependencies$(RESET)"
-	$(GO) get -u github.com/golang/dep/...
-	dep ensure
-
-depsdev: deps ## Installing dependencies for development
+depsdev: ## Installing dependencies for development
 	$(GO) get github.com/golang/lint/golint
 	$(GO) get -u github.com/tcnksm/ghr
 	$(GO) get github.com/mitchellh/gox
@@ -84,4 +79,4 @@ integration:
 	./misc/server start
 	$(GO) test $(VERBOSE) -integration $(TEST) $(TEST_OPTIONS)
 	./misc/server stop
-.PHONY: default dist test deps
+.PHONY: default dist test
