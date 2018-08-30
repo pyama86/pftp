@@ -26,12 +26,12 @@ type proxyServer struct {
 	originWriter  *bufio.Writer
 	origin        net.Conn
 	passThrough   bool
-	CloseOk       bool
-	Switch        bool
 	mutex         *sync.Mutex
 	log           *logger
 	sem           int
 	proxyProtocol bool
+	stopChan      chan struct{}
+	stop          bool
 }
 
 type proxyServerConfig struct {
@@ -61,9 +61,8 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		mutex:         conf.mutex,
 		log:           conf.log,
 		proxyProtocol: conf.proxyProtocol,
+		stopChan:      make(chan struct{}),
 	}
-	p.CloseOk = false
-	p.Switch = false
 	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
 
 	return p, err
@@ -123,7 +122,6 @@ func (s *proxyServer) unsuspend() {
 }
 
 func (s *proxyServer) Close() {
-	s.CloseOk = true
 	s.origin.Close()
 }
 
@@ -157,6 +155,8 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string) error {
 		defer s.unsuspend()
 	}
 
+	s.stopChan <- struct{}{}
+
 	c, err := net.Dial("tcp", originAddr)
 	if err != nil {
 		return err
@@ -182,66 +182,87 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string) error {
 
 	*s.originReader = *reader
 	*s.originWriter = *writer
-
-	s.Switch = true
 	old.Close()
 
+	s.stop = false
 	return nil
 }
-
 func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
+	if s.stop {
+		return nil
+	}
 
 	buff := make([]byte, BUFFER_SIZE)
 	read := make(chan []byte, BUFFER_SIZE)
 	done := make(chan struct{})
+	errchan := make(chan error)
 	var lastError error
 
 	go func() {
-	loop:
 		for {
-			select {
-			case b, ok := <-read:
-				if !ok {
-					break loop
+			if n, err := from.Read(buff); err != nil {
+				if err != io.EOF {
+					// stopした場合は、errを返却しない
+					var ok bool
+					select {
+					case _, ok = <-errchan:
+					default:
+						ok = true
+					}
+
+					if ok {
+						errchan <- err
+					}
+				}
+				break
+			} else {
+				if s.timeout > 0 {
+					s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
 				}
 
-				s.mutex.Lock()
-				_, err := to.Write(b)
-				if err != nil {
-					lastError = err
-					s.mutex.Unlock()
-					break loop
+				if s.passThrough || s.sem > 0 {
+					read <- buff[:n]
 				}
 
-				if err := to.Flush(); err != nil {
-					lastError = err
-					s.mutex.Unlock()
-					break loop
+				if s.sem > 0 {
+					s.sem--
 				}
-				s.mutex.Unlock()
 			}
 		}
 		done <- struct{}{}
 	}()
 
+loop:
 	for {
-		if n, err := from.Read(buff); err != nil {
-			if err != io.EOF {
+		select {
+		case b, ok := <-read:
+			if !ok {
+				break loop
+			}
+
+			s.mutex.Lock()
+			_, err := to.Write(b)
+			if err != nil {
 				lastError = err
-			}
-			break
-		} else {
-			if s.timeout > 0 {
-				s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
+				s.mutex.Unlock()
+				break loop
 			}
 
-			if s.passThrough || s.sem > 0 {
-				read <- buff[:n]
+			if err := to.Flush(); err != nil {
+				lastError = err
+				s.mutex.Unlock()
+				break loop
 			}
-
-			if s.sem > 0 {
-				s.sem--
-			}
+			s.mutex.Unlock()
+		case err := <-errchan:
+			lastError = err
+			break loop
+		case <-s.stopChan:
+			close(errchan)
+			s.origin.Close()
+			lastError = nil
+			s.stop = true
+			break loop
 		}
 	}
 	close(read)

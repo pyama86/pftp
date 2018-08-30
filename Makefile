@@ -26,7 +26,7 @@ depsdev: deps ## Installing dependencies for development
 
 test: ## Run test
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Testing$(RESET)"
-	$(GO) test -v $(TEST) -timeout=30s -parallel=4
+	$(GO) test -v $(TEST) -timeout=5s -parallel=4
 	$(GO) test -race $(TEST)
 
 vet: ## Exec $(GO) vet

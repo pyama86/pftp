@@ -64,7 +64,12 @@ func (server *FtpServer) Serve() error {
 		server.clientCounter++
 		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection)
 		logrus.Info("FTP Client connected ", "clientIp ", conn.RemoteAddr())
-		go c.handleCommands()
+		go func() {
+			err := c.handleCommands()
+			if err != nil {
+				c.log.err("handle error: %s", err.Error())
+			}
+		}()
 	}
 	return nil
 }

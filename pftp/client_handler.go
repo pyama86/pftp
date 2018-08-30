@@ -86,6 +86,7 @@ func (c *clientHandler) handleCommands() error {
 			<-done
 		}
 	}()
+	defer close(proxyError)
 
 	err := c.connectProxy()
 	if err != nil {
@@ -96,12 +97,15 @@ func (c *clientHandler) handleCommands() error {
 	go func() {
 		for {
 			if err := c.proxy.responseProxy(); err != nil {
-				if c.proxy.Switch {
-					c.proxy.Switch = false
-					continue
-				} else if c.proxy.CloseOk {
-					c.proxy.CloseOk = false
-				} else {
+				// 先にクライアントが切断された場合はProxyErrorは処理する必要がない
+				var ok bool
+				select {
+				case _, ok = <-proxyError:
+				default:
+					ok = true
+				}
+
+				if ok {
 					proxyError <- err
 				}
 				break
@@ -118,7 +122,6 @@ func (c *clientHandler) handleCommands() error {
 			if c.config.IdleTimeout > 0 {
 				c.setClientDeadLine(c.config.IdleTimeout)
 			}
-
 			line, err := c.reader.ReadString('\n')
 
 			if err != nil {
