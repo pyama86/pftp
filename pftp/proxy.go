@@ -17,7 +17,7 @@ const (
 	BUFFER_SIZE = 4096
 )
 
-type ProxyServer struct {
+type proxyServer struct {
 	id            int
 	timeout       int
 	clientReader  *bufio.Reader
@@ -34,7 +34,7 @@ type ProxyServer struct {
 	proxyProtocol bool
 }
 
-type ProxyServerConfig struct {
+type proxyServerConfig struct {
 	timeout       int
 	clientReader  *bufio.Reader
 	clientWriter  *bufio.Writer
@@ -44,13 +44,13 @@ type ProxyServerConfig struct {
 	proxyProtocol bool
 }
 
-func NewProxyServer(conf *ProxyServerConfig) (*ProxyServer, error) {
+func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 	c, err := net.Dial("tcp", conf.originAddr)
 	if err != nil {
 		return nil, err
 	}
 
-	p := &ProxyServer{
+	p := &proxyServer{
 		clientReader:  conf.clientReader,
 		clientWriter:  conf.clientWriter,
 		originWriter:  bufio.NewWriter(c),
@@ -69,7 +69,7 @@ func NewProxyServer(conf *ProxyServerConfig) (*ProxyServer, error) {
 	return p, err
 }
 
-func (s *ProxyServer) SendToOrigin(line string) error {
+func (s *proxyServer) sendToOrigin(line string) error {
 	cnt := 0
 	if s.timeout > 0 {
 		s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
@@ -95,11 +95,11 @@ func (s *ProxyServer) SendToOrigin(line string) error {
 	return nil
 }
 
-func (s *ProxyServer) responseProxy() error {
+func (s *proxyServer) responseProxy() error {
 	return s.start(s.originReader, s.clientWriter)
 }
 
-func (s *ProxyServer) Suspend() error {
+func (s *proxyServer) suspend() error {
 	s.log.debug("suspend proxy")
 	cnt := 0
 	for {
@@ -117,17 +117,17 @@ func (s *ProxyServer) Suspend() error {
 	return nil
 }
 
-func (s *ProxyServer) Unsuspend() {
+func (s *proxyServer) unsuspend() {
 	s.log.debug("unsuspend proxy")
 	s.passThrough = true
 }
 
-func (s *ProxyServer) Close() {
+func (s *proxyServer) Close() {
 	s.CloseOk = true
 	s.origin.Close()
 }
 
-func (s *ProxyServer) sendProxyHeader(clientAddr string, originAddr string) error {
+func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) error {
 	sourceAddr := strings.Split(clientAddr, ":")
 	destinationAddr := strings.Split(originAddr, ":")
 	sourcePort, _ := strconv.Atoi(sourceAddr[1])
@@ -146,15 +146,15 @@ func (s *ProxyServer) sendProxyHeader(clientAddr string, originAddr string) erro
 	_, err := proxyProtocolHeader.WriteTo(s.origin)
 	return err
 }
-func (s *ProxyServer) SwitchOrigin(clientAddr string, originAddr string) error {
+func (s *proxyServer) switchOrigin(clientAddr string, originAddr string) error {
 	s.log.debug("switch origin to: %s", originAddr)
 
 	if s.passThrough {
-		err := s.Suspend()
+		err := s.suspend()
 		if err != nil {
 			return err
 		}
-		defer s.Unsuspend()
+		defer s.unsuspend()
 	}
 
 	c, err := net.Dial("tcp", originAddr)
@@ -189,7 +189,7 @@ func (s *ProxyServer) SwitchOrigin(clientAddr string, originAddr string) error {
 	return nil
 }
 
-func (s *ProxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
+func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 
 	buff := make([]byte, BUFFER_SIZE)
 	read := make(chan []byte, BUFFER_SIZE)

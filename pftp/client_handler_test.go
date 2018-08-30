@@ -8,7 +8,7 @@ import (
 	"github.com/pyama86/pftp/test"
 )
 
-func Test_clientHandler_HandleCommands(t *testing.T) {
+func Test_clientHandler_handleCommands(t *testing.T) {
 	var server net.Listener
 	serverready := make(chan struct{})
 	conn := make(chan net.Conn)
@@ -71,9 +71,9 @@ func Test_clientHandler_HandleCommands(t *testing.T) {
 				tt.hook()
 			}
 
-			err = clientHandler.HandleCommands()
+			err = clientHandler.handleCommands()
 			if (err != nil) != tt.wantErr {
-				t.Errorf("clientHandler.HandleCommands() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("clientHandler.handleCommands() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 		})

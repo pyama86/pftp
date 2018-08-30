@@ -37,7 +37,7 @@ type clientHandler struct {
 	line              string
 	command           string
 	param             string
-	proxy             *ProxyServer
+	proxy             *proxyServer
 	context           *Context
 	currentConnection *int32
 	mutex             *sync.Mutex
@@ -75,7 +75,7 @@ func (c *clientHandler) setClientDeadLine(t int) {
 	}
 }
 
-func (c *clientHandler) HandleCommands() error {
+func (c *clientHandler) handleCommands() error {
 	defer c.end()
 	done := make(chan struct{})
 	proxyError := make(chan error)
@@ -211,21 +211,21 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 	cmd := handlers[c.command]
 	if cmd != nil {
 		if cmd.suspend {
-			err := c.proxy.Suspend()
+			err := c.proxy.suspend()
 			if err != nil {
 				return &result{
 					code: 500,
 					msg:  fmt.Sprintf("Internal error: %s", err),
 				}
 			}
-			defer c.proxy.Unsuspend()
+			defer c.proxy.unsuspend()
 		}
 		res := cmd.f(c)
 		if res != nil {
 			return res
 		}
 	} else {
-		if err := c.proxy.SendToOrigin(line); err != nil {
+		if err := c.proxy.sendToOrigin(line); err != nil {
 			return &result{
 				code: 500,
 				msg:  fmt.Sprintf("Internal error: %s", err),
@@ -238,13 +238,13 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 
 func (c *clientHandler) connectProxy() error {
 	if c.proxy != nil {
-		err := c.proxy.SwitchOrigin(c.conn.RemoteAddr().String(), c.context.RemoteAddr)
+		err := c.proxy.switchOrigin(c.conn.RemoteAddr().String(), c.context.RemoteAddr)
 		if err != nil {
 			return err
 		}
 	} else {
-		p, err := NewProxyServer(
-			&ProxyServerConfig{
+		p, err := newProxyServer(
+			&proxyServerConfig{
 				timeout:       c.config.ProxyTimeout,
 				clientReader:  c.reader,
 				clientWriter:  c.writer,
