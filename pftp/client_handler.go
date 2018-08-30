@@ -238,12 +238,22 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 
 func (c *clientHandler) connectProxy() error {
 	if c.proxy != nil {
-		err := c.proxy.SwitchOrigin(c.conn.RemoteAddr().String(), c.context.RemoteAddr, c.config.ProxyProtocol)
+		err := c.proxy.SwitchOrigin(c.conn.RemoteAddr().String(), c.context.RemoteAddr)
 		if err != nil {
 			return err
 		}
 	} else {
-		p, err := NewProxyServer(c.config.ProxyTimeout, c.reader, c.writer, c.context.RemoteAddr, c.mutex, c.log)
+		p, err := NewProxyServer(
+			&ProxyServerConfig{
+				timeout:       c.config.ProxyTimeout,
+				clientReader:  c.reader,
+				clientWriter:  c.writer,
+				originAddr:    c.context.RemoteAddr,
+				mutex:         c.mutex,
+				log:           c.log,
+				proxyProtocol: c.config.ProxyProtocol,
+			})
+
 		if err != nil {
 			return err
 		}

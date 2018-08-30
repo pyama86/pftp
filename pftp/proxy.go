@@ -18,41 +18,53 @@ const (
 )
 
 type ProxyServer struct {
-	id           int
-	timeout      int
-	clientReader *bufio.Reader
-	clientWriter *bufio.Writer
-	originReader *bufio.Reader
-	originWriter *bufio.Writer
-	origin       net.Conn
-	passThrough  bool
-	CloseOk      bool
-	Switch       bool
-	mutex        *sync.Mutex
-	log          *logger
-	sem          int
+	id            int
+	timeout       int
+	clientReader  *bufio.Reader
+	clientWriter  *bufio.Writer
+	originReader  *bufio.Reader
+	originWriter  *bufio.Writer
+	origin        net.Conn
+	passThrough   bool
+	CloseOk       bool
+	Switch        bool
+	mutex         *sync.Mutex
+	log           *logger
+	sem           int
+	proxyProtocol bool
 }
 
-func NewProxyServer(timeout int, clientReader *bufio.Reader, clientWriter *bufio.Writer, originAddr string, m *sync.Mutex, l *logger) (*ProxyServer, error) {
-	c, err := net.Dial("tcp", originAddr)
+type ProxyServerConfig struct {
+	timeout       int
+	clientReader  *bufio.Reader
+	clientWriter  *bufio.Writer
+	originAddr    string
+	mutex         *sync.Mutex
+	log           *logger
+	proxyProtocol bool
+}
+
+func NewProxyServer(conf *ProxyServerConfig) (*ProxyServer, error) {
+	c, err := net.Dial("tcp", conf.originAddr)
 	if err != nil {
 		return nil, err
 	}
 
 	p := &ProxyServer{
-		clientReader: clientReader,
-		clientWriter: clientWriter,
-		originWriter: bufio.NewWriter(c),
-		originReader: bufio.NewReader(c),
-		origin:       c,
-		timeout:      timeout,
-		passThrough:  true,
-		mutex:        m,
-		log:          l,
+		clientReader:  conf.clientReader,
+		clientWriter:  conf.clientWriter,
+		originWriter:  bufio.NewWriter(c),
+		originReader:  bufio.NewReader(c),
+		origin:        c,
+		timeout:       conf.timeout,
+		passThrough:   true,
+		mutex:         conf.mutex,
+		log:           conf.log,
+		proxyProtocol: conf.proxyProtocol,
 	}
 	p.CloseOk = false
 	p.Switch = false
-	l.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
+	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
 
 	return p, err
 }
@@ -115,7 +127,26 @@ func (s *ProxyServer) Close() {
 	s.origin.Close()
 }
 
-func (s *ProxyServer) SwitchOrigin(clientAddr string, originAddr string, proxyProtocol bool) error {
+func (s *ProxyServer) sendProxyHeader(clientAddr string, originAddr string) error {
+	sourceAddr := strings.Split(clientAddr, ":")
+	destinationAddr := strings.Split(originAddr, ":")
+	sourcePort, _ := strconv.Atoi(sourceAddr[1])
+	destinationPort, _ := strconv.Atoi(destinationAddr[1])
+
+	proxyProtocolHeader := proxyproto.Header{
+		Version:            byte(1),
+		Command:            proxyproto.PROXY,
+		TransportProtocol:  proxyproto.TCPv4,
+		SourceAddress:      net.ParseIP(sourceAddr[0]),
+		DestinationAddress: net.ParseIP(destinationAddr[0]),
+		SourcePort:         uint16(sourcePort),
+		DestinationPort:    uint16(destinationPort),
+	}
+
+	_, err := proxyProtocolHeader.WriteTo(s.origin)
+	return err
+}
+func (s *ProxyServer) SwitchOrigin(clientAddr string, originAddr string) error {
 	s.log.debug("switch origin to: %s", originAddr)
 
 	if s.passThrough {
@@ -131,28 +162,16 @@ func (s *ProxyServer) SwitchOrigin(clientAddr string, originAddr string, proxyPr
 		return err
 	}
 
-	// Send proxy protocol v1 header when set proxy protocol true
-	if proxyProtocol {
-		sourceAddr := strings.Split(clientAddr, ":")
-		destinationAddr := strings.Split(originAddr, ":")
-		sourcePort, _ := strconv.Atoi(sourceAddr[1])
-		destinationPort, _ := strconv.Atoi(destinationAddr[1])
-
-		proxyProtocolHeader := proxyproto.Header{
-			Version:            byte(1),
-			Command:            proxyproto.PROXY,
-			TransportProtocol:  proxyproto.TCPv4,
-			SourceAddress:      net.ParseIP(sourceAddr[0]),
-			DestinationAddress: net.ParseIP(destinationAddr[0]),
-			SourcePort:         uint16(sourcePort),
-			DestinationPort:    uint16(destinationPort),
-		}
-
-		proxyProtocolHeader.WriteTo(c)
-	}
-
 	old := s.origin
 	s.origin = c
+
+	// Send proxy protocol v1 header when set proxy protocol true
+	if s.proxyProtocol {
+		err := s.sendProxyHeader(clientAddr, originAddr)
+		if err != nil {
+			return err
+		}
+	}
 
 	reader := bufio.NewReader(c)
 	writer := bufio.NewWriter(c)
