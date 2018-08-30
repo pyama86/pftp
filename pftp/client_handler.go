@@ -37,7 +37,7 @@ type clientHandler struct {
 	line              string
 	command           string
 	param             string
-	controleProxy     *ProxyServer
+	proxy             *ProxyServer
 	context           *Context
 	currentConnection *int32
 	mutex             *sync.Mutex
@@ -81,13 +81,13 @@ func (c *clientHandler) HandleCommands() error {
 	proxyError := make(chan error)
 
 	defer func() {
-		if c.controleProxy != nil {
-			c.controleProxy.Close()
+		if c.proxy != nil {
+			c.proxy.Close()
 			<-done
 		}
 	}()
 
-	err := c.connectControlProxy()
+	err := c.connectProxy()
 	if err != nil {
 		return err
 	}
@@ -95,12 +95,12 @@ func (c *clientHandler) HandleCommands() error {
 	// サーバからのレスポンスはSuspendしない限り自動で返却される
 	go func() {
 		for {
-			if err := c.controleProxy.DownloadProxy(); err != nil {
-				if c.controleProxy.Switch {
-					c.controleProxy.Switch = false
+			if err := c.proxy.DownloadProxy(); err != nil {
+				if c.proxy.Switch {
+					c.proxy.Switch = false
 					continue
-				} else if c.controleProxy.CloseOk {
-					c.controleProxy.CloseOk = false
+				} else if c.proxy.CloseOk {
+					c.proxy.CloseOk = false
 				} else {
 					proxyError <- err
 				}
@@ -211,21 +211,21 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 	cmd := handlers[c.command]
 	if cmd != nil {
 		if cmd.suspend {
-			err := c.controleProxy.Suspend()
+			err := c.proxy.Suspend()
 			if err != nil {
 				return &result{
 					code: 500,
 					msg:  fmt.Sprintf("Internal error: %s", err),
 				}
 			}
-			defer c.controleProxy.Unsuspend()
+			defer c.proxy.Unsuspend()
 		}
 		res := cmd.f(c)
 		if res != nil {
 			return res
 		}
 	} else {
-		if err := c.controleProxy.SendToOrigin(line); err != nil {
+		if err := c.proxy.SendToOrigin(line); err != nil {
 			return &result{
 				code: 500,
 				msg:  fmt.Sprintf("Internal error: %s", err),
@@ -236,9 +236,9 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 	return nil
 }
 
-func (c *clientHandler) connectControlProxy() error {
-	if c.controleProxy != nil {
-		err := c.controleProxy.SwitchOrigin(c.conn.RemoteAddr().String(), c.context.RemoteAddr, c.config.ProxyProtocol)
+func (c *clientHandler) connectProxy() error {
+	if c.proxy != nil {
+		err := c.proxy.SwitchOrigin(c.conn.RemoteAddr().String(), c.context.RemoteAddr, c.config.ProxyProtocol)
 		if err != nil {
 			return err
 		}
@@ -247,7 +247,7 @@ func (c *clientHandler) connectControlProxy() error {
 		if err != nil {
 			return err
 		}
-		c.controleProxy = p
+		c.proxy = p
 	}
 
 	return nil

@@ -25,7 +25,7 @@ type ProxyServer struct {
 	originReader *bufio.Reader
 	originWriter *bufio.Writer
 	origin       net.Conn
-	doProxy      bool
+	passThrough  bool
 	CloseOk      bool
 	Switch       bool
 	mutex        *sync.Mutex
@@ -46,7 +46,7 @@ func NewProxyServer(timeout int, clientReader *bufio.Reader, clientWriter *bufio
 		originReader: bufio.NewReader(c),
 		origin:       c,
 		timeout:      timeout,
-		doProxy:      true,
+		passThrough:  true,
 		mutex:        m,
 		log:          l,
 	}
@@ -100,7 +100,7 @@ func (s *ProxyServer) Suspend() error {
 		}
 
 		if s.sem < 1 {
-			s.doProxy = false
+			s.passThrough = false
 			break
 		}
 		time.Sleep(1 * time.Second)
@@ -111,7 +111,7 @@ func (s *ProxyServer) Suspend() error {
 
 func (s *ProxyServer) Unsuspend() {
 	s.log.debug("unsuspend proxy")
-	s.doProxy = true
+	s.passThrough = true
 }
 
 func (s *ProxyServer) Close() {
@@ -122,7 +122,7 @@ func (s *ProxyServer) Close() {
 func (s *ProxyServer) SwitchOrigin(clientAddr string, originAddr string, proxyProtocol bool) error {
 	s.log.debug("switch origin to: %s", originAddr)
 
-	if s.doProxy {
+	if s.passThrough {
 		err := s.Suspend()
 		if err != nil {
 			return err
@@ -220,7 +220,7 @@ func (s *ProxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 				s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
 			}
 
-			if s.doProxy || s.sem > 0 {
+			if s.passThrough || s.sem > 0 {
 				read <- buff[:n]
 			}
 
