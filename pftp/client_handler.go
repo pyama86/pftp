@@ -37,7 +37,7 @@ type clientHandler struct {
 	line              string
 	command           string
 	param             string
-	controleProxy     *ProxyServer
+	proxy             *proxyServer
 	context           *Context
 	currentConnection *int32
 	mutex             *sync.Mutex
@@ -75,19 +75,20 @@ func (c *clientHandler) setClientDeadLine(t int) {
 	}
 }
 
-func (c *clientHandler) HandleCommands() error {
+func (c *clientHandler) handleCommands() error {
 	defer c.end()
 	done := make(chan struct{})
 	proxyError := make(chan error)
 
 	defer func() {
-		if c.controleProxy != nil {
-			c.controleProxy.Close()
+		close(proxyError)
+		if c.proxy != nil {
+			c.proxy.Close()
 			<-done
 		}
 	}()
 
-	err := c.connectControlProxy()
+	err := c.connectProxy()
 	if err != nil {
 		return err
 	}
@@ -95,15 +96,8 @@ func (c *clientHandler) HandleCommands() error {
 	// サーバからのレスポンスはSuspendしない限り自動で返却される
 	go func() {
 		for {
-			if err := c.controleProxy.DownloadProxy(); err != nil {
-				if c.controleProxy.Switch {
-					c.controleProxy.Switch = false
-					continue
-				} else if c.controleProxy.CloseOk {
-					c.controleProxy.CloseOk = false
-				} else {
-					proxyError <- err
-				}
+			if err := c.proxy.responseProxy(); err != nil {
+				safeSetChanel(proxyError, err)
 				break
 			}
 		}
@@ -118,7 +112,6 @@ func (c *clientHandler) HandleCommands() error {
 			if c.config.IdleTimeout > 0 {
 				c.setClientDeadLine(c.config.IdleTimeout)
 			}
-
 			line, err := c.reader.ReadString('\n')
 
 			if err != nil {
@@ -211,21 +204,21 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 	cmd := handlers[c.command]
 	if cmd != nil {
 		if cmd.suspend {
-			err := c.controleProxy.Suspend()
+			err := c.proxy.suspend()
 			if err != nil {
 				return &result{
 					code: 500,
 					msg:  fmt.Sprintf("Internal error: %s", err),
 				}
 			}
-			defer c.controleProxy.Unsuspend()
+			defer c.proxy.unsuspend()
 		}
 		res := cmd.f(c)
 		if res != nil {
 			return res
 		}
 	} else {
-		if err := c.controleProxy.SendToOrigin(line); err != nil {
+		if err := c.proxy.sendToOrigin(line); err != nil {
 			return &result{
 				code: 500,
 				msg:  fmt.Sprintf("Internal error: %s", err),
@@ -236,18 +229,28 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 	return nil
 }
 
-func (c *clientHandler) connectControlProxy() error {
-	if c.controleProxy != nil {
-		err := c.controleProxy.SwitchOrigin(c.conn.RemoteAddr().String(), c.context.RemoteAddr, c.config.ProxyProtocol)
+func (c *clientHandler) connectProxy() error {
+	if c.proxy != nil {
+		err := c.proxy.switchOrigin(c.conn.RemoteAddr().String(), c.context.RemoteAddr)
 		if err != nil {
 			return err
 		}
 	} else {
-		p, err := NewProxyServer(c.config.ProxyTimeout, c.reader, c.writer, c.context.RemoteAddr, c.mutex, c.log)
+		p, err := newProxyServer(
+			&proxyServerConfig{
+				timeout:       c.config.ProxyTimeout,
+				clientReader:  c.reader,
+				clientWriter:  c.writer,
+				originAddr:    c.context.RemoteAddr,
+				mutex:         c.mutex,
+				log:           c.log,
+				proxyProtocol: c.config.ProxyProtocol,
+			})
+
 		if err != nil {
 			return err
 		}
-		c.controleProxy = p
+		c.proxy = p
 	}
 
 	return nil

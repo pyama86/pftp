@@ -42,5 +42,8 @@ func User(c *pftp.Context, param string) error {
 }
 ```
 
+## Require
+- Go 1.11 laer
+
 # author
 @pyama86

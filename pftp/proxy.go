@@ -10,76 +10,65 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pires/go-proxyproto"
+	proxyproto "github.com/pires/go-proxyproto"
 )
 
 const (
 	BUFFER_SIZE = 4096
 )
 
-type ProxyServer struct {
-	id           int
-	timeout      int
-	clientReader *bufio.Reader
-	clientWriter *bufio.Writer
-	originReader *bufio.Reader
-	originWriter *bufio.Writer
-	origin       net.Conn
-	doProxy      bool
-	CloseOk      bool
-	Switch       bool
-	mutex        *sync.Mutex
-	log          *logger
-	sem          int
+type proxyServer struct {
+	id            int
+	timeout       int
+	clientReader  *bufio.Reader
+	clientWriter  *bufio.Writer
+	originReader  *bufio.Reader
+	originWriter  *bufio.Writer
+	origin        net.Conn
+	passThrough   bool
+	mutex         *sync.Mutex
+	log           *logger
+	sem           int
+	proxyProtocol bool
+	stopChan      chan struct{}
+	stop          bool
 }
 
-func NewProxyServer(timeout int, clientReader *bufio.Reader, clientWriter *bufio.Writer, originAddr string, m *sync.Mutex, l *logger) (*ProxyServer, error) {
-	c, err := net.Dial("tcp", originAddr)
+type proxyServerConfig struct {
+	timeout       int
+	clientReader  *bufio.Reader
+	clientWriter  *bufio.Writer
+	originAddr    string
+	mutex         *sync.Mutex
+	log           *logger
+	proxyProtocol bool
+}
+
+func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
+	c, err := net.Dial("tcp", conf.originAddr)
 	if err != nil {
 		return nil, err
 	}
 
-	p := &ProxyServer{
-		clientReader: clientReader,
-		clientWriter: clientWriter,
-		originWriter: bufio.NewWriter(c),
-		originReader: bufio.NewReader(c),
-		origin:       c,
-		timeout:      timeout,
-		doProxy:      true,
-		mutex:        m,
-		log:          l,
+	p := &proxyServer{
+		clientReader:  conf.clientReader,
+		clientWriter:  conf.clientWriter,
+		originWriter:  bufio.NewWriter(c),
+		originReader:  bufio.NewReader(c),
+		origin:        c,
+		timeout:       conf.timeout,
+		passThrough:   true,
+		mutex:         conf.mutex,
+		log:           conf.log,
+		proxyProtocol: conf.proxyProtocol,
+		stopChan:      make(chan struct{}),
 	}
-	p.CloseOk = false
-	p.Switch = false
-	l.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
+	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
 
 	return p, err
 }
 
-// TODO: DELETE
-func (s *ProxyServer) ReadFromOrigin() (string, error) {
-	if s.timeout > 0 {
-		s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
-	}
-
-	var reader *bufio.Reader
-	if s.doProxy {
-		reader = bufio.NewReader(s.origin)
-	}
-
-	for {
-		if response, err := reader.ReadString('\n'); err != nil {
-			return "", err
-		} else {
-			s.log.debug("read from origin:%s", response)
-			return response, nil
-		}
-	}
-	return "", nil
-}
-
-func (s *ProxyServer) SendToOrigin(line string) error {
+func (s *proxyServer) sendToOrigin(line string) error {
 	cnt := 0
 	if s.timeout > 0 {
 		s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
@@ -92,11 +81,11 @@ func (s *ProxyServer) SendToOrigin(line string) error {
 
 		s.log.debug("send to origin:%s", line)
 
-		if s.sem < 1 {
+		if s.semFree() {
 			if _, err := s.origin.Write([]byte(line)); err != nil {
 				return err
 			}
-			s.sem++
+			s.semLock()
 			break
 		}
 		time.Sleep(1 * time.Second)
@@ -105,30 +94,27 @@ func (s *ProxyServer) SendToOrigin(line string) error {
 	return nil
 }
 
-// TODO: DELETE
-func (s *ProxyServer) SendToClient(line string) error {
-	s.log.debug("send to client:%s", line)
-	if _, err := s.clientWriter.Write([]byte(line)); err != nil {
-		return err
-	}
-
-	if err := s.clientWriter.Flush(); err != nil {
-		return err
-	}
-
-	return nil
-
-}
-
-func (s *ProxyServer) UploadProxy() error {
-	return s.start(s.clientReader, s.originWriter)
-}
-
-func (s *ProxyServer) DownloadProxy() error {
+func (s *proxyServer) responseProxy() error {
 	return s.start(s.originReader, s.clientWriter)
 }
 
-func (s *ProxyServer) Suspend() error {
+func (s *proxyServer) semLock() {
+	s.sem++
+}
+
+func (s *proxyServer) semUnlock() {
+	s.sem--
+}
+
+func (s *proxyServer) semFree() bool {
+	return s.sem < 1
+}
+
+func (s *proxyServer) semLocked() bool {
+	return s.sem > 0
+}
+
+func (s *proxyServer) suspend() error {
 	s.log.debug("suspend proxy")
 	cnt := 0
 	for {
@@ -136,8 +122,8 @@ func (s *ProxyServer) Suspend() error {
 			return errors.New("Could not get semaphore to send to client")
 		}
 
-		if s.sem < 1 {
-			s.doProxy = false
+		if s.semFree() {
+			s.passThrough = false
 			break
 		}
 		time.Sleep(1 * time.Second)
@@ -146,54 +132,62 @@ func (s *ProxyServer) Suspend() error {
 	return nil
 }
 
-func (s *ProxyServer) Unsuspend() {
+func (s *proxyServer) unsuspend() {
 	s.log.debug("unsuspend proxy")
-	s.doProxy = true
+	s.passThrough = true
 }
 
-func (s *ProxyServer) Close() {
-	s.CloseOk = true
+func (s *proxyServer) Close() {
 	s.origin.Close()
 }
 
-func (s *ProxyServer) SwitchOrigin(clientAddr string, originAddr string, proxyProtocol bool) error {
+func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) error {
+	sourceAddr := strings.Split(clientAddr, ":")
+	destinationAddr := strings.Split(originAddr, ":")
+	sourcePort, _ := strconv.Atoi(sourceAddr[1])
+	destinationPort, _ := strconv.Atoi(destinationAddr[1])
+
+	proxyProtocolHeader := proxyproto.Header{
+		Version:            byte(1),
+		Command:            proxyproto.PROXY,
+		TransportProtocol:  proxyproto.TCPv4,
+		SourceAddress:      net.ParseIP(sourceAddr[0]),
+		DestinationAddress: net.ParseIP(destinationAddr[0]),
+		SourcePort:         uint16(sourcePort),
+		DestinationPort:    uint16(destinationPort),
+	}
+
+	_, err := proxyProtocolHeader.WriteTo(s.origin)
+	return err
+}
+func (s *proxyServer) switchOrigin(clientAddr string, originAddr string) error {
 	s.log.debug("switch origin to: %s", originAddr)
 
-	if s.doProxy {
-		err := s.Suspend()
+	if s.passThrough {
+		err := s.suspend()
 		if err != nil {
 			return err
 		}
-		defer s.Unsuspend()
+		defer s.unsuspend()
 	}
+
+	s.stopChan <- struct{}{}
 
 	c, err := net.Dial("tcp", originAddr)
 	if err != nil {
 		return err
 	}
 
-	// Send proxy protocol v1 header when set proxy protocol true
-	if proxyProtocol {
-		sourceAddr := strings.Split(clientAddr, ":")
-		destinationAddr := strings.Split(originAddr, ":")
-		sourcePort, _ := strconv.Atoi(sourceAddr[1])
-		destinationPort, _ := strconv.Atoi(destinationAddr[1])
-
-		proxyProtocolHeader := proxyproto.Header{
-			Version:            byte(1),
-			Command:            proxyproto.PROXY,
-			TransportProtocol:  proxyproto.TCPv4,
-			SourceAddress:      net.ParseIP(sourceAddr[0]),
-			DestinationAddress: net.ParseIP(destinationAddr[0]),
-			SourcePort:         uint16(sourcePort),
-			DestinationPort:    uint16(destinationPort),
-		}
-
-		proxyProtocolHeader.WriteTo(c)
-	}
-
 	old := s.origin
 	s.origin = c
+
+	// Send proxy protocol v1 header when set proxy protocol true
+	if s.proxyProtocol {
+		err := s.sendProxyHeader(clientAddr, originAddr)
+		if err != nil {
+			return err
+		}
+	}
 
 	reader := bufio.NewReader(c)
 	writer := bufio.NewWriter(c)
@@ -204,66 +198,76 @@ func (s *ProxyServer) SwitchOrigin(clientAddr string, originAddr string, proxyPr
 
 	*s.originReader = *reader
 	*s.originWriter = *writer
-
-	s.Switch = true
 	old.Close()
 
+	s.stop = false
 	return nil
 }
-
-func (s *ProxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
+func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
+	if s.stop {
+		return nil
+	}
 
 	buff := make([]byte, BUFFER_SIZE)
 	read := make(chan []byte, BUFFER_SIZE)
 	done := make(chan struct{})
+	errchan := make(chan error)
 	var lastError error
 
 	go func() {
-	loop:
 		for {
-			select {
-			case b, ok := <-read:
-				if !ok {
-					break loop
+			if n, err := from.Read(buff); err != nil {
+				if err != io.EOF {
+					safeSetChanel(errchan, err)
+				}
+				break
+			} else {
+				if s.timeout > 0 {
+					s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
 				}
 
-				s.mutex.Lock()
-				_, err := to.Write(b)
-				if err != nil {
-					lastError = err
-					s.mutex.Unlock()
-					break loop
+				if s.passThrough || s.semLocked() {
+					read <- buff[:n]
+					if s.semLocked() {
+						s.semUnlock()
+					}
 				}
-
-				if err := to.Flush(); err != nil {
-					lastError = err
-					s.mutex.Unlock()
-					break loop
-				}
-				s.mutex.Unlock()
 			}
 		}
 		done <- struct{}{}
 	}()
 
+loop:
 	for {
-		if n, err := from.Read(buff); err != nil {
-			if err != io.EOF {
+		select {
+		case b, ok := <-read:
+			if !ok {
+				break loop
+			}
+
+			s.mutex.Lock()
+			_, err := to.Write(b)
+			if err != nil {
 				lastError = err
-			}
-			break
-		} else {
-			if s.timeout > 0 {
-				s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
+				s.mutex.Unlock()
+				break loop
 			}
 
-			if s.doProxy || s.sem > 0 {
-				read <- buff[:n]
+			if err := to.Flush(); err != nil {
+				lastError = err
+				s.mutex.Unlock()
+				break loop
 			}
-
-			if s.sem > 0 {
-				s.sem--
-			}
+			s.mutex.Unlock()
+		case err := <-errchan:
+			lastError = err
+			break loop
+		case <-s.stopChan:
+			close(errchan)
+			// close read groutine
+			s.origin.Close()
+			s.stop = true
+			break loop
 		}
 	}
 	close(read)

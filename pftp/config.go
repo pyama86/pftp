@@ -52,7 +52,7 @@ func loadConfig(path string) (*config, error) {
 }
 
 func defaultConfig(config *config) {
-	config.ListenAddr = "0.0.0.0:2121"
+	config.ListenAddr = "127.0.0.1:2121"
 	config.IdleTimeout = 900
 	config.ProxyTimeout = 900
 	config.TransferTimeout = 900
