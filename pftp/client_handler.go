@@ -97,17 +97,7 @@ func (c *clientHandler) handleCommands() error {
 	go func() {
 		for {
 			if err := c.proxy.responseProxy(); err != nil {
-				// 先にクライアントが切断された場合はProxyErrorは処理する必要がない
-				var ok bool
-				select {
-				case _, ok = <-proxyError:
-				default:
-					ok = true
-				}
-
-				if ok {
-					proxyError <- err
-				}
+				safeSetChanel(proxyError, err)
 				break
 			}
 		}

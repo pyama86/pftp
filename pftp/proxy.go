@@ -81,11 +81,11 @@ func (s *proxyServer) sendToOrigin(line string) error {
 
 		s.log.debug("send to origin:%s", line)
 
-		if s.sem < 1 {
+		if s.semFree() {
 			if _, err := s.origin.Write([]byte(line)); err != nil {
 				return err
 			}
-			s.sem++
+			s.semLock()
 			break
 		}
 		time.Sleep(1 * time.Second)
@@ -98,6 +98,22 @@ func (s *proxyServer) responseProxy() error {
 	return s.start(s.originReader, s.clientWriter)
 }
 
+func (s *proxyServer) semLock() {
+	s.sem++
+}
+
+func (s *proxyServer) semUnlock() {
+	s.sem--
+}
+
+func (s *proxyServer) semFree() bool {
+	return s.sem < 1
+}
+
+func (s *proxyServer) semLocked() bool {
+	return s.sem > 0
+}
+
 func (s *proxyServer) suspend() error {
 	s.log.debug("suspend proxy")
 	cnt := 0
@@ -106,7 +122,7 @@ func (s *proxyServer) suspend() error {
 			return errors.New("Could not get semaphore to send to client")
 		}
 
-		if s.sem < 1 {
+		if s.semFree() {
 			s.passThrough = false
 			break
 		}
@@ -202,17 +218,7 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 		for {
 			if n, err := from.Read(buff); err != nil {
 				if err != io.EOF {
-					// stopした場合は、errを返却しない
-					var ok bool
-					select {
-					case _, ok = <-errchan:
-					default:
-						ok = true
-					}
-
-					if ok {
-						errchan <- err
-					}
+					safeSetChanel(errchan, err)
 				}
 				break
 			} else {
@@ -220,12 +226,11 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 					s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
 				}
 
-				if s.passThrough || s.sem > 0 {
+				if s.passThrough || s.semLocked() {
 					read <- buff[:n]
-				}
-
-				if s.sem > 0 {
-					s.sem--
+					if s.semLocked() {
+						s.semUnlock()
+					}
 				}
 			}
 		}
