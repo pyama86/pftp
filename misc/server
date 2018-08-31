@@ -2,8 +2,13 @@
 
 start_server() {
   make server &
-  sleep 5
-  sudo lsof -i:2121 | tail -1 | awk '{print $2}' > pftp.pid
+  pid=sudo lsof -i:2121 | tail -1 | awk '{print $2}'
+  while [ -z "$pid" ]
+  do
+    pid=`sudo lsof -i:2121 | tail -1 | awk '{print $2}'`
+    sleep 1
+  done
+  echo $pid > pftp.pid
 }
 
 stop_server() {
