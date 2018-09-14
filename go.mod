@@ -6,6 +6,8 @@ require (
 	github.com/facebookgo/stack v0.0.0-20160209184415-751773369052 // indirect
 	github.com/jlaffaye/ftp v0.0.0-20180808211605-3f6433f7eae3
 	github.com/julienschmidt/httprouter v0.0.0-20180715161854-348b672cd90d
+	github.com/lestrrat-go/server-starter v0.0.0-20180220224305-e24b30b99ae6
+	github.com/lestrrat/go-server-starter v0.0.0-20180220115249-6ac0b358431b
 	github.com/marcobeierer/ftps v0.0.0-20180713194618-60e520f5feed
 	github.com/pires/go-proxyproto v0.0.0-20161223120430-2f38359974ff
 	github.com/sirupsen/logrus v1.0.6

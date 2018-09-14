@@ -1,10 +1,13 @@
 package pftp
 
 import (
+	"fmt"
 	"net"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/lestrrat-go/server-starter/listener"
 	"github.com/sirupsen/logrus"
 )
 
@@ -34,11 +37,47 @@ func (server *FtpServer) Use(command string, m middlewareFunc) {
 	server.middleware[strings.ToUpper(command)] = m
 }
 
-func (server *FtpServer) Listen() (err error) {
-	server.listener, err = net.Listen("tcp", server.config.ListenAddr)
-
+func setServerStarterPortEnv(starterPort string) error {
+	tcpAddr, err := net.ResolveTCPAddr("tcp", starterPort)
 	if err != nil {
 		return err
+	}
+	tcpListener, err := net.ListenTCP("tcp", tcpAddr)
+	if err != nil {
+		return err
+	}
+	sockFile, err := tcpListener.File()
+	if err != nil {
+		return err
+	}
+
+	os.Setenv("SERVER_STARTER_PORT", fmt.Sprintf("%s=%d", starterPort, sockFile.Fd()))
+
+	return nil
+}
+
+func (server *FtpServer) Listen() (err error) {
+	env := os.Getenv("SERVER_STARTER_PORT")
+	pair := strings.Split(env, "=")
+	hostAddr := strings.TrimSpace(pair[0])
+
+	if (env == "") || (hostAddr != server.config.ListenAddr) {
+		setServerStarterPortEnv(server.config.ListenAddr)
+	}
+
+	listeners, err := listener.ListenAll()
+	if err != nil && err != listener.ErrNoListeningTarget {
+		fmt.Printf("$$$$$$$$$$$$$  at listen all %v\n", err)
+		return err
+	}
+
+	if len(listeners) > 0 {
+		server.listener = listeners[0]
+	} else {
+		server.listener, err = net.Listen("tcp", server.config.ListenAddr)
+		if err != nil {
+			return err
+		}
 	}
 
 	logrus.Info("Listening address ", server.listener.Addr())

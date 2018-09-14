@@ -8,6 +8,10 @@ github.com/jlaffaye/ftp v0.0.0-20180808211605-3f6433f7eae3 h1:UHMAxHSQqPxQi/55JS
 github.com/jlaffaye/ftp v0.0.0-20180808211605-3f6433f7eae3/go.mod h1:lli8NYPQOFy3O++YmYbqVgOcQ1JPCwdOy+5zSjKJ9qY=
 github.com/julienschmidt/httprouter v0.0.0-20180715161854-348b672cd90d h1:of6+TpypLAaiv4JxgH5aplBZnt0b65B4v4c8q5oy+Sk=
 github.com/julienschmidt/httprouter v0.0.0-20180715161854-348b672cd90d/go.mod h1:SYymIcj16QtmaHHD7aYtjjsJG7VTCxuUUipMqKk8s4w=
+github.com/lestrrat-go/server-starter v0.0.0-20180220224305-e24b30b99ae6 h1:JYV9GbQ0PYyQYW+oDMhAmetGt0XRc5Oh2yicsneyVqc=
+github.com/lestrrat-go/server-starter v0.0.0-20180220224305-e24b30b99ae6/go.mod h1:xG1VLzrCB2+uP91eXVCs5FteV/JJOjw0tr+hAM/aL/8=
+github.com/lestrrat/go-server-starter v0.0.0-20180220115249-6ac0b358431b h1:Ial71qYQufttbgLhmAAAgf4Y+p9KRKYklAoE9a8rXOA=
+github.com/lestrrat/go-server-starter v0.0.0-20180220115249-6ac0b358431b/go.mod h1:3T+o9dIpjId0dpv2Aa7+HivBIW9h9nra0VuN5ARP/ec=
 github.com/marcobeierer/ftps v0.0.0-20180713194618-60e520f5feed h1:1VAr2hlM3isutlZdn7L0CnKc2vVvxY+KNWJMzTMs3wQ=
 github.com/marcobeierer/ftps v0.0.0-20180713194618-60e520f5feed/go.mod h1:kFk0pASx+lFf7MyQg428JrEFYIYLpqQnFJjUaXWunic=
 github.com/pires/go-proxyproto v0.0.0-20161223120430-2f38359974ff h1:WNbM46iRszP9uGv4yuIYAUETtnOOnvauU6bfVYnHy5M=
