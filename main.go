@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/Gurpartap/logrus-stack"
@@ -16,6 +17,8 @@ var ftpServer *pftp.FtpServer
 
 var confFile = "./config.toml"
 
+var serverCh = make(chan *pftp.FtpServer)
+
 func init() {
 	logrus.SetLevel(logrus.DebugLevel)
 	stackLevels := []logrus.Level{logrus.PanicLevel, logrus.FatalLevel}
@@ -23,27 +26,43 @@ func init() {
 }
 
 func main() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM)
+
+	go run()
+	ftpServer = <-serverCh
+
+	for {
+		switch <-sigCh {
+		case syscall.SIGINT:
+			break
+		case syscall.SIGTERM:
+			logrus.Info("SIGTERM recived")
+			ftpServer.Stop()
+			os.Exit(0)
+			break
+		case syscall.SIGHUP:
+			logrus.Info("SIGHUP recived")
+			ftpServer.Stop()
+
+			go run()
+			ftpServer = <-serverCh
+			break
+		}
+	}
+}
+
+func run() {
 	ftpServer, err := pftp.NewFtpServer(confFile)
 	if err != nil {
 		logrus.Fatal(err)
 	}
-	go signalHandler()
+
+	serverCh <- ftpServer
 
 	ftpServer.Use("user", User)
-	if err := ftpServer.ListenAndServe(); err != nil {
+	if err := ftpServer.ListenAndServe(); (err != nil) && (!strings.Contains(err.Error(), "use of closed network connection")) {
 		logrus.Fatal(err)
-	}
-}
-
-func signalHandler() {
-	ch := make(chan os.Signal)
-	signal.Notify(ch, syscall.SIGTERM)
-	for {
-		switch <-ch {
-		case syscall.SIGTERM:
-			ftpServer.Stop()
-			break
-		}
 	}
 }
 

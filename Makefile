@@ -35,6 +35,10 @@ lint: ## Exec golint
 server: ## Run server with gin
 	$(GO) run main.go
 
+reload: ## Restart server gracefully
+	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Integration Testing$(RESET)"
+	./misc/server reload
+
 build: ## Build as linux binary
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Building$(RESET)"
 	./misc/build $(VERSION) $(REVISION)
