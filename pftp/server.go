@@ -2,10 +2,13 @@ package pftp
 
 import (
 	"net"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/lestrrat/go-server-starter/listener"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 )
 
 type middlewareFunc func(*Context, string) error
@@ -16,6 +19,7 @@ type FtpServer struct {
 	clientCounter int
 	config        *config
 	middleware    middleware
+	shutdown      bool
 }
 
 func NewFtpServer(confFile string) (*FtpServer, error) {
@@ -35,10 +39,18 @@ func (server *FtpServer) Use(command string, m middlewareFunc) {
 }
 
 func (server *FtpServer) Listen() (err error) {
-	server.listener, err = net.Listen("tcp", server.config.ListenAddr)
-
-	if err != nil {
-		return err
+	if os.Getenv("SERVER_STARTER_PORT") != "" {
+		listeners, err := listener.ListenAll()
+		if listeners == nil || err != nil {
+			return err
+		}
+		server.listener = listeners[0]
+	} else {
+		l, err := net.Listen("tcp", server.config.ListenAddr)
+		if err != nil {
+			return err
+		}
+		server.listener = l
 	}
 
 	logrus.Info("Listening address ", server.listener.Addr())
@@ -49,12 +61,17 @@ func (server *FtpServer) Listen() (err error) {
 func (server *FtpServer) Serve() error {
 	var currentConnection int32
 	currentConnection = 0
+	eg := errgroup.Group{}
 	for {
 		conn, err := server.listener.Accept()
 		if err != nil {
 			if server.listener != nil {
 				return err
 			}
+		}
+
+		if server.shutdown && strings.HasPrefix(conn.RemoteAddr().String(), "127.0.0.1") {
+			break
 		}
 
 		if server.config.IdleTimeout > 0 {
@@ -64,14 +81,11 @@ func (server *FtpServer) Serve() error {
 		server.clientCounter++
 		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection)
 		logrus.Info("FTP Client connected ", "clientIp ", conn.RemoteAddr())
-		go func() {
-			err := c.handleCommands()
-			if err != nil {
-				c.log.err("handle error: %s", err.Error())
-			}
-		}()
+		eg.Go(func() error {
+			return c.handleCommands()
+		})
 	}
-	return nil
+	return eg.Wait()
 }
 
 func (server *FtpServer) ListenAndServe() error {
@@ -84,8 +98,23 @@ func (server *FtpServer) ListenAndServe() error {
 	return server.Serve()
 }
 
-func (server *FtpServer) Stop() {
-	if server.listener != nil {
-		server.listener.Close()
+func (server *FtpServer) Stop() error {
+	if os.Getenv("SERVER_STARTER_PORT") != "" {
+		server.shutdown = true
+		listeners, err := listener.Ports()
+		if err != nil {
+			return err
+		}
+
+		pair := strings.Split(listeners[0].String(), "=")
+		// send close message
+		conn, err := net.Dial("tcp", pair[0])
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+	} else if server.listener != nil {
+		return server.listener.Close()
 	}
+	return nil
 }

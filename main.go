@@ -27,22 +27,27 @@ func main() {
 	if err != nil {
 		logrus.Fatal(err)
 	}
-	go signalHandler()
 
 	ftpServer.Use("user", User)
-	if err := ftpServer.ListenAndServe(); err != nil {
-		logrus.Fatal(err)
-	}
-}
+	go func() {
+		if err := ftpServer.ListenAndServe(); err != nil {
+			logrus.Fatal(err)
+		}
+	}()
 
-func signalHandler() {
 	ch := make(chan os.Signal)
-	signal.Notify(ch, syscall.SIGTERM)
+	signal.Notify(ch, syscall.SIGHUP)
+L:
+
 	for {
 		switch <-ch {
-		case syscall.SIGTERM:
-			ftpServer.Stop()
-			break
+		case syscall.SIGHUP:
+			err := ftpServer.Stop()
+			if err != nil {
+				logrus.Fatal(err)
+
+			}
+			break L
 		}
 	}
 }
