@@ -35,7 +35,7 @@ reload_server() {
     echo "process not found"
     exit 1
   else
-    echo "sent signal as SIGTERM"
+    echo "sent signal as SIGHUP"
     sudo kill -SIGHUP $PID
   fi
 }
