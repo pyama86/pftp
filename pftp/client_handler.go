@@ -117,6 +117,9 @@ func (c *clientHandler) handleCommands() error {
 			if err != nil {
 				if err == io.EOF {
 					c.log.info("client disconnect")
+					if err := c.conn.Close(); err != nil {
+						c.log.err("Network close error")
+					}
 					return nil
 				}
 				switch err := err.(type) {
