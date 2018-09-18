@@ -15,10 +15,16 @@ type middlewareFunc func(*Context, string) error
 type middleware map[string]middlewareFunc
 
 type FtpServer struct {
-	listener      net.Listener
+	listener      listeners
 	clientCounter int
 	config        *config
 	middleware    middleware
+}
+
+type listeners struct {
+	listener    net.Listener
+	tcpListener *net.TCPListener
+	sockFile    *os.File
 }
 
 func NewFtpServer(confFile string) (*FtpServer, error) {
@@ -37,33 +43,27 @@ func (server *FtpServer) Use(command string, m middlewareFunc) {
 	server.middleware[strings.ToUpper(command)] = m
 }
 
-func setServerStarterPortEnv(starterPort string) error {
-	tcpAddr, err := net.ResolveTCPAddr("tcp", starterPort)
+func (server *FtpServer) setServerStarterPortEnv() error {
+	tcpAddr, err := net.ResolveTCPAddr("tcp", server.config.ListenAddr)
 	if err != nil {
 		return err
 	}
-	tcpListener, err := net.ListenTCP("tcp", tcpAddr)
+	server.listener.tcpListener, err = net.ListenTCP("tcp", tcpAddr)
 	if err != nil {
 		return err
 	}
-	sockFile, err := tcpListener.File()
+	server.listener.sockFile, err = server.listener.tcpListener.File()
 	if err != nil {
 		return err
 	}
 
-	os.Setenv("SERVER_STARTER_PORT", fmt.Sprintf("%s=%d", starterPort, sockFile.Fd()))
+	os.Setenv("SERVER_STARTER_PORT", fmt.Sprintf("%s=%d", server.config.ListenAddr, server.listener.sockFile.Fd()))
 
 	return nil
 }
 
 func (server *FtpServer) Listen() (err error) {
-	env := os.Getenv("SERVER_STARTER_PORT")
-	pair := strings.Split(env, "=")
-	hostAddr := strings.TrimSpace(pair[0])
-
-	if (env == "") || (hostAddr != server.config.ListenAddr) {
-		setServerStarterPortEnv(server.config.ListenAddr)
-	}
+	server.setServerStarterPortEnv()
 
 	listeners, err := listener.ListenAll()
 	if err != nil && err != listener.ErrNoListeningTarget {
@@ -71,15 +71,15 @@ func (server *FtpServer) Listen() (err error) {
 	}
 
 	if len(listeners) > 0 {
-		server.listener = listeners[0]
+		server.listener.listener = listeners[0]
 	} else {
-		server.listener, err = net.Listen("tcp", server.config.ListenAddr)
+		server.listener.listener, err = net.Listen("tcp", server.config.ListenAddr)
 		if err != nil {
 			return err
 		}
 	}
 
-	logrus.Info("Listening address ", server.listener.Addr())
+	logrus.Info("Listening address ", server.listener.listener.Addr())
 
 	return err
 }
@@ -88,9 +88,9 @@ func (server *FtpServer) Serve() error {
 	var currentConnection int32
 	currentConnection = 0
 	for {
-		conn, err := server.listener.Accept()
+		conn, err := server.listener.listener.Accept()
 		if err != nil {
-			if server.listener != nil {
+			if server.listener.listener != nil {
 				return err
 			}
 		}
@@ -123,7 +123,11 @@ func (server *FtpServer) ListenAndServe() error {
 }
 
 func (server *FtpServer) Stop() {
-	if server.listener != nil {
-		server.listener.Close()
+	if server.listener.listener != nil {
+		go func() {
+			server.listener.listener.Close()
+			server.listener.tcpListener.Close()
+			server.listener.sockFile.Close()
+		}()
 	}
 }
