@@ -35,6 +35,7 @@ func main() {
 	for {
 		switch <-sigCh {
 		case syscall.SIGINT:
+			break
 		case syscall.SIGTERM:
 			logrus.Info("SIGTERM recived")
 			ftpServer.Stop()
