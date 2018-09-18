@@ -27,21 +27,25 @@ func init() {
 
 func main() {
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGTERM)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM)
+
+	go run()
+	ftpServer = <-serverCh
 
 	for {
-		go run()
-		ftpServer := <-serverCh
-
 		switch <-sigCh {
+		case syscall.SIGINT:
 		case syscall.SIGTERM:
 			logrus.Info("SIGTERM recived")
 			ftpServer.Stop()
-			os.Exit(1)
+			os.Exit(0)
 			break
 		case syscall.SIGHUP:
 			logrus.Info("SIGHUP recived")
 			ftpServer.Stop()
+
+			go run()
+			ftpServer = <-serverCh
 			break
 		}
 	}
