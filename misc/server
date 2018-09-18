@@ -22,8 +22,21 @@ stop_server() {
   sleep 1
   sudo kill -0 $PID 2>/dev/null
   if [ $? -ne 1 ]; then
-    echo "sent signal as SIGKILL"
-    sudo kill -SIGKILL $PID
+    echo "sent signal as SIGTERM"
+    sudo kill -SIGTERM $PID
+  fi
+}
+
+reload_server() {
+  PID=$(cat pftp.pid)
+
+  sudo kill -0 $PID 2>/dev/null
+  if [ $? -eq 1 ]; then
+    echo "process not found"
+    exit 1
+  else
+    echo "sent signal as SIGTERM"
+    sudo kill -SIGHUP $PID
   fi
 }
 
@@ -31,8 +44,15 @@ case "$1" in
   start)
     start_server
     ;;
-  stop*)
+  stop)
     stop_server
+    ;;
+  restart)
+    stop_server
+    start_server
+    ;;
+  reload)
+    reload_server
     ;;
   *)
     echo $"Usage: $0 {start|stop}"

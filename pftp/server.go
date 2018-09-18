@@ -67,7 +67,6 @@ func (server *FtpServer) Listen() (err error) {
 
 	listeners, err := listener.ListenAll()
 	if err != nil && err != listener.ErrNoListeningTarget {
-		fmt.Printf("$$$$$$$$$$$$$  at listen all %v\n", err)
 		return err
 	}
 
