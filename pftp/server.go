@@ -39,7 +39,7 @@ func (server *FtpServer) Use(command string, m middlewareFunc) {
 }
 
 func (server *FtpServer) Listen() (err error) {
-	if os.Getenv("SERVER_STARTER_PORT") != "" {
+	if os.Getenv("SERVER_STARTER_PORT") != "" && !strings.HasSuffix(os.Getenv("SERVER_STARTER_PORT"), "testfd") {
 		listeners, err := listener.ListenAll()
 		if listeners == nil || err != nil {
 			return err

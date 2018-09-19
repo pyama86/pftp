@@ -27,14 +27,26 @@ stop_server() {
   fi
 }
 
+hup_server() {
+  PID=$(cat pftp.pid)
+  sudo kill -SIGHUP $PID 2>/dev/null
+  [ -x /proc/$PID ]
+  if [ $? -ne 1 ]; then
+    exit 1
+  fi
+  exit 0
+}
 case "$1" in
   start)
     start_server
+    ;;
+  hup)
+    hup_server
     ;;
   stop*)
     stop_server
     ;;
   *)
-    echo $"Usage: $0 {start|stop}"
+    echo $"Usage: $0 {start|stop|hup}"
     exit 2
 esac
