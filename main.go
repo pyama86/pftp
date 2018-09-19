@@ -36,7 +36,7 @@ func main() {
 	}()
 
 	ch := make(chan os.Signal)
-	signal.Notify(ch, syscall.SIGHUP)
+	signal.Notify(ch, syscall.SIGHUP, syscall.SIGTERM)
 L:
 
 	for {
