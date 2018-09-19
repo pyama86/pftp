@@ -3,6 +3,7 @@ package pftp
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"strconv"
@@ -213,12 +214,16 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 	done := make(chan struct{})
 	errchan := make(chan error)
 	var lastError error
+	var eof = false
 
 	go func() {
 		for {
 			if n, err := from.Read(buff); err != nil {
 				if err != io.EOF {
 					safeSetChanel(errchan, err)
+				} else {
+					eof = true
+					s.stopChan <- struct{}{}
 				}
 				break
 			} else {
@@ -267,6 +272,9 @@ loop:
 			// close read groutine
 			s.origin.Close()
 			s.stop = true
+			if eof {
+				lastError = fmt.Errorf("end by EOF")
+			}
 			break loop
 		}
 	}

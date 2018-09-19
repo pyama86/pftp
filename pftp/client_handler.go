@@ -96,8 +96,11 @@ func (c *clientHandler) handleCommands() error {
 	// サーバからのレスポンスはSuspendしない限り自動で返却される
 	go func() {
 		for {
-			if err := c.proxy.responseProxy(); err != nil {
-				safeSetChanel(proxyError, err)
+			err := c.proxy.responseProxy()
+			if err != nil {
+				if err.Error() != "end by EOF" {
+					safeSetChanel(proxyError, err)
+				}
 				break
 			}
 		}
@@ -116,7 +119,10 @@ func (c *clientHandler) handleCommands() error {
 
 			if err != nil {
 				if err == io.EOF {
-					c.log.info("client disconnect")
+					if err := c.conn.Close(); err != nil {
+						c.log.err("Network close error")
+					}
+
 					return nil
 				}
 				switch err := err.(type) {
