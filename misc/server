@@ -36,6 +36,7 @@ hup_server() {
   fi
   exit 0
 }
+
 case "$1" in
   start)
     start_server
@@ -43,7 +44,7 @@ case "$1" in
   hup)
     hup_server
     ;;
-  stop*)
+  stop)
     stop_server
     ;;
   *)

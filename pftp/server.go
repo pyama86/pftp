@@ -6,9 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/lestrrat/go-server-starter/listener"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/sync/errgroup"
 )
 
 type middlewareFunc func(*Context, string) error
@@ -61,6 +62,7 @@ func (server *FtpServer) Serve() error {
 	var currentConnection int32
 	currentConnection = 0
 	eg := errgroup.Group{}
+
 	for {
 		conn, err := server.listener.Accept()
 		if err != nil {

@@ -98,7 +98,7 @@ func (c *clientHandler) handleCommands() error {
 		for {
 			err := c.proxy.responseProxy()
 			if err != nil {
-				if err.Error() != "end by EOF" {
+				if err != io.EOF {
 					safeSetChanel(proxyError, err)
 				}
 				break
