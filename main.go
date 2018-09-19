@@ -23,7 +23,6 @@ func init() {
 }
 
 func main() {
-	done := make(chan struct{})
 	ftpServer, err := pftp.NewFtpServer(confFile)
 	if err != nil {
 		logrus.Fatal(err)
@@ -34,7 +33,6 @@ func main() {
 		if err := ftpServer.ListenAndServe(); err != nil {
 			logrus.Error(err)
 		}
-		done <- struct{}{}
 	}()
 
 	ch := make(chan os.Signal)
@@ -44,15 +42,12 @@ L:
 	for {
 		switch <-ch {
 		case syscall.SIGHUP, syscall.SIGTERM:
-			err := ftpServer.Stop()
-			if err != nil {
+			if err := ftpServer.Stop(); err != nil {
 				logrus.Fatal(err)
-
 			}
 			break L
 		}
 	}
-	<-done
 }
 
 // User function will setup Origin ftp server domain from ftp username

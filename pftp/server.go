@@ -19,7 +19,7 @@ type FtpServer struct {
 	clientCounter int
 	config        *config
 	middleware    middleware
-	shutdown      bool
+	eg            errgroup.Group
 }
 
 func NewFtpServer(confFile string) (*FtpServer, error) {
@@ -31,6 +31,7 @@ func NewFtpServer(confFile string) (*FtpServer, error) {
 	return &FtpServer{
 		config:     c,
 		middleware: m,
+		eg:         errgroup.Group{},
 	}, nil
 }
 
@@ -61,17 +62,12 @@ func (server *FtpServer) Listen() (err error) {
 func (server *FtpServer) Serve() error {
 	var currentConnection int32
 	currentConnection = 0
-	eg := errgroup.Group{}
 	for {
 		conn, err := server.listener.Accept()
 		if err != nil {
 			if server.listener != nil {
 				return err
 			}
-		}
-
-		if server.shutdown && strings.HasPrefix(conn.RemoteAddr().String(), "127.0.0.1") {
-			break
 		}
 
 		if server.config.IdleTimeout > 0 {
@@ -81,11 +77,15 @@ func (server *FtpServer) Serve() error {
 		server.clientCounter++
 		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection)
 		logrus.Info("FTP Client connected ", "clientIp ", conn.RemoteAddr())
-		eg.Go(func() error {
+		server.eg.Go(func() error {
 			return c.handleCommands()
 		})
 	}
-	return eg.Wait()
+	return nil
+}
+
+func (server *FtpServer) wait() error {
+	return server.eg.Wait()
 }
 
 func (server *FtpServer) ListenAndServe() error {
@@ -99,22 +99,8 @@ func (server *FtpServer) ListenAndServe() error {
 }
 
 func (server *FtpServer) Stop() error {
-	if os.Getenv("SERVER_STARTER_PORT") != "" {
-		server.shutdown = true
-		listeners, err := listener.Ports()
-		if err != nil {
-			return err
-		}
-
-		pair := strings.Split(listeners[0].String(), "=")
-		// send close message
-		conn, err := net.Dial("tcp", pair[0])
-		if err != nil {
-			return err
-		}
-		defer conn.Close()
-	} else if server.listener != nil {
+	if os.Getenv("SERVER_STARTER_PORT") == "" && server.listener != nil {
 		return server.listener.Close()
 	}
-	return nil
+	return server.wait()
 }
