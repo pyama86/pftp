@@ -37,7 +37,8 @@ server: ## Run server with gin
 
 build: ## Build as linux binary
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Building$(RESET)"
-	./misc/build $(VERSION) $(REVISION)
+	$(GO) build -o pftp_bin main.go
+
 
 ghr: ## Upload to Github releases without token check
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Releasing for Github$(RESET)"
