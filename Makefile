@@ -12,7 +12,7 @@ GO ?= GO111MODULE=on /usr/local/go/bin/go
 endif
 
 default: build
-ci: depsdev ftp test lint integration graceful_shutdown ## Run test and more...
+ci: depsdev ftp test lint integration ## Run test and more...
 
 depsdev: ## Installing dependencies for development
 	$(GO) get github.com/golang/lint/golint
@@ -80,11 +80,5 @@ integration:
 	./misc/server start
 	$(GO) test $(VERBOSE) -integration $(TEST) $(TEST_OPTIONS)
 	./misc/server stop
-graceful_shutdown:
-	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Shutdown Testing$(RESET)"
-	SERVER_STARTER_PORT="127.0.0.1:2121=testfd"
-	./misc/server stop || true
-	./misc/server start
-	./misc/server hup
 
 .PHONY: default dist test
