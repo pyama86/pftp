@@ -118,6 +118,7 @@ func (c *clientHandler) handleCommands() error {
 			line, err := c.reader.ReadString('\n')
 
 			if err != nil {
+				// client disconnect
 				if err == io.EOF {
 					if err := c.conn.Close(); err != nil {
 						c.log.err("Network close error")

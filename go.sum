@@ -4,6 +4,12 @@ github.com/Gurpartap/logrus-stack v0.0.0-20170710170904-89c00d8a28f4 h1:vdT7QwBh
 github.com/Gurpartap/logrus-stack v0.0.0-20170710170904-89c00d8a28f4/go.mod h1:SvXOG8ElV28oAiG9zv91SDe5+9PfIr7PPccpr8YyXNs=
 github.com/Songmu/retry v0.1.0 h1:hPA5xybQsksLR/ry/+t/7cFajPW+dqjmjhzZhioBILA=
 github.com/Songmu/retry v0.1.0/go.mod h1:7sXIW7eseB9fq0FUvigRcQMVLR9tuHI0Scok+rkpAuA=
+github.com/admpub/go-colortext v0.0.0-20160507010035-511bcaf42ccd h1:qAlWS5m8Cr6Rka58yYvicuiUWZQJccx1sRHG1kVzQAI=
+github.com/admpub/go-colortext v0.0.0-20160507010035-511bcaf42ccd/go.mod h1:aZADDp/DbhkzTZGnwVwvkGuVzOKMof0DMc/RFNvKD4s=
+github.com/admpub/log v0.0.0-20180816172912-46327774dd0c h1:YkygXmdjEff3chIEthZyM1D98U0R1+cAZuI//iatKxw=
+github.com/admpub/log v0.0.0-20180816172912-46327774dd0c/go.mod h1:9q/FVF4zGIc/+4OaMT031thniAviDPhJjDFypGa04Fk=
+github.com/admpub/queueChan v0.0.0-20151001074356-79908f7a499f h1:yf5gGnFUfJS+2pjdMoLoFRJ9/4wKMxIXbhmnw6qUXoc=
+github.com/admpub/queueChan v0.0.0-20151001074356-79908f7a499f/go.mod h1:r5VY9Xq16cK64L6cittCPorYmgHbrqqxrrL02q6VD7M=
 github.com/facebookgo/stack v0.0.0-20160209184415-751773369052 h1:JWuenKqqX8nojtoVVWjGfOF9635RETekkoH6Cc9SX0A=
 github.com/facebookgo/stack v0.0.0-20160209184415-751773369052/go.mod h1:UbMTZqLaRiH3MsBH8va0n7s1pQYcu3uTb8G4tygF4Zg=
 github.com/golang/lint v0.0.0-20180702182130-06c8688daad7 h1:2hRPrmiwPrp3fQX967rNJIhQPtiGXdlQWAxKbKw3VHA=

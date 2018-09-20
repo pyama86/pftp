@@ -2,9 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/Gurpartap/logrus-stack"
 	"github.com/pyama86/pftp/example/webapi"
@@ -23,7 +20,6 @@ func init() {
 }
 
 func main() {
-	done := make(chan struct{})
 
 	ftpServer, err := pftp.NewFtpServer(confFile)
 	if err != nil {
@@ -31,28 +27,9 @@ func main() {
 	}
 
 	ftpServer.Use("user", User)
-	go func() {
-		if err := ftpServer.ListenAndServe(); err != nil {
-			logrus.Error(err)
-		}
-		done <- struct{}{}
-	}()
-
-	ch := make(chan os.Signal)
-	signal.Notify(ch, syscall.SIGHUP, syscall.SIGTERM)
-
-L:
-	for {
-		switch <-ch {
-		case syscall.SIGHUP, syscall.SIGTERM:
-			if err := ftpServer.Stop(); err != nil {
-				logrus.Fatal(err)
-			}
-			break L
-		}
+	if err := ftpServer.Start(); err != nil {
+		logrus.Fatal(err)
 	}
-
-	<-done
 }
 
 // User function will setup Origin ftp server domain from ftp username

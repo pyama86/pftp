@@ -4,6 +4,9 @@ require (
 	github.com/BurntSushi/toml v0.3.0
 	github.com/Gurpartap/logrus-stack v0.0.0-20170710170904-89c00d8a28f4
 	github.com/Songmu/retry v0.1.0 // indirect
+	github.com/admpub/go-colortext v0.0.0-20160507010035-511bcaf42ccd // indirect
+	github.com/admpub/log v0.0.0-20180816172912-46327774dd0c
+	github.com/admpub/queueChan v0.0.0-20151001074356-79908f7a499f // indirect
 	github.com/facebookgo/stack v0.0.0-20160209184415-751773369052 // indirect
 	github.com/golang/lint v0.0.0-20180702182130-06c8688daad7 // indirect
 	github.com/google/go-github v17.0.0+incompatible // indirect

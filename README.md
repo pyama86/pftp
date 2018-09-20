@@ -12,9 +12,8 @@ func main() {
 	if err != nil {
 		logrus.Fatal(err)
 	}
-	go signalHandler()
 
-	if err := ftpServer.ListenAndServe(); err != nil {
+	if err := ftpServer.Start(); err != nil {
 		logrus.Fatal(err)
 	}
 }
@@ -46,4 +45,5 @@ func User(c *pftp.Context, param string) error {
 - Go 1.11 laer
 
 # author
-@pyama86
+- @pyama86
+- @heat1024
