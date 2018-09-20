@@ -2,9 +2,13 @@ package pftp
 
 import (
 	"net"
+	"os"
 	"strings"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
+	"github.com/lestrrat/go-server-starter/listener"
 	"github.com/sirupsen/logrus"
 )
 
@@ -35,10 +39,18 @@ func (server *FtpServer) Use(command string, m middlewareFunc) {
 }
 
 func (server *FtpServer) Listen() (err error) {
-	server.listener, err = net.Listen("tcp", server.config.ListenAddr)
-
-	if err != nil {
-		return err
+	if os.Getenv("SERVER_STARTER_PORT") != "" {
+		listeners, err := listener.ListenAll()
+		if listeners == nil || err != nil {
+			return err
+		}
+		server.listener = listeners[0]
+	} else {
+		l, err := net.Listen("tcp", server.config.ListenAddr)
+		if err != nil {
+			return err
+		}
+		server.listener = l
 	}
 
 	logrus.Info("Listening address ", server.listener.Addr())
@@ -49,9 +61,17 @@ func (server *FtpServer) Listen() (err error) {
 func (server *FtpServer) Serve() error {
 	var currentConnection int32
 	currentConnection = 0
+	eg := errgroup.Group{}
+
 	for {
 		conn, err := server.listener.Accept()
 		if err != nil {
+			// if use server starter, break for while all childs end
+			if os.Getenv("SERVER_STARTER_PORT") != "" {
+				logrus.Info("Close listener")
+				break
+			}
+
 			if server.listener != nil {
 				return err
 			}
@@ -64,14 +84,12 @@ func (server *FtpServer) Serve() error {
 		server.clientCounter++
 		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection)
 		logrus.Info("FTP Client connected ", "clientIp ", conn.RemoteAddr())
-		go func() {
-			err := c.handleCommands()
-			if err != nil {
-				c.log.err("handle error: %s", err.Error())
-			}
-		}()
+		eg.Go(func() error {
+			return c.handleCommands()
+		})
 	}
-	return nil
+
+	return eg.Wait()
 }
 
 func (server *FtpServer) ListenAndServe() error {
@@ -84,8 +102,10 @@ func (server *FtpServer) ListenAndServe() error {
 	return server.Serve()
 }
 
-func (server *FtpServer) Stop() {
+func (server *FtpServer) Stop() error {
 	if server.listener != nil {
-		server.listener.Close()
+		return server.listener.Close()
 	}
+
+	return nil
 }

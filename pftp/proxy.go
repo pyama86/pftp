@@ -219,6 +219,9 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 			if n, err := from.Read(buff); err != nil {
 				if err != io.EOF {
 					safeSetChanel(errchan, err)
+				} else {
+					lastError = err
+					s.stopChan <- struct{}{}
 				}
 				break
 			} else {

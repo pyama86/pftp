@@ -23,28 +23,36 @@ func init() {
 }
 
 func main() {
+	done := make(chan struct{})
+
 	ftpServer, err := pftp.NewFtpServer(confFile)
 	if err != nil {
 		logrus.Fatal(err)
 	}
-	go signalHandler()
 
 	ftpServer.Use("user", User)
-	if err := ftpServer.ListenAndServe(); err != nil {
-		logrus.Fatal(err)
-	}
-}
+	go func() {
+		if err := ftpServer.ListenAndServe(); err != nil {
+			logrus.Error(err)
+		}
+		done <- struct{}{}
+	}()
 
-func signalHandler() {
 	ch := make(chan os.Signal)
-	signal.Notify(ch, syscall.SIGTERM)
+	signal.Notify(ch, syscall.SIGHUP, syscall.SIGTERM)
+
+L:
 	for {
 		switch <-ch {
-		case syscall.SIGTERM:
-			ftpServer.Stop()
-			break
+		case syscall.SIGHUP, syscall.SIGTERM:
+			if err := ftpServer.Stop(); err != nil {
+				logrus.Fatal(err)
+			}
+			break L
 		}
 	}
+
+	<-done
 }
 
 // User function will setup Origin ftp server domain from ftp username
