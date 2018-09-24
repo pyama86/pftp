@@ -17,4 +17,4 @@ cache:
     - misc/test/data
     - /go/src/github.com
 notifications:
-  slack: pepabo:urThJPQ6Vh8m3cI7riDpYAbn
+  slack: pepabo:CQkcN0cdvPSJvVsK2D48qYyV
