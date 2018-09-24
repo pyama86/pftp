@@ -3,7 +3,9 @@ package pftp
 import (
 	"net"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -20,6 +22,7 @@ type FtpServer struct {
 	clientCounter int
 	config        *config
 	middleware    middleware
+	shutdown      bool
 }
 
 func NewFtpServer(confFile string) (*FtpServer, error) {
@@ -38,7 +41,7 @@ func (server *FtpServer) Use(command string, m middlewareFunc) {
 	server.middleware[strings.ToUpper(command)] = m
 }
 
-func (server *FtpServer) Listen() (err error) {
+func (server *FtpServer) listen() (err error) {
 	if os.Getenv("SERVER_STARTER_PORT") != "" {
 		listeners, err := listener.ListenAll()
 		if listeners == nil || err != nil {
@@ -58,7 +61,7 @@ func (server *FtpServer) Listen() (err error) {
 	return err
 }
 
-func (server *FtpServer) Serve() error {
+func (server *FtpServer) serve() error {
 	var currentConnection int32
 	currentConnection = 0
 	eg := errgroup.Group{}
@@ -92,20 +95,48 @@ func (server *FtpServer) Serve() error {
 	return eg.Wait()
 }
 
-func (server *FtpServer) ListenAndServe() error {
-	if err := server.Listen(); err != nil {
+func (server *FtpServer) Start() error {
+	var lastError error
+	done := make(chan struct{})
+
+	if err := server.listen(); err != nil {
 		return err
 	}
 
 	logrus.Info("Starting...")
 
-	return server.Serve()
-}
+	go func() {
+		if err := server.serve(); err != nil {
+			if !server.shutdown {
+				lastError = err
+			}
+		}
+		done <- struct{}{}
+	}()
 
-func (server *FtpServer) Stop() error {
-	if server.listener != nil {
-		return server.listener.Close()
+	ch := make(chan os.Signal)
+	signal.Notify(ch, syscall.SIGHUP, syscall.SIGTERM)
+L:
+	for {
+		switch <-ch {
+		case syscall.SIGHUP, syscall.SIGTERM:
+			if err := server.stop(); err != nil {
+				lastError = err
+			}
+			break L
+		}
 	}
 
+	<-done
+	return lastError
+}
+
+func (server *FtpServer) stop() error {
+	server.shutdown = true
+	if server.listener != nil {
+		if err := server.listener.Close(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
