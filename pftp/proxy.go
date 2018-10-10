@@ -147,17 +147,23 @@ func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) erro
 	sourcePort, _ := strconv.Atoi(sourceAddr[1])
 	destinationPort, _ := strconv.Atoi(destinationAddr[1])
 
+	// proxyProtocolHeader's DestinationAddress must be IP! not domain name
+	hostIP, err := net.LookupIP(destinationAddr[0])
+	if err != err {
+		return err
+	}
+
 	proxyProtocolHeader := proxyproto.Header{
 		Version:            byte(1),
 		Command:            proxyproto.PROXY,
 		TransportProtocol:  proxyproto.TCPv4,
 		SourceAddress:      net.ParseIP(sourceAddr[0]),
-		DestinationAddress: net.ParseIP(destinationAddr[0]),
+		DestinationAddress: net.ParseIP(hostIP[0].String()),
 		SourcePort:         uint16(sourcePort),
 		DestinationPort:    uint16(destinationPort),
 	}
 
-	_, err := proxyProtocolHeader.WriteTo(s.origin)
+	_, err = proxyProtocolHeader.WriteTo(s.origin)
 	return err
 }
 func (s *proxyServer) switchOrigin(clientAddr string, originAddr string) error {
