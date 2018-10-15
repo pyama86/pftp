@@ -44,7 +44,7 @@ type clientHandler struct {
 	mutex             *sync.Mutex
 	log               *logger
 	deadline          time.Time
-	sourceIP          string
+	srcIP             string
 }
 
 func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32) *clientHandler {
@@ -59,7 +59,7 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		currentConnection: currentConnection,
 		mutex:             &sync.Mutex{},
 		log:               &logger{fromip: connection.RemoteAddr().String(), id: id},
-		sourceIP:          connection.RemoteAddr().String(),
+		srcIP:             connection.RemoteAddr().String(),
 	}
 
 	return p
@@ -240,7 +240,7 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 
 func (c *clientHandler) connectProxy() error {
 	if c.proxy != nil {
-		err := c.proxy.switchOrigin(c.sourceIP, c.context.RemoteAddr)
+		err := c.proxy.switchOrigin(c.srcIP, c.context.RemoteAddr)
 		if err != nil {
 			return err
 		}
@@ -272,19 +272,4 @@ func (c *clientHandler) parseLine(line string) {
 	if len(params) > 1 {
 		c.param = params[1]
 	}
-}
-
-func getSourceIPFromProxyHeader(line string) (string, error) {
-	params := strings.SplitN(strings.Trim(line, "\r\n"), " ", 6)
-	if len(params) != 6 {
-		return "", errors.New("wrong proxy header parameters")
-	}
-
-	if net.ParseIP(params[2]) == nil || net.ParseIP(params[3]) == nil {
-		return "", errors.New("wrong source ip address")
-	}
-
-	sourceip := params[2] + ":" + params[4]
-
-	return sourceip, nil
 }

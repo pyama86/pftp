@@ -100,8 +100,8 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 		line string
 	}
 	type want struct {
-		result     *result
-		sourceAddr string
+		result *result
+		srcIP  string
 	}
 
 	tests := []struct {
@@ -172,7 +172,7 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 				line: "PROXY TCP4 192.168.10.1 100.100.100.100 12345 21\r\n",
 			},
 			want: want{
-				sourceAddr: "192.168.10.1:12345",
+				srcIP: "192.168.10.1:12345",
 			},
 		},
 	}
@@ -199,8 +199,8 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 			got := clientHandler.handleCommand(tt.args.line)
 			if (got != nil && tt.want.result == nil) || (tt.want.result != nil && (got.code != tt.want.result.code || got.msg != tt.want.result.msg || got.err.Error() != tt.want.result.err.Error())) {
 				t.Errorf("clientHandler.handleCommand() = %v, want %v", got, tt.want.result)
-			} else if tt.name == "proxy_ok" && clientHandler.sourceIP != tt.want.sourceAddr {
-				t.Errorf("clientHandler.sourceIP = %v, want %v", clientHandler.sourceIP, tt.want.sourceAddr)
+			} else if tt.name == "proxy_ok" && clientHandler.srcIP != tt.want.srcIP {
+				t.Errorf("clientHandler.sourceIP = %v, want %v", clientHandler.srcIP, tt.want.srcIP)
 			}
 		})
 	}
