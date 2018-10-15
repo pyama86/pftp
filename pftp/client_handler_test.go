@@ -99,12 +99,16 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 	type args struct {
 		line string
 	}
+	type want struct {
+		result     *result
+		sourceAddr string
+	}
 
 	tests := []struct {
 		name   string
 		fields fields
 		args   args
-		wantR  *result
+		want   want
 	}{
 		{
 			name: "user_ok",
@@ -129,10 +133,12 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 			args: args{
 				line: "PROXY 192.168.10.1 100.100.100.100 53172 21\r\n",
 			},
-			wantR: &result{
-				code: 500,
-				msg:  "Proxy header parse error",
-				err:  errors.New("wrong proxy header parameters"),
+			want: want{
+				result: &result{
+					code: 500,
+					msg:  "Proxy header parse error",
+					err:  errors.New("wrong proxy header parameters"),
+				},
 			},
 		},
 		{
@@ -146,10 +152,12 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 			args: args{
 				line: "PROXY TCP4 192.168.10.256 100.100.100.100 53172 21\r\n",
 			},
-			wantR: &result{
-				code: 500,
-				msg:  "Proxy header parse error",
-				err:  errors.New("wrong source ip address"),
+			want: want{
+				result: &result{
+					code: 500,
+					msg:  "Proxy header parse error",
+					err:  errors.New("wrong source ip address"),
+				},
 			},
 		},
 		{
@@ -162,6 +170,9 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 			},
 			args: args{
 				line: "PROXY TCP4 192.168.10.1 100.100.100.100 12345 21\r\n",
+			},
+			want: want{
+				sourceAddr: "192.168.10.1:12345",
 			},
 		},
 	}
@@ -186,10 +197,10 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 			)
 
 			got := clientHandler.handleCommand(tt.args.line)
-			if (got != nil && tt.wantR == nil) || (tt.wantR != nil && (got.code != tt.wantR.code || got.msg != tt.wantR.msg || got.err.Error() != tt.wantR.err.Error())) {
-				t.Errorf("clientHandler.handleCommand() = %v, want %v", got, tt.wantR)
-			} else if tt.name == "proxy_ok" && clientHandler.sourceIP != "192.168.10.1:12345" {
-				t.Errorf("clientHandler.sourceIP = %v, want %v", clientHandler.sourceIP, "192.168.10.1:12345")
+			if (got != nil && tt.want.result == nil) || (tt.want.result != nil && (got.code != tt.want.result.code || got.msg != tt.want.result.msg || got.err.Error() != tt.want.result.err.Error())) {
+				t.Errorf("clientHandler.handleCommand() = %v, want %v", got, tt.want.result)
+			} else if tt.name == "proxy_ok" && clientHandler.sourceIP != tt.want.sourceAddr {
+				t.Errorf("clientHandler.sourceIP = %v, want %v", clientHandler.sourceIP, tt.want.sourceAddr)
 			}
 		})
 	}
