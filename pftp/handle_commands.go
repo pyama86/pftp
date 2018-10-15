@@ -101,7 +101,7 @@ func (c *clientHandler) handleProxyHeader() *result {
 		}
 	}
 
-	c.sourceIP = params[2] + ":" + params[4]
+	c.srcIP = params[2] + ":" + params[4]
 
 	return nil
 }

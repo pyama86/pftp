@@ -44,7 +44,7 @@ type clientHandler struct {
 	mutex             *sync.Mutex
 	log               *logger
 	deadline          time.Time
-	sourceIP          string
+	srcIP             string
 }
 
 func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32) *clientHandler {
@@ -59,7 +59,7 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		currentConnection: currentConnection,
 		mutex:             &sync.Mutex{},
 		log:               &logger{fromip: connection.RemoteAddr().String(), id: id},
-		sourceIP:          connection.RemoteAddr().String(),
+		srcIP:             connection.RemoteAddr().String(),
 	}
 
 	return p
@@ -240,7 +240,7 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 
 func (c *clientHandler) connectProxy() error {
 	if c.proxy != nil {
-		err := c.proxy.switchOrigin(c.sourceIP, c.context.RemoteAddr)
+		err := c.proxy.switchOrigin(c.srcIP, c.context.RemoteAddr)
 		if err != nil {
 			return err
 		}

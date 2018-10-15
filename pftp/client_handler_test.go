@@ -188,8 +188,8 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 			got := clientHandler.handleCommand(tt.args.line)
 			if (got != nil && tt.wantR == nil) || (tt.wantR != nil && (got.code != tt.wantR.code || got.msg != tt.wantR.msg || got.err.Error() != tt.wantR.err.Error())) {
 				t.Errorf("clientHandler.handleCommand() = %v, want %v", got, tt.wantR)
-			} else if tt.name == "proxy_ok" && clientHandler.sourceIP != "192.168.10.1:12345" {
-				t.Errorf("clientHandler.sourceIP = %v, want %v", clientHandler.sourceIP, "192.168.10.1:12345")
+			} else if tt.name == "proxy_ok" && clientHandler.srcIP != "192.168.10.1:12345" {
+				t.Errorf("clientHandler.srcIP = %v, want %v", clientHandler.srcIP, "192.168.10.1:12345")
 			}
 		})
 	}
