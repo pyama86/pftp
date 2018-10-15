@@ -81,12 +81,16 @@ func (c *clientHandler) handleTransfer() *result {
 }
 
 func (c *clientHandler) handleProxyHeader() *result {
-	if err := c.getSourceIPFromProxyHeader(c.line); err != nil {
+	sourceAddr, err := getSourceIPFromProxyHeader(c.line)
+	if err != nil {
 		return &result{
 			code: 500,
-			msg:  fmt.Sprintf("Proxy header parse error: %s", err),
+			msg:  fmt.Sprintf("Proxy header parse error"),
+			err:  err,
 		}
 	}
+
+	c.sourceIP = sourceAddr
 
 	return nil
 }

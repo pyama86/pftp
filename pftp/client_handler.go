@@ -274,20 +274,17 @@ func (c *clientHandler) parseLine(line string) {
 	}
 }
 
-func (c *clientHandler) getSourceIPFromProxyHeader(line string) error {
+func getSourceIPFromProxyHeader(line string) (string, error) {
 	params := strings.SplitN(strings.Trim(line, "\r\n"), " ", 6)
 	if len(params) != 6 {
-		return errors.New("wrong proxy header parameters")
+		return "", errors.New("wrong proxy header parameters")
 	}
 
-	sourceIP := params[2]
-	if net.ParseIP(sourceIP) == nil {
-		return errors.New("wrong ip address")
+	if net.ParseIP(params[2]) == nil || net.ParseIP(params[3]) == nil {
+		return "", errors.New("wrong source ip address")
 	}
 
-	sourcePort := params[4]
+	sourceip := params[2] + ":" + params[4]
 
-	c.sourceIP = sourceIP + ":" + sourcePort
-
-	return nil
+	return sourceip, nil
 }
