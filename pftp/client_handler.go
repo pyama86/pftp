@@ -21,6 +21,7 @@ var handlers map[string]*handleFunc
 
 func init() {
 	handlers = make(map[string]*handleFunc)
+	handlers["PROXY"] = &handleFunc{(*clientHandler).handleProxyHeader, false}
 	handlers["USER"] = &handleFunc{(*clientHandler).handleUSER, true}
 	handlers["AUTH"] = &handleFunc{(*clientHandler).handleAUTH, true}
 	handlers["RETR"] = &handleFunc{(*clientHandler).handleTransfer, false}
@@ -43,6 +44,7 @@ type clientHandler struct {
 	mutex             *sync.Mutex
 	log               *logger
 	deadline          time.Time
+	sourceIP          string
 }
 
 func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32) *clientHandler {
@@ -57,6 +59,7 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		currentConnection: currentConnection,
 		mutex:             &sync.Mutex{},
 		log:               &logger{fromip: connection.RemoteAddr().String(), id: id},
+		sourceIP:          connection.RemoteAddr().String(),
 	}
 
 	return p
@@ -116,7 +119,6 @@ func (c *clientHandler) handleCommands() error {
 				c.setClientDeadLine(c.config.IdleTimeout)
 			}
 			line, err := c.reader.ReadString('\n')
-
 			if err != nil {
 				// client disconnect
 				if err == io.EOF {
@@ -238,7 +240,7 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 
 func (c *clientHandler) connectProxy() error {
 	if c.proxy != nil {
-		err := c.proxy.switchOrigin(c.conn.RemoteAddr().String(), c.context.RemoteAddr)
+		err := c.proxy.switchOrigin(c.sourceIP, c.context.RemoteAddr)
 		if err != nil {
 			return err
 		}
@@ -270,4 +272,22 @@ func (c *clientHandler) parseLine(line string) {
 	if len(params) > 1 {
 		c.param = params[1]
 	}
+}
+
+func (c *clientHandler) getSourceIPFromProxyHeader(line string) error {
+	params := strings.SplitN(strings.Trim(line, "\r\n"), " ", 6)
+	if len(params) != 6 {
+		return errors.New("wrong proxy header parameters")
+	}
+
+	sourceIP := params[2]
+	if net.ParseIP(sourceIP) == nil {
+		return errors.New("wrong ip address")
+	}
+
+	sourcePort := params[4]
+
+	c.sourceIP = sourceIP + ":" + sourcePort
+
+	return nil
 }

@@ -79,3 +79,14 @@ func (c *clientHandler) handleTransfer() *result {
 	}
 	return nil
 }
+
+func (c *clientHandler) handleProxyHeader() *result {
+	if err := c.getSourceIPFromProxyHeader(c.line); err != nil {
+		return &result{
+			code: 500,
+			msg:  fmt.Sprintf("Proxy header parse error: %s", err),
+		}
+	}
+
+	return nil
+}
