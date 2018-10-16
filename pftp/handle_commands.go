@@ -3,7 +3,10 @@ package pftp
 import (
 	"bufio"
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"net"
+	"strings"
 )
 
 func (c *clientHandler) handleUSER() *result {
@@ -77,5 +80,28 @@ func (c *clientHandler) handleTransfer() *result {
 			msg:  fmt.Sprintf("Internal error: %s", err),
 		}
 	}
+	return nil
+}
+
+func (c *clientHandler) handleProxyHeader() *result {
+	params := strings.SplitN(strings.Trim(c.line, "\r\n"), " ", 6)
+	if len(params) != 6 {
+		return &result{
+			code: 500,
+			msg:  fmt.Sprintf("Proxy header parse error"),
+			err:  errors.New("wrong proxy header parameters"),
+		}
+	}
+
+	if net.ParseIP(params[2]) == nil || net.ParseIP(params[3]) == nil {
+		return &result{
+			code: 500,
+			msg:  fmt.Sprintf("Proxy header parse error"),
+			err:  errors.New("wrong source ip address"),
+		}
+	}
+
+	c.srcIP = params[2] + ":" + params[4]
+
 	return nil
 }
