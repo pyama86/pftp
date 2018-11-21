@@ -38,6 +38,70 @@ func Test_clientHandler_handleAUTH(t *testing.T) {
 	}
 }
 
+func Test_clientHandler_handlePBSZ(t *testing.T) {
+	type fields struct {
+		config *config
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   *result
+	}{
+		{
+			name: "none_tls",
+			fields: fields{
+				config: &config{},
+			},
+			want: &result{
+				code: 503,
+				msg:  "Not using TLS connection",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &clientHandler{
+				config: tt.fields.config,
+			}
+			if got := c.handlePBSZ(); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("clientHandler.handlePBSZ() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_clientHandler_handlePROT(t *testing.T) {
+	type fields struct {
+		config *config
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   *result
+	}{
+		{
+			name: "none_tls",
+			fields: fields{
+				config: &config{},
+			},
+			want: &result{
+				code: 503,
+				msg:  "Not using TLS connection",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &clientHandler{
+				config: tt.fields.config,
+			}
+			if got := c.handlePROT(); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("clientHandler.handlePROT() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func Test_clientHandler_handleUSER(t *testing.T) {
 	c, err := net.Dial("tcp", "127.0.0.1:21")
 	if err != nil {
