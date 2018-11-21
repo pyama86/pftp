@@ -24,6 +24,8 @@ func init() {
 	handlers["PROXY"] = &handleFunc{(*clientHandler).handleProxyHeader, false}
 	handlers["USER"] = &handleFunc{(*clientHandler).handleUSER, true}
 	handlers["AUTH"] = &handleFunc{(*clientHandler).handleAUTH, true}
+	handlers["PBSZ"] = &handleFunc{(*clientHandler).handlePBSZ, true}
+	handlers["PROT"] = &handleFunc{(*clientHandler).handlePROT, true}
 	handlers["RETR"] = &handleFunc{(*clientHandler).handleTransfer, false}
 	handlers["STOR"] = &handleFunc{(*clientHandler).handleTransfer, false}
 }

@@ -69,6 +69,70 @@ func (c *clientHandler) handleAUTH() *result {
 	}
 }
 
+func (c *clientHandler) handlePBSZ() *result {
+	if c.config.TLSConfig != nil {
+		var r *result
+		if c.param == "0" {
+			r = &result{
+				code: 200,
+				msg:  "PBSZ 0 successful",
+			}
+		} else {
+			r = &result{
+				code: 200,
+				msg:  "PBSZ=0",
+			}
+		}
+
+		if err := r.Response(c); err != nil {
+			return &result{
+				code: 550,
+				msg:  fmt.Sprint("Client Response Error"),
+				err:  err,
+				log:  c.log,
+			}
+		}
+
+		return nil
+	}
+	return &result{
+		code: 503,
+		msg:  fmt.Sprint("Not using TLS connection"),
+	}
+}
+
+func (c *clientHandler) handlePROT() *result {
+	if c.config.TLSConfig != nil {
+		var r *result
+		if c.param == "C" {
+			r = &result{
+				code: 200,
+				msg:  "Protection Set to Clear",
+			}
+		} else {
+			r = &result{
+				code: 431,
+				msg:  "Protection Set to Clear. Only Clear Protection supported",
+			}
+		}
+
+		if err := r.Response(c); err != nil {
+			return &result{
+				code: 550,
+				msg:  fmt.Sprint("Client Response Error"),
+				err:  err,
+				log:  c.log,
+			}
+		}
+
+		return nil
+	}
+	return &result{
+		code: 503,
+		msg:  fmt.Sprint("Not using TLS connection"),
+	}
+}
+
 func (c *clientHandler) handleTransfer() *result {
 	if c.config.TransferTimeout > 0 {
 		c.setClientDeadLine(c.config.TransferTimeout)
