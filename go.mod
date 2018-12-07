@@ -8,7 +8,7 @@ require (
 	github.com/admpub/log v0.0.0-20180816172912-46327774dd0c
 	github.com/admpub/queueChan v0.0.0-20151001074356-79908f7a499f // indirect
 	github.com/facebookgo/stack v0.0.0-20160209184415-751773369052 // indirect
-	github.com/golang/lint v0.0.0-20180702182130-06c8688daad7 // indirect
+	github.com/golang/lint v0.0.0-20181026193005-c67002cb31c3 // indirect
 	github.com/google/go-github v17.0.0+incompatible // indirect
 	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/hashicorp/go-version v1.0.0 // indirect
