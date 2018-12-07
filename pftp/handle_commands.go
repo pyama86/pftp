@@ -28,6 +28,8 @@ func (c *clientHandler) handleUSER() *result {
 			log:  c.log,
 		}
 	}
+	c.isLoggedin = true
+
 	return nil
 }
 
@@ -61,6 +63,8 @@ func (c *clientHandler) handleAUTH() *result {
 		c.conn = tlsConn
 		*c.reader = *(bufio.NewReader(c.conn))
 		*c.writer = *(bufio.NewWriter(c.conn))
+		c.isTLS = true
+
 		return nil
 	}
 	return &result{
@@ -69,30 +73,35 @@ func (c *clientHandler) handleAUTH() *result {
 	}
 }
 
+// response PBSZ to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePBSZ() *result {
-	if c.config.TLSConfig != nil {
-		var r *result
-		if c.param == "0" {
+	if c.isTLS {
+		if !c.isLoggedin {
+			var r *result
 			r = &result{
 				code: 200,
-				msg:  "PBSZ 0 successful",
+				msg:  fmt.Sprintf("PBSZ %s successful", c.param),
 			}
+
+			if err := r.Response(c); err != nil {
+				return &result{
+					code: 550,
+					msg:  fmt.Sprint("Client Response Error"),
+					err:  err,
+					log:  c.log,
+				}
+			}
+			c.previousTLSCommands = append(c.previousTLSCommands, c.line)
 		} else {
-			r = &result{
-				code: 200,
-				msg:  "PBSZ=0",
+			if err := c.proxy.sendToOrigin(c.line); err != nil {
+				return &result{
+					code: 530,
+					msg:  "I can't deal with you (proxy error)",
+					err:  err,
+					log:  c.log,
+				}
 			}
 		}
-
-		if err := r.Response(c); err != nil {
-			return &result{
-				code: 550,
-				msg:  fmt.Sprint("Client Response Error"),
-				err:  err,
-				log:  c.log,
-			}
-		}
-
 		return nil
 	}
 	return &result{
@@ -101,27 +110,45 @@ func (c *clientHandler) handlePBSZ() *result {
 	}
 }
 
+// response PROT to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePROT() *result {
-	if c.config.TLSConfig != nil {
-		var r *result
-		if c.param == "C" {
-			r = &result{
-				code: 200,
-				msg:  "Protection Set to Clear",
+	if c.isTLS {
+		if !c.isLoggedin {
+			var r *result
+			if c.param == "C" {
+				r = &result{
+					code: 200,
+					msg:  "Protection Set to Clear",
+				}
+			} else if c.param == "P" {
+				r = &result{
+					code: 200,
+					msg:  "Protection Set to Private.",
+				}
+			} else {
+				r = &result{
+					code: 534,
+					msg:  "Only C or P Level supported.",
+				}
 			}
-		} else {
-			r = &result{
-				code: 431,
-				msg:  "Protection Set to Clear. Only Clear Protection supported",
-			}
-		}
 
-		if err := r.Response(c); err != nil {
-			return &result{
-				code: 550,
-				msg:  fmt.Sprint("Client Response Error"),
-				err:  err,
-				log:  c.log,
+			if err := r.Response(c); err != nil {
+				return &result{
+					code: 550,
+					msg:  fmt.Sprint("Client Response Error"),
+					err:  err,
+					log:  c.log,
+				}
+			}
+			c.previousTLSCommands = append(c.previousTLSCommands, c.line)
+		} else {
+			if err := c.proxy.sendToOrigin(c.line); err != nil {
+				return &result{
+					code: 530,
+					msg:  "I can't deal with you (proxy error)",
+					err:  err,
+					log:  c.log,
+				}
 			}
 		}
 

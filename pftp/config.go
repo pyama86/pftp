@@ -37,11 +37,15 @@ func loadConfig(path string) (*config, error) {
 		return nil, err
 	}
 
+	/* TLS version set to TLSv1 forcebly because     *
+	 * client/pftp/origin must set same TLS version. */
 	if c.TLS != nil {
 		if cert, err := tls.LoadX509KeyPair(c.TLS.Cert, c.TLS.Key); err == nil {
 			c.TLSConfig = &tls.Config{
 				NextProtos:   []string{"ftp"},
 				Certificates: []tls.Certificate{cert},
+				MinVersion:   tls.VersionTLS10,
+				MaxVersion:   tls.VersionTLS10,
 			}
 		} else {
 			return nil, err

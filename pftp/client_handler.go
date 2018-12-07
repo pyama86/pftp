@@ -31,22 +31,25 @@ func init() {
 }
 
 type clientHandler struct {
-	id                int
-	conn              net.Conn
-	config            *config
-	middleware        middleware
-	writer            *bufio.Writer
-	reader            *bufio.Reader
-	line              string
-	command           string
-	param             string
-	proxy             *proxyServer
-	context           *Context
-	currentConnection *int32
-	mutex             *sync.Mutex
-	log               *logger
-	deadline          time.Time
-	srcIP             string
+	id                  int
+	conn                net.Conn
+	config              *config
+	middleware          middleware
+	writer              *bufio.Writer
+	reader              *bufio.Reader
+	line                string
+	command             string
+	param               string
+	proxy               *proxyServer
+	context             *Context
+	currentConnection   *int32
+	mutex               *sync.Mutex
+	log                 *logger
+	deadline            time.Time
+	srcIP               string
+	isTLS               bool
+	isLoggedin          bool
+	previousTLSCommands []string
 }
 
 func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32) *clientHandler {
@@ -62,6 +65,8 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		mutex:             &sync.Mutex{},
 		log:               &logger{fromip: connection.RemoteAddr().String(), id: id},
 		srcIP:             connection.RemoteAddr().String(),
+		isTLS:             false,
+		isLoggedin:        false,
 	}
 
 	return p
@@ -242,7 +247,7 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 
 func (c *clientHandler) connectProxy() error {
 	if c.proxy != nil {
-		err := c.proxy.switchOrigin(c.srcIP, c.context.RemoteAddr)
+		err := c.proxy.switchOrigin(c.srcIP, c.context.RemoteAddr, c.isTLS, c.previousTLSCommands)
 		if err != nil {
 			return err
 		}

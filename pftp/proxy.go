@@ -2,6 +2,7 @@ package pftp
 
 import (
 	"bufio"
+	"crypto/tls"
 	"errors"
 	"io"
 	"net"
@@ -79,7 +80,7 @@ func (s *proxyServer) sendToOrigin(line string) error {
 			return errors.New("Could not get semaphore to send to client")
 		}
 
-		s.log.debug("send to origin:%s", line)
+		s.log.debug("send to origin: %s", line)
 
 		if s.semFree() {
 			if _, err := s.origin.Write([]byte(line)); err != nil {
@@ -166,7 +167,35 @@ func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) erro
 	_, err = proxyProtocolHeader.WriteTo(s.origin)
 	return err
 }
-func (s *proxyServer) switchOrigin(clientAddr string, originAddr string) error {
+
+/* send TLS command to origin.                   *
+*  TLS version set to TLSv1 forcebly because     *
+*  client/pftp/origin must set same TLS version. */
+func (s *proxyServer) sendTLSCommand() error {
+	config := tls.Config{
+		InsecureSkipVerify: true,
+		MinVersion:         tls.VersionTLS10,
+		MaxVersion:         tls.VersionTLS10,
+	}
+
+	// send AUTH command
+	if _, err := s.origin.Write([]byte("AUTH TLS\r\n")); err != nil {
+		return err
+	}
+	// read response
+	if _, err := s.originReader.ReadString('\n'); err != nil {
+		return err
+	}
+
+	// TLS wrapping on connection
+	s.origin = tls.Client(s.origin, &config)
+	s.originReader = bufio.NewReader(s.origin)
+	s.originWriter = bufio.NewWriter(s.origin)
+
+	return nil
+}
+
+func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, useTLS bool, previousTLSCommands []string) error {
 	s.log.debug("switch origin to: %s", originAddr)
 
 	if s.passThrough {
@@ -206,9 +235,33 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string) error {
 	*s.originWriter = *writer
 	old.Close()
 
+	// If client connect with TLS connection, make TLS connection to origin ftp server too.
+	if useTLS {
+		err := s.sendTLSCommand()
+		if err != nil {
+			return err
+		}
+	}
+
+	/* If client send PBSZ and PROT commands before login,  *
+	*  send stored command line to origin for set same PBSZ *
+	*  and PROT options                                     */
+	for i := 1; i < len(previousTLSCommands); i++ {
+		s.log.debug("send to origin: %s", previousTLSCommands[1])
+		if _, err := s.origin.Write([]byte(previousTLSCommands[1])); err != nil {
+			return err
+		}
+
+		// read response
+		if _, err := reader.ReadString('\n'); err != nil {
+			return err
+		}
+	}
+
 	s.stop = false
 	return nil
 }
+
 func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 	if s.stop {
 		return nil
@@ -217,6 +270,7 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 	buff := make([]byte, BUFFER_SIZE)
 	read := make(chan []byte, BUFFER_SIZE)
 	done := make(chan struct{})
+	send := make(chan struct{})
 	errchan := make(chan error)
 	var lastError error
 
@@ -226,6 +280,14 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 				if err != io.EOF {
 					safeSetChanel(errchan, err)
 				} else {
+					// when receive EOS from origin, send EOF to client for terminate session completely
+					if s.passThrough || s.semLocked() {
+						read <- buff[:n]
+						if s.semLocked() {
+							s.semUnlock()
+						}
+					}
+
 					lastError = err
 					s.stopChan <- struct{}{}
 				}
@@ -242,6 +304,7 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 					}
 				}
 			}
+			<-send
 		}
 		done <- struct{}{}
 	}()
@@ -268,6 +331,7 @@ loop:
 				break loop
 			}
 			s.mutex.Unlock()
+			send <- struct{}{}
 		case err := <-errchan:
 			lastError = err
 			break loop
