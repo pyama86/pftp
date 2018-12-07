@@ -64,9 +64,11 @@ vsftpd-cleanup:
 proftpd: proftpd-cleanup
 	docker build -t proftpd-server:test -f Dockerfile-proftpd ./
 	docker run -d -v "`pwd`/misc/test/data/prouser":/home/prouser \
+	-v "`pwd`/tls/server.crt":/etc/ssl/certs/proftpd.crt \
+	-v "`pwd`/tls/server.key":/etc/ssl/private/proftpd.key \
+	-v "`pwd`/tls/server.crt":/etc/ssl/certs/chain.crt \
 	-p 20-21:20-21 -p 21100-21110:21100-21110 \
 	--name proftpd --restart=always proftpd-server:test
-
 proftpd-cleanup:
 	docker rm -f proftpd | true
 
