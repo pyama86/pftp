@@ -287,6 +287,7 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 							s.semUnlock()
 						}
 					}
+					<-send
 
 					lastError = err
 					s.stopChan <- struct{}{}
