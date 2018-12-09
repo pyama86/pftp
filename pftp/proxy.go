@@ -246,9 +246,9 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, useTLS 
 	/* If client send PBSZ and PROT commands before login,  *
 	*  send stored command line to origin for set same PBSZ *
 	*  and PROT options                                     */
-	for i := 1; i < len(previousTLSCommands); i++ {
-		s.log.debug("send to origin: %s", previousTLSCommands[1])
-		if _, err := s.origin.Write([]byte(previousTLSCommands[1])); err != nil {
+	for i := 0; i < len(previousTLSCommands); i++ {
+		s.log.debug("send to origin: %s", previousTLSCommands[i])
+		if _, err := s.origin.Write([]byte(previousTLSCommands[i])); err != nil {
 			return err
 		}
 
