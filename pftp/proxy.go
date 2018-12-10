@@ -168,29 +168,34 @@ func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) erro
 	return err
 }
 
-/* send TLS command to origin.                   *
+/* send command before login to origin.          *
 *  TLS version set to TLSv1 forcebly because     *
 *  client/pftp/origin must set same TLS version. */
-func (s *proxyServer) sendTLSCommand() error {
+func (s *proxyServer) sendTLSCommand(previousTLSCommands []string) error {
 	config := tls.Config{
 		InsecureSkipVerify: true,
 		MinVersion:         tls.VersionTLS10,
 		MaxVersion:         tls.VersionTLS10,
 	}
 
-	// send AUTH command
-	if _, err := s.origin.Write([]byte("AUTH TLS\r\n")); err != nil {
-		return err
-	}
-	// read response
-	if _, err := s.originReader.ReadString('\n'); err != nil {
-		return err
-	}
+	for _, cmd := range previousTLSCommands {
+		s.log.debug("send to origin: %s", cmd)
+		if _, err := s.origin.Write([]byte(cmd)); err != nil {
+			return err
+		}
 
-	// TLS wrapping on connection
-	s.origin = tls.Client(s.origin, &config)
-	s.originReader = bufio.NewReader(s.origin)
-	s.originWriter = bufio.NewWriter(s.origin)
+		// read response
+		if _, err := s.originReader.ReadString('\n'); err != nil {
+			return err
+		}
+
+		// SSL/TLS wrapping on connection
+		if strings.Contains(cmd, "AUTH") {
+			s.origin = tls.Client(s.origin, &config)
+			s.originReader = bufio.NewReader(s.origin)
+			s.originWriter = bufio.NewWriter(s.origin)
+		}
+	}
 
 	return nil
 }
@@ -236,26 +241,8 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, useTLS 
 	old.Close()
 
 	// If client connect with TLS connection, make TLS connection to origin ftp server too.
-	if useTLS {
-		err := s.sendTLSCommand()
-		if err != nil {
-			return err
-		}
-	}
-
-	/* If client send PBSZ and PROT commands before login,  *
-	*  send stored command line to origin for set same PBSZ *
-	*  and PROT options                                     */
-	for i := 0; i < len(previousTLSCommands); i++ {
-		s.log.debug("send to origin: %s", previousTLSCommands[i])
-		if _, err := s.origin.Write([]byte(previousTLSCommands[i])); err != nil {
-			return err
-		}
-
-		// read response
-		if _, err := reader.ReadString('\n'); err != nil {
-			return err
-		}
+	if err := s.sendTLSCommand(previousTLSCommands); err != nil {
+		return err
 	}
 
 	s.stop = false

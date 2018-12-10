@@ -34,10 +34,10 @@ func (c *clientHandler) handleUSER() *result {
 }
 
 func (c *clientHandler) handleAUTH() *result {
-	if c.config.TLSConfig != nil && c.param == "TLS" {
+	if c.config.TLSConfig != nil {
 		r := &result{
 			code: 234,
-			msg:  "AUTH command ok. Expecting TLS Negotiation.",
+			msg:  fmt.Sprintf("AUTH command ok. Expecting %s Negotiation.", c.param),
 		}
 
 		if err := r.Response(c); err != nil {
@@ -64,6 +64,7 @@ func (c *clientHandler) handleAUTH() *result {
 		*c.reader = *(bufio.NewReader(c.conn))
 		*c.writer = *(bufio.NewWriter(c.conn))
 		c.isTLS = true
+		c.previousTLSCommands = append(c.previousTLSCommands, c.line)
 
 		return nil
 	}
