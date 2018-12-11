@@ -47,7 +47,7 @@ type clientHandler struct {
 	log                 *logger
 	deadline            time.Time
 	srcIP               string
-	isTLS               bool
+	tlsProtocol         uint16
 	isLoggedin          bool
 	previousTLSCommands []string
 }
@@ -65,7 +65,7 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		mutex:             &sync.Mutex{},
 		log:               &logger{fromip: connection.RemoteAddr().String(), id: id},
 		srcIP:             connection.RemoteAddr().String(),
-		isTLS:             false,
+		tlsProtocol:       0,
 		isLoggedin:        false,
 	}
 
@@ -247,7 +247,7 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 
 func (c *clientHandler) connectProxy() error {
 	if c.proxy != nil {
-		err := c.proxy.switchOrigin(c.srcIP, c.context.RemoteAddr, c.isTLS, c.previousTLSCommands)
+		err := c.proxy.switchOrigin(c.srcIP, c.context.RemoteAddr, c.tlsProtocol, c.previousTLSCommands)
 		if err != nil {
 			return err
 		}

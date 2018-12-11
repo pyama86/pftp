@@ -24,8 +24,31 @@ type config struct {
 }
 
 type tlsPair struct {
-	Cert string `toml:"cert"`
-	Key  string `toml:"key"`
+	Cert        string `toml:"cert"`
+	Key         string `toml:"key"`
+	MinProtocol string `toml:"min_protocol"`
+	MaxProtocol string `toml:"max_protocol"`
+}
+
+// TLS version codes
+const (
+	SSLv3  = 0x0300
+	TLSv1  = 0x0301
+	TLSv11 = 0x0302
+	TLSv12 = 0x0303
+)
+
+func getTLSProtocol(protocol string) uint16 {
+	switch protocol {
+	case "TLSv1":
+		return TLSv1
+	case "TLSv1.1":
+		return TLSv11
+	case "TLSv1.2":
+		return TLSv12
+	default:
+		return TLSv1 // the default TLS protocol is TLSv1.0
+	}
 }
 
 func loadConfig(path string) (*config, error) {
@@ -37,15 +60,13 @@ func loadConfig(path string) (*config, error) {
 		return nil, err
 	}
 
-	/* TLS version set to TLSv1 forcebly because     *
-	 * client/pftp/origin must set same TLS version. */
 	if c.TLS != nil {
 		if cert, err := tls.LoadX509KeyPair(c.TLS.Cert, c.TLS.Key); err == nil {
 			c.TLSConfig = &tls.Config{
 				NextProtos:   []string{"ftp"},
 				Certificates: []tls.Certificate{cert},
-				MinVersion:   tls.VersionTLS10,
-				MaxVersion:   tls.VersionTLS10,
+				MinVersion:   getTLSProtocol(c.TLS.MinProtocol),
+				MaxVersion:   getTLSProtocol(c.TLS.MaxProtocol),
 			}
 		} else {
 			return nil, err

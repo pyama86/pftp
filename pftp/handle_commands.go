@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"reflect"
 	"strings"
 )
 
@@ -31,6 +32,16 @@ func (c *clientHandler) handleUSER() *result {
 	c.isLoggedin = true
 
 	return nil
+}
+
+func getTLSVersion(c *tls.Conn) uint16 {
+	cv := reflect.ValueOf(c)
+	switch ce := cv.Elem(); ce.Kind() {
+	case reflect.Struct:
+		fe := ce.FieldByName("vers")
+		return uint16(fe.Uint())
+	}
+	return 0
 }
 
 func (c *clientHandler) handleAUTH() *result {
@@ -63,7 +74,7 @@ func (c *clientHandler) handleAUTH() *result {
 		c.conn = tlsConn
 		*c.reader = *(bufio.NewReader(c.conn))
 		*c.writer = *(bufio.NewWriter(c.conn))
-		c.isTLS = true
+		c.tlsProtocol = getTLSVersion(tlsConn)
 		c.previousTLSCommands = append(c.previousTLSCommands, c.line)
 
 		return nil
@@ -76,7 +87,7 @@ func (c *clientHandler) handleAUTH() *result {
 
 // response PBSZ to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePBSZ() *result {
-	if c.isTLS {
+	if c.tlsProtocol != 0 {
 		if !c.isLoggedin {
 			var r *result
 			r = &result{
@@ -113,7 +124,7 @@ func (c *clientHandler) handlePBSZ() *result {
 
 // response PROT to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePROT() *result {
-	if c.isTLS {
+	if c.tlsProtocol != 0 {
 		if !c.isLoggedin {
 			var r *result
 			if c.param == "C" {
