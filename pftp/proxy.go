@@ -168,14 +168,14 @@ func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) erro
 	return err
 }
 
-/* send command before login to origin.          *
-*  TLS version set to TLSv1 forcebly because     *
-*  client/pftp/origin must set same TLS version. */
-func (s *proxyServer) sendTLSCommand(previousTLSCommands []string) error {
+/* send command before login to origin.                  *
+*  TLS version set by client to pftp tls version         *
+*  because client/pftp/origin must set same TLS version. */
+func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []string) error {
 	config := tls.Config{
 		InsecureSkipVerify: true,
-		MinVersion:         tls.VersionTLS10,
-		MaxVersion:         tls.VersionTLS10,
+		MinVersion:         tlsProtocol,
+		MaxVersion:         tlsProtocol,
 	}
 
 	for _, cmd := range previousTLSCommands {
@@ -200,7 +200,7 @@ func (s *proxyServer) sendTLSCommand(previousTLSCommands []string) error {
 	return nil
 }
 
-func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, useTLS bool, previousTLSCommands []string) error {
+func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProtocol uint16, previousTLSCommands []string) error {
 	s.log.debug("switch origin to: %s", originAddr)
 
 	if s.passThrough {
@@ -241,7 +241,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, useTLS 
 	old.Close()
 
 	// If client connect with TLS connection, make TLS connection to origin ftp server too.
-	if err := s.sendTLSCommand(previousTLSCommands); err != nil {
+	if err := s.sendTLSCommand(tlsProtocol, previousTLSCommands); err != nil {
 		return err
 	}
 
