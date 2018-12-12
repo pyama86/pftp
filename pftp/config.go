@@ -24,8 +24,31 @@ type config struct {
 }
 
 type tlsPair struct {
-	Cert string `toml:"cert"`
-	Key  string `toml:"key"`
+	Cert        string `toml:"cert"`
+	Key         string `toml:"key"`
+	MinProtocol string `toml:"min_protocol"`
+	MaxProtocol string `toml:"max_protocol"`
+}
+
+// TLS version codes
+const (
+	SSLv3  = 0x0300
+	TLSv1  = 0x0301
+	TLSv11 = 0x0302
+	TLSv12 = 0x0303
+)
+
+func getTLSProtocol(protocol string) uint16 {
+	switch protocol {
+	case "TLSv1":
+		return TLSv1
+	case "TLSv1.1":
+		return TLSv11
+	case "TLSv1.2":
+		return TLSv12
+	default:
+		return TLSv1 // the default TLS protocol is TLSv1.0
+	}
 }
 
 func loadConfig(path string) (*config, error) {
@@ -42,6 +65,8 @@ func loadConfig(path string) (*config, error) {
 			c.TLSConfig = &tls.Config{
 				NextProtos:   []string{"ftp"},
 				Certificates: []tls.Certificate{cert},
+				MinVersion:   getTLSProtocol(c.TLS.MinProtocol),
+				MaxVersion:   getTLSProtocol(c.TLS.MaxProtocol),
 			}
 		} else {
 			return nil, err

@@ -131,14 +131,15 @@ func TestAuth(t *testing.T) {
 			client.Debug = true
 			client.TLSConfig.InsecureSkipVerify = true
 
-			err := client.Connect("localhost", 2121)
-			if err != nil {
-				return fmt.Errorf("integration.TestAuth() error = %v, wantErr %v", err, nil)
+			if err := client.Connect("localhost", 2121); err != nil {
+				return fmt.Errorf("integration.TestAuth() error = %v, want %v", err, "234 AUTH command ok")
 			}
 
-			// If Login failed with vsftpd user, Return Error
-			if err = client.Login(testset[index].User.ID, testset[index].User.Pass); err == nil {
+			// If Login success with vsftpd user(vsuser), Return Error
+			if err := client.Login(testset[index].User.ID, testset[index].User.Pass); err == nil && testset[index].User.ID == "vsuser" {
 				return fmt.Errorf("integration.TestAuth() error = %v, wantErr %v", err, errors.New("550 Permission denied"))
+			} else if err != nil && testset[index].User.ID == "prouser" {
+				return fmt.Errorf("integration.TestAuth() error = %v, want %s", err, "230 User prouser logged in")
 			}
 
 			return nil

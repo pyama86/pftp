@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"reflect"
 	"strings"
 )
 
@@ -28,14 +29,26 @@ func (c *clientHandler) handleUSER() *result {
 			log:  c.log,
 		}
 	}
+	c.isLoggedin = true
+
 	return nil
 }
 
+func getTLSVersion(c *tls.Conn) uint16 {
+	cv := reflect.ValueOf(c)
+	switch ce := cv.Elem(); ce.Kind() {
+	case reflect.Struct:
+		fe := ce.FieldByName("vers")
+		return uint16(fe.Uint())
+	}
+	return 0
+}
+
 func (c *clientHandler) handleAUTH() *result {
-	if c.config.TLSConfig != nil && c.param == "TLS" {
+	if c.config.TLSConfig != nil {
 		r := &result{
 			code: 234,
-			msg:  "AUTH command ok. Expecting TLS Negotiation.",
+			msg:  fmt.Sprintf("AUTH command ok. Expecting %s Negotiation.", c.param),
 		}
 
 		if err := r.Response(c); err != nil {
@@ -61,6 +74,9 @@ func (c *clientHandler) handleAUTH() *result {
 		c.conn = tlsConn
 		*c.reader = *(bufio.NewReader(c.conn))
 		*c.writer = *(bufio.NewWriter(c.conn))
+		c.tlsProtocol = getTLSVersion(tlsConn)
+		c.previousTLSCommands = append(c.previousTLSCommands, c.line)
+
 		return nil
 	}
 	return &result{
@@ -69,30 +85,35 @@ func (c *clientHandler) handleAUTH() *result {
 	}
 }
 
+// response PBSZ to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePBSZ() *result {
-	if c.config.TLSConfig != nil {
-		var r *result
-		if c.param == "0" {
+	if c.tlsProtocol != 0 {
+		if !c.isLoggedin {
+			var r *result
 			r = &result{
 				code: 200,
-				msg:  "PBSZ 0 successful",
+				msg:  fmt.Sprintf("PBSZ %s successful", c.param),
 			}
+
+			if err := r.Response(c); err != nil {
+				return &result{
+					code: 550,
+					msg:  fmt.Sprint("Client Response Error"),
+					err:  err,
+					log:  c.log,
+				}
+			}
+			c.previousTLSCommands = append(c.previousTLSCommands, c.line)
 		} else {
-			r = &result{
-				code: 200,
-				msg:  "PBSZ=0",
+			if err := c.proxy.sendToOrigin(c.line); err != nil {
+				return &result{
+					code: 530,
+					msg:  "I can't deal with you (proxy error)",
+					err:  err,
+					log:  c.log,
+				}
 			}
 		}
-
-		if err := r.Response(c); err != nil {
-			return &result{
-				code: 550,
-				msg:  fmt.Sprint("Client Response Error"),
-				err:  err,
-				log:  c.log,
-			}
-		}
-
 		return nil
 	}
 	return &result{
@@ -101,27 +122,45 @@ func (c *clientHandler) handlePBSZ() *result {
 	}
 }
 
+// response PROT to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePROT() *result {
-	if c.config.TLSConfig != nil {
-		var r *result
-		if c.param == "C" {
-			r = &result{
-				code: 200,
-				msg:  "Protection Set to Clear",
+	if c.tlsProtocol != 0 {
+		if !c.isLoggedin {
+			var r *result
+			if c.param == "C" {
+				r = &result{
+					code: 200,
+					msg:  "Protection Set to Clear",
+				}
+			} else if c.param == "P" {
+				r = &result{
+					code: 200,
+					msg:  "Protection Set to Private.",
+				}
+			} else {
+				r = &result{
+					code: 534,
+					msg:  "Only C or P Level supported.",
+				}
 			}
-		} else {
-			r = &result{
-				code: 431,
-				msg:  "Protection Set to Clear. Only Clear Protection supported",
-			}
-		}
 
-		if err := r.Response(c); err != nil {
-			return &result{
-				code: 550,
-				msg:  fmt.Sprint("Client Response Error"),
-				err:  err,
-				log:  c.log,
+			if err := r.Response(c); err != nil {
+				return &result{
+					code: 550,
+					msg:  fmt.Sprint("Client Response Error"),
+					err:  err,
+					log:  c.log,
+				}
+			}
+			c.previousTLSCommands = append(c.previousTLSCommands, c.line)
+		} else {
+			if err := c.proxy.sendToOrigin(c.line); err != nil {
+				return &result{
+					code: 530,
+					msg:  "I can't deal with you (proxy error)",
+					err:  err,
+					log:  c.log,
+				}
 			}
 		}
 

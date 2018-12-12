@@ -7,6 +7,9 @@ proxy_protocol = false
 [tls]
 cert = "./tls/server.crt"
 key = "./tls/server.key"
+# make sure TLS protocol range allowed in origin ftp server (if only one protocol support, set min and max to same)
+min_protocol = "TLSv1"
+max_protocol = "TLSv1"
 
 [webapiserver]
 # %s replace by username on running
