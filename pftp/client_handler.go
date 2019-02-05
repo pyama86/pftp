@@ -246,7 +246,7 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 			return res
 		}
 	} else {
-		if err := c.proxy.sendToOrigin(line); err != nil {
+		if err := c.proxy.sendToOrigin(line, c.command); err != nil {
 			return &result{
 				code: 500,
 				msg:  fmt.Sprintf("Internal error: %s", err),
