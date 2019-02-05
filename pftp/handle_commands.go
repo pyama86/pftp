@@ -114,6 +114,7 @@ func (c *clientHandler) handlePBSZ() *result {
 				}
 			}
 		}
+
 		return nil
 	}
 	return &result{

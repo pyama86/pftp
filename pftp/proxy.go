@@ -201,7 +201,7 @@ func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []s
 }
 
 func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProtocol uint16, previousTLSCommands []string) error {
-	s.log.debug("switch origin to: %s", originAddr)
+	s.log.info("switch origin to: %s", originAddr)
 
 	if s.passThrough {
 		err := s.suspend()
@@ -267,7 +267,7 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 				if err != io.EOF {
 					safeSetChanel(errchan, err)
 				} else {
-					// when receive EOS from origin, send EOF to client for terminate session completely
+					// when receive EOF from origin, send EOF to client for terminate session completely
 					if s.passThrough || s.semLocked() {
 						read <- buff[:n]
 						if s.semLocked() {
