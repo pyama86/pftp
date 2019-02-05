@@ -2,7 +2,6 @@ package pftp
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -87,16 +86,10 @@ func (c *clientHandler) setClientDeadLine(t int) {
 
 func (c *clientHandler) handleCommands() error {
 	defer c.end()
-	done := make(chan struct{})
-	proxyError := make(chan error)
 
-	defer func() {
-		close(proxyError)
-		if c.proxy != nil {
-			c.proxy.Close()
-			<-done
-		}
-	}()
+	proxyError := make(chan error)
+	line := make(chan string)
+	getResponse := make(chan struct{})
 
 	err := c.connectProxy()
 	if err != nil {
@@ -110,22 +103,21 @@ func (c *clientHandler) handleCommands() error {
 			if err != nil {
 				if err != io.EOF {
 					safeSetChanel(proxyError, err)
+				} else {
+					proxyError <- err
 				}
 				break
 			}
 		}
-		done <- struct{}{}
+
+		if c.proxy != nil {
+			c.proxy.Close()
+		}
 	}()
 
-	for {
-		select {
-		case e := <-proxyError:
-			return e
-		default:
-			if c.config.IdleTimeout > 0 {
-				c.setClientDeadLine(c.config.IdleTimeout)
-			}
-			line, err := c.reader.ReadString('\n')
+	go func() {
+		for {
+			readLine, err := c.reader.ReadString('\n')
 			if err != nil {
 				// client disconnect
 				if err == io.EOF {
@@ -133,7 +125,7 @@ func (c *clientHandler) handleCommands() error {
 						c.log.err("Network close error")
 					}
 
-					return nil
+					proxyError <- err
 				}
 				switch err := err.(type) {
 				case net.Error:
@@ -147,7 +139,7 @@ func (c *clientHandler) handleCommands() error {
 							log:  c.log,
 						}
 						if err := r.Response(c); err != nil {
-							return err
+							proxyError <- err
 						}
 
 						if err := c.writer.Flush(); err != nil {
@@ -157,21 +149,34 @@ func (c *clientHandler) handleCommands() error {
 						if err := c.conn.Close(); err != nil {
 							c.log.err("Network close error")
 						}
-						return errors.New("idle timeout")
+						proxyError <- err
 					}
-					return err
+					proxyError <- err
 				default:
-					return err
+					proxyError <- err
 				}
 			}
+			line <- readLine
+			<-getResponse
+		}
+	}()
 
-			c.log.debug("read from client: %s", line)
-			commandResponse := c.handleCommand(line)
+	for {
+		select {
+		case e := <-proxyError:
+			return e
+		case l := <-line:
+			if c.config.IdleTimeout > 0 {
+				c.setClientDeadLine(c.config.IdleTimeout)
+			}
+
+			commandResponse := c.handleCommand(l)
 			if commandResponse != nil {
 				if err := commandResponse.Response(c); err != nil {
 					return err
 				}
 			}
+			getResponse <- struct{}{}
 		}
 	}
 }
@@ -207,6 +212,13 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 			}
 		}
 	}()
+
+	// Hide user password from log
+	if c.command != "PASS" {
+		c.log.info("read from client: %s", line)
+	} else {
+		c.log.info("read from client: %s ********", c.command)
+	}
 
 	if c.middleware[c.command] != nil {
 		if err := c.middleware[c.command](c.context, c.param); err != nil {
