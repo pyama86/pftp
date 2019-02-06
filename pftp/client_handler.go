@@ -85,48 +85,82 @@ func (c *clientHandler) setClientDeadLine(t int) {
 }
 
 func (c *clientHandler) handleCommands() error {
-	defer c.end()
-
 	proxyError := make(chan error)
-	line := make(chan string)
-	getResponse := make(chan struct{})
+	responseFromOriginDone := make(chan struct{})
+	readClientCommandDone := make(chan struct{})
 
 	err := c.connectProxy()
 	if err != nil {
 		return err
 	}
 
-	// サーバからのレスポンスはSuspendしない限り自動で返却される
-	go func() {
-		for {
-			err := c.proxy.responseProxy()
-			if err != nil {
-				if err != io.EOF {
-					safeSetChanel(proxyError, err)
-				} else {
-					proxyError <- err
-				}
-				break
-			}
-		}
+	defer c.end()
+
+	defer func() {
+		close(proxyError)
 
 		if c.proxy != nil {
 			c.proxy.Close()
 		}
 	}()
 
-	go func() {
-		for {
-			readLine, err := c.reader.ReadString('\n')
-			if err != nil {
-				// client disconnect
-				if err == io.EOF {
-					if err := c.conn.Close(); err != nil {
-						c.log.err("Network close error")
-					}
+	// run response read routine
+	go c.getResponseFromOrigin(proxyError, responseFromOriginDone)
 
-					proxyError <- err
+	// run command read routine
+	go c.readClientCommands(readClientCommandDone)
+
+	lastErr := <-proxyError
+
+	if lastErr == io.EOF {
+		if c.command == "QUIT" {
+			lastErr = nil
+		} else {
+			lastErr = fmt.Errorf("idle timeout from origin")
+		}
+	}
+
+	// wait until all goroutine has done
+	<-responseFromOriginDone
+	<-readClientCommandDone
+
+	return lastErr
+}
+
+func (c *clientHandler) getResponseFromOrigin(proxyError chan error, responseFromOriginDone chan struct{}) {
+	// サーバからのレスポンスはSuspendしない限り自動で返却される
+	for {
+		err := c.proxy.responseProxy()
+		if err != nil {
+			if err != io.EOF {
+				safeSetChanel(proxyError, err)
+			} else {
+				c.log.debug("get EOF from server")
+				proxyError <- err
+
+				// set client connection timeout immediately for disconnect current connection
+				c.conn.SetDeadline(time.Now().Add(0))
+			}
+			break
+		}
+	}
+	responseFromOriginDone <- struct{}{}
+}
+
+func (c *clientHandler) readClientCommands(readClientCommandDone chan struct{}) {
+	for {
+		if c.config.IdleTimeout > 0 {
+			c.setClientDeadLine(c.config.IdleTimeout)
+		}
+
+		line, err := c.reader.ReadString('\n')
+		if err != nil {
+			// client disconnect
+			if err == io.EOF {
+				if err := c.conn.Close(); err != nil {
+					c.log.err("client connection closed: %v", err)
 				}
+			} else {
 				switch err := err.(type) {
 				case net.Error:
 					if err.Timeout() {
@@ -139,46 +173,32 @@ func (c *clientHandler) handleCommands() error {
 							log:  c.log,
 						}
 						if err := r.Response(c); err != nil {
-							proxyError <- err
+							c.log.err("response to client error: %v", err)
 						}
-
 						if err := c.writer.Flush(); err != nil {
-							c.log.err("Network flush error")
+							c.log.err("network flush error: %v", err)
 						}
-
 						if err := c.conn.Close(); err != nil {
-							c.log.err("Network close error")
+							c.log.err("network close error: %v", err)
 						}
-						proxyError <- err
 					}
-					proxyError <- err
-				default:
-					proxyError <- err
 				}
 			}
-			line <- readLine
-			<-getResponse
-		}
-	}()
-
-	for {
-		select {
-		case e := <-proxyError:
-			return e
-		case l := <-line:
-			if c.config.IdleTimeout > 0 {
-				c.setClientDeadLine(c.config.IdleTimeout)
-			}
-
-			commandResponse := c.handleCommand(l)
+			// set origin server connection timeout immediately for disconnect current connection
+			c.proxy.origin.SetDeadline(time.Now().Add(0))
+			break
+		} else {
+			commandResponse := c.handleCommand(line)
 			if commandResponse != nil {
-				if err := commandResponse.Response(c); err != nil {
-					return err
+				if err = commandResponse.Response(c); err != nil {
+					// set origin server connection timeout immediately for disconnect current connection
+					c.proxy.origin.SetDeadline(time.Now().Add(0))
+					break
 				}
 			}
-			getResponse <- struct{}{}
 		}
 	}
+	readClientCommandDone <- struct{}{}
 }
 
 func (c *clientHandler) writeLine(line string) error {
@@ -214,10 +234,10 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 	}()
 
 	// Hide user password from log
-	if c.command != "PASS" {
-		c.log.info("read from client: %s", line)
-	} else {
+	if c.command == "PASS" {
 		c.log.info("read from client: %s ********", c.command)
+	} else {
+		c.log.info("read from client: %s", line)
 	}
 
 	if c.middleware[c.command] != nil {
@@ -246,7 +266,7 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 			return res
 		}
 	} else {
-		if err := c.proxy.sendToOrigin(line, c.command); err != nil {
+		if err := c.proxy.sendToOrigin(line); err != nil {
 			return &result{
 				code: 500,
 				msg:  fmt.Sprintf("Internal error: %s", err),
