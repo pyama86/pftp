@@ -137,13 +137,13 @@ func (c *clientHandler) getResponseFromOrigin(proxyError chan error, responseFro
 			} else {
 				c.log.debug("get EOF from server")
 				proxyError <- err
-
-				// set client connection timeout immediately for disconnect current connection
-				c.conn.SetDeadline(time.Now().Add(0))
 			}
 			break
 		}
 	}
+	// set client connection timeout immediately for disconnect current connection
+	c.conn.SetDeadline(time.Now().Add(0))
+
 	responseFromOriginDone <- struct{}{}
 }
 
@@ -184,20 +184,20 @@ func (c *clientHandler) readClientCommands(readClientCommandDone chan struct{}) 
 					}
 				}
 			}
-			// set origin server connection timeout immediately for disconnect current connection
-			c.proxy.origin.SetDeadline(time.Now().Add(0))
+
 			break
 		} else {
 			commandResponse := c.handleCommand(line)
 			if commandResponse != nil {
 				if err = commandResponse.Response(c); err != nil {
-					// set origin server connection timeout immediately for disconnect current connection
-					c.proxy.origin.SetDeadline(time.Now().Add(0))
 					break
 				}
 			}
 		}
 	}
+	// set origin server connection timeout immediately for disconnect current connection
+	c.proxy.origin.SetDeadline(time.Now().Add(0))
+
 	readClientCommandDone <- struct{}{}
 }
 
