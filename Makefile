@@ -54,8 +54,6 @@ vsftpd: vsftpd-cleanup
 	docker build -t vsftpd-server:test -f Dockerfile-vsftpd ./
 	docker run -d -v "`pwd`/misc/test/data":/home/vsftpd \
 	-p 10020-10021:20-21 -p 11100-11110:11100-11110 \
-	-e FTP_USER=vsuser -e FTP_PASS=vsuser \
-	-e PASV_ADDRESS=127.0.0.1 -e PASV_MIN_PORT=11100 -e PASV_MAX_PORT=11110 \
 	--name vsftpd --restart=always vsftpd-server:test
 
 vsftpd-cleanup:
