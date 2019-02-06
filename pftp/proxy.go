@@ -69,7 +69,7 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 	return p, err
 }
 
-func (s *proxyServer) sendToOrigin(line string, command string) error {
+func (s *proxyServer) sendToOrigin(line string) error {
 	cnt := 0
 	if s.timeout > 0 {
 		s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
@@ -80,10 +80,11 @@ func (s *proxyServer) sendToOrigin(line string, command string) error {
 			return errors.New("Could not get semaphore to send to client")
 		}
 
-		if command != "PASS" {
-			s.log.debug("send to origin: %s", line)
-		} else {
+		command := strings.ToUpper(strings.SplitN(strings.Trim(line, "\r\n"), " ", 2)[0])
+		if command == "PASS" {
 			s.log.debug("send to origin: %s ********", command)
+		} else {
+			s.log.debug("send to origin: %s", line)
 		}
 
 		if s.semFree() {
@@ -267,7 +268,9 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 
 	go func() {
 		for {
-			if n, err := from.Read(buff); err != nil {
+			n, err := from.Read(buff)
+			s.log.debug("response from server: %s", buff[:n])
+			if err != nil {
 				if err != io.EOF {
 					safeSetChanel(errchan, err)
 				} else {

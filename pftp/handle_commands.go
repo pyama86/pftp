@@ -21,7 +21,7 @@ func (c *clientHandler) handleUSER() *result {
 		}
 	}
 
-	if err := c.proxy.sendToOrigin(c.line, c.command); err != nil {
+	if err := c.proxy.sendToOrigin(c.line); err != nil {
 		return &result{
 			code: 530,
 			msg:  "I can't deal with you (proxy error)",
@@ -105,7 +105,7 @@ func (c *clientHandler) handlePBSZ() *result {
 			}
 			c.previousTLSCommands = append(c.previousTLSCommands, c.line)
 		} else {
-			if err := c.proxy.sendToOrigin(c.line, c.command); err != nil {
+			if err := c.proxy.sendToOrigin(c.line); err != nil {
 				return &result{
 					code: 530,
 					msg:  "I can't deal with you (proxy error)",
@@ -155,7 +155,7 @@ func (c *clientHandler) handlePROT() *result {
 			}
 			c.previousTLSCommands = append(c.previousTLSCommands, c.line)
 		} else {
-			if err := c.proxy.sendToOrigin(c.line, c.command); err != nil {
+			if err := c.proxy.sendToOrigin(c.line); err != nil {
 				return &result{
 					code: 530,
 					msg:  "I can't deal with you (proxy error)",
@@ -178,7 +178,7 @@ func (c *clientHandler) handleTransfer() *result {
 		c.setClientDeadLine(c.config.TransferTimeout)
 	}
 
-	if err := c.proxy.sendToOrigin(c.line, c.command); err != nil {
+	if err := c.proxy.sendToOrigin(c.line); err != nil {
 		return &result{
 			code: 500,
 			msg:  fmt.Sprintf("Internal error: %s", err),
