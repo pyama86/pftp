@@ -232,7 +232,7 @@ func TestUpload(t *testing.T) {
 				}
 				defer f.Close()
 
-				if err := os.MkdirAll(fmt.Sprintf("%s/stor", testset[user].Dir), 0755); err != nil {
+				if err := os.MkdirAll(fmt.Sprintf("%s/stor", testset[user].Dir), 0777); err != nil {
 					return err
 				}
 
