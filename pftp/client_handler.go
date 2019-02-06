@@ -137,13 +137,13 @@ func (c *clientHandler) getResponseFromOrigin(proxyError chan error, responseFro
 			} else {
 				c.log.debug("get EOF from server")
 				proxyError <- err
+
+				// set client connection timeout immediately for disconnect current connection
+				c.conn.SetDeadline(time.Now().Add(0))
 			}
 			break
 		}
 	}
-	// set client connection timeout immediately for disconnect current connection
-	c.conn.SetDeadline(time.Now().Add(0))
-
 	responseFromOriginDone <- struct{}{}
 }
 
@@ -156,9 +156,13 @@ func (c *clientHandler) readClientCommands(readClientCommandDone chan struct{}) 
 		line, err := c.reader.ReadString('\n')
 		if err != nil {
 			// client disconnect
+			if c.command == "QUIT" {
+				c.log.debug("disconnect client: QUIT")
+				break
+			}
 			if err == io.EOF {
 				if err := c.conn.Close(); err != nil {
-					c.log.err("client connection closed: %v", err)
+					c.log.info("IDLE timeout")
 				}
 			} else {
 				switch err := err.(type) {
