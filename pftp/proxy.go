@@ -19,30 +19,32 @@ const (
 )
 
 type proxyServer struct {
-	id            int
-	timeout       int
-	clientReader  *bufio.Reader
-	clientWriter  *bufio.Writer
-	originReader  *bufio.Reader
-	originWriter  *bufio.Writer
-	origin        net.Conn
-	passThrough   bool
-	mutex         *sync.Mutex
-	log           *logger
-	sem           int
-	proxyProtocol bool
-	stopChan      chan struct{}
-	stop          bool
+	id             int
+	timeout        int
+	clientReader   *bufio.Reader
+	clientWriter   *bufio.Writer
+	originReader   *bufio.Reader
+	originWriter   *bufio.Writer
+	origin         net.Conn
+	passThrough    bool
+	mutex          *sync.Mutex
+	log            *logger
+	sem            int
+	proxyProtocol  bool
+	stopChan       chan struct{}
+	stop           bool
+	secureCommands []string
 }
 
 type proxyServerConfig struct {
-	timeout       int
-	clientReader  *bufio.Reader
-	clientWriter  *bufio.Writer
-	originAddr    string
-	mutex         *sync.Mutex
-	log           *logger
-	proxyProtocol bool
+	timeout        int
+	clientReader   *bufio.Reader
+	clientWriter   *bufio.Writer
+	originAddr     string
+	mutex          *sync.Mutex
+	log            *logger
+	proxyProtocol  bool
+	secureCommands []string
 }
 
 func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
@@ -52,17 +54,18 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 	}
 
 	p := &proxyServer{
-		clientReader:  conf.clientReader,
-		clientWriter:  conf.clientWriter,
-		originWriter:  bufio.NewWriter(c),
-		originReader:  bufio.NewReader(c),
-		origin:        c,
-		timeout:       conf.timeout,
-		passThrough:   true,
-		mutex:         conf.mutex,
-		log:           conf.log,
-		proxyProtocol: conf.proxyProtocol,
-		stopChan:      make(chan struct{}),
+		clientReader:   conf.clientReader,
+		clientWriter:   conf.clientWriter,
+		originWriter:   bufio.NewWriter(c),
+		originReader:   bufio.NewReader(c),
+		origin:         c,
+		timeout:        conf.timeout,
+		passThrough:    true,
+		mutex:          conf.mutex,
+		log:            conf.log,
+		proxyProtocol:  conf.proxyProtocol,
+		stopChan:       make(chan struct{}),
+		secureCommands: conf.secureCommands,
 	}
 	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
 
@@ -80,12 +83,7 @@ func (s *proxyServer) sendToOrigin(line string) error {
 			return errors.New("Could not get semaphore to send to client")
 		}
 
-		command := strings.ToUpper(strings.SplitN(strings.Trim(line, "\r\n"), " ", 2)[0])
-		if command == "PASS" {
-			s.log.debug("send to origin: %s ********", command)
-		} else {
-			s.log.debug("send to origin: %s", line)
-		}
+		s.commandLog(line)
 
 		if s.semFree() {
 			if _, err := s.origin.Write([]byte(line)); err != nil {
@@ -184,7 +182,7 @@ func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []s
 	}
 
 	for _, cmd := range previousTLSCommands {
-		s.log.debug("send to origin: %s", cmd)
+		s.commandLog(cmd)
 		if _, err := s.origin.Write([]byte(cmd)); err != nil {
 			return err
 		}
@@ -202,8 +200,8 @@ func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []s
 		}
 	}
 
-	*s.originReader = *reader
-	*s.originWriter = *writer
+	s.originReader = reader
+	s.originWriter = writer
 
 	return nil
 }
@@ -343,4 +341,22 @@ loop:
 	<-done
 
 	return lastError
+}
+
+// Hide parameters from log
+func (s *proxyServer) commandLog(line string) {
+	command := strings.ToUpper(strings.SplitN(strings.Trim(line, "\r\n"), " ", 2)[0])
+	hideParams := false
+	for _, c := range s.secureCommands {
+		if strings.Compare(command, c) == 0 {
+			hideParams = true
+			break
+		}
+	}
+
+	if hideParams {
+		s.log.debug("send to origin: %s ********", command)
+	} else {
+		s.log.debug("send to origin: %s", line)
+	}
 }

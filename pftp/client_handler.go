@@ -237,12 +237,7 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 		}
 	}()
 
-	// Hide user password from log
-	if c.command == "PASS" {
-		c.log.info("read from client: %s ********", c.command)
-	} else {
-		c.log.info("read from client: %s", line)
-	}
+	c.commandLog(line)
 
 	if c.middleware[c.command] != nil {
 		if err := c.middleware[c.command](c.context, c.param); err != nil {
@@ -290,13 +285,14 @@ func (c *clientHandler) connectProxy() error {
 	} else {
 		p, err := newProxyServer(
 			&proxyServerConfig{
-				timeout:       c.config.ProxyTimeout,
-				clientReader:  c.reader,
-				clientWriter:  c.writer,
-				originAddr:    c.context.RemoteAddr,
-				mutex:         c.mutex,
-				log:           c.log,
-				proxyProtocol: c.config.ProxyProtocol,
+				timeout:        c.config.ProxyTimeout,
+				clientReader:   c.reader,
+				clientWriter:   c.writer,
+				originAddr:     c.context.RemoteAddr,
+				mutex:          c.mutex,
+				log:            c.log,
+				proxyProtocol:  c.config.ProxyProtocol,
+				secureCommands: c.config.SecureCommands,
 			})
 
 		if err != nil {
@@ -314,5 +310,23 @@ func (c *clientHandler) parseLine(line string) {
 	c.command = strings.ToUpper(params[0])
 	if len(params) > 1 {
 		c.param = params[1]
+	}
+}
+
+// Hide parameters from log
+func (c *clientHandler) commandLog(line string) {
+	command := strings.ToUpper(strings.SplitN(strings.Trim(line, "\r\n"), " ", 2)[0])
+	hideParams := false
+	for _, c := range c.config.SecureCommands {
+		if strings.Compare(command, c) == 0 {
+			hideParams = true
+			break
+		}
+	}
+
+	if hideParams {
+		c.log.debug("read from client: %s ********", command)
+	} else {
+		c.log.debug("read from client: %s", line)
 	}
 }
