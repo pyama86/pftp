@@ -80,15 +80,21 @@ func (server *FtpServer) serve() error {
 			}
 		}
 
+		logrus.Info("FTP Client connected ", "clientIp ", conn.RemoteAddr())
+
 		if server.config.IdleTimeout > 0 {
 			conn.SetDeadline(time.Now().Add(time.Duration(server.config.IdleTimeout) * time.Second))
 		}
 
 		server.clientCounter++
+
 		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection)
-		logrus.Info("FTP Client connected ", "clientIp ", conn.RemoteAddr())
 		eg.Go(func() error {
-			return c.handleCommands()
+			err := c.handleCommands()
+			if err != nil {
+				logrus.Error(err.Error())
+			}
+			return err
 		})
 	}
 
