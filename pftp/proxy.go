@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"strconv"
@@ -145,7 +146,7 @@ func (s *proxyServer) Close() {
 	s.origin.Close()
 }
 
-func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) error {
+func sendProxyHeader(conn net.Conn, clientAddr string, originAddr string) error {
 	sourceAddr := strings.Split(clientAddr, ":")
 	destinationAddr := strings.Split(originAddr, ":")
 	sourcePort, _ := strconv.Atoi(sourceAddr[1])
@@ -167,39 +168,46 @@ func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) erro
 		DestinationPort:    uint16(destinationPort),
 	}
 
-	_, err = proxyProtocolHeader.WriteTo(s.origin)
+	_, err = proxyProtocolHeader.WriteTo(conn)
 	return err
 }
 
 /* send command before login to origin.                  *
 *  TLS version set by client to pftp tls version         *
 *  because client/pftp/origin must set same TLS version. */
-func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []string, reader *bufio.Reader, writer *bufio.Writer) error {
-	config := tls.Config{
-		InsecureSkipVerify: true,
-		MinVersion:         tlsProtocol,
-		MaxVersion:         tlsProtocol,
-	}
-
+func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []string, newConn net.Conn, reader *bufio.Reader, writer *bufio.Writer) error {
 	for _, cmd := range previousTLSCommands {
 		s.commandLog(cmd)
-		if _, err := s.origin.Write([]byte(cmd)); err != nil {
-			return err
+		if _, err := newConn.Write([]byte(cmd)); err != nil {
+			return fmt.Errorf("failed to make TLS connection")
 		}
 
-		// read response
-		if _, err := reader.ReadString('\n'); err != nil {
-			return err
+		// read response from new origin server
+		str, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to make TLS connection")
 		}
 
-		// SSL/TLS wrapping on connection
-		if strings.Contains(cmd, "AUTH") {
-			s.origin = tls.Client(s.origin, &config)
-			reader = bufio.NewReader(s.origin)
-			writer = bufio.NewWriter(s.origin)
+		if strings.Compare(strings.ToUpper(strings.SplitN(strings.Trim(cmd, "\r\n"), " ", 2)[0]), "AUTH") == 0 {
+			code := strings.SplitN(strings.Trim(str, "\r\n"), " ", 2)[0]
+			if code[0] == '5' {
+				return fmt.Errorf("origin server has not support TLS connection")
+			}
+
+			config := tls.Config{
+				InsecureSkipVerify: true,
+				MinVersion:         tlsProtocol,
+				MaxVersion:         tlsProtocol,
+			}
+
+			// SSL/TLS wrapping on connection
+			newConn = tls.Client(newConn, &config)
+			reader = bufio.NewReader(newConn)
+			writer = bufio.NewWriter(newConn)
 		}
 	}
 
+	s.origin = newConn
 	s.originReader = reader
 	s.originWriter = writer
 
@@ -221,29 +229,32 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 
 	c, err := net.Dial("tcp", originAddr)
 	if err != nil {
+		s.stop = false
 		return err
 	}
+	reader := bufio.NewReader(c)
+	writer := bufio.NewWriter(c)
 
 	old := s.origin
-	s.origin = c
 
 	// Send proxy protocol v1 header when set proxy protocol true
 	if s.proxyProtocol {
-		err := s.sendProxyHeader(clientAddr, originAddr)
-		if err != nil {
+		if err := sendProxyHeader(c, clientAddr, originAddr); err != nil {
 			return err
 		}
 	}
 
-	reader := bufio.NewReader(c)
-	writer := bufio.NewWriter(c)
 	// read welcome message
 	if _, err := reader.ReadString('\n'); err != nil {
 		return err
 	}
 
 	// If client connect with TLS connection, make TLS connection to origin ftp server too.
-	if err := s.sendTLSCommand(tlsProtocol, previousTLSCommands, reader, writer); err != nil {
+	// If cannot make TLS connection with origin, use old to origin for quit process.
+	if err := s.sendTLSCommand(tlsProtocol, previousTLSCommands, c, reader, writer); err != nil {
+		c.Close()
+
+		s.stop = false
 		return err
 	}
 
@@ -297,8 +308,9 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 						s.semUnlock()
 					}
 				}
+
+				<-send
 			}
-			<-send
 		}
 		done <- struct{}{}
 	}()

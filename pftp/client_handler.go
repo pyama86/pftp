@@ -86,8 +86,7 @@ func (c *clientHandler) setClientDeadLine(t int) {
 
 func (c *clientHandler) handleCommands() error {
 	proxyError := make(chan error)
-	responseFromOriginDone := make(chan struct{})
-	readClientCommandDone := make(chan struct{})
+	clientError := make(chan error)
 
 	err := c.connectProxy()
 	if err != nil {
@@ -105,49 +104,63 @@ func (c *clientHandler) handleCommands() error {
 	}()
 
 	// run response read routine
-	go c.getResponseFromOrigin(proxyError, responseFromOriginDone)
+	go c.getResponseFromOrigin(proxyError)
 
 	// run command read routine
-	go c.readClientCommands(readClientCommandDone)
+	go c.readClientCommands(clientError)
 
-	lastErr := <-proxyError
-
-	if lastErr == io.EOF {
-		if c.command == "QUIT" {
-			lastErr = nil
-		} else {
-			lastErr = fmt.Errorf("idle timeout from origin")
+	// check max client
+	// if exceeded, send 530 error to client for disconnect
+	if atomic.LoadInt32(c.currentConnection) >= c.config.MaxConnections {
+		r := result{
+			code: 530,
+			msg:  "cannot create connection",
+			err:  fmt.Errorf("exceeded client connection limit"),
+			log:  c.log,
+		}
+		if err := r.Response(c); err != nil {
+			c.log.err("cannot send response to client")
 		}
 	}
 
-	// wait until all goroutine has done
-	<-responseFromOriginDone
-	<-readClientCommandDone
+	// increase current connection
+	atomic.AddInt32(c.currentConnection, 1)
 
-	return lastErr
+	// wait until all goroutine has done
+	pError := <-proxyError
+	cError := <-clientError
+
+	if c.command == "QUIT" {
+		return nil
+	}
+
+	if pError != nil {
+		c.log.debug(pError.Error())
+	}
+	if pError != io.EOF && cError != nil {
+		c.log.debug(cError.Error())
+	}
+
+	return fmt.Errorf("abnormal end of proxy")
 }
 
-func (c *clientHandler) getResponseFromOrigin(proxyError chan error, responseFromOriginDone chan struct{}) {
+func (c *clientHandler) getResponseFromOrigin(proxyError chan error) {
 	// サーバからのレスポンスはSuspendしない限り自動で返却される
 	for {
 		err := c.proxy.responseProxy()
 		if err != nil {
-			if err != io.EOF {
-				safeSetChanel(proxyError, err)
-			} else {
-				c.log.debug("get EOF from server")
-				proxyError <- err
+			// set client connection timeout immediately for disconnect current connection
+			c.conn.SetDeadline(time.Now().Add(0))
 
-				// set client connection timeout immediately for disconnect current connection
-				c.conn.SetDeadline(time.Now().Add(0))
-			}
-			break
+			proxyError <- err
+			return
 		}
 	}
-	responseFromOriginDone <- struct{}{}
 }
 
-func (c *clientHandler) readClientCommands(readClientCommandDone chan struct{}) {
+func (c *clientHandler) readClientCommands(clientError chan error) {
+	lastError := error(nil)
+
 	for {
 		if c.config.IdleTimeout > 0 {
 			c.setClientDeadLine(c.config.IdleTimeout)
@@ -155,21 +168,24 @@ func (c *clientHandler) readClientCommands(readClientCommandDone chan struct{}) 
 
 		line, err := c.reader.ReadString('\n')
 		if err != nil {
-			// client disconnect
+			// client disconnected by quit command
 			if c.command == "QUIT" {
 				c.log.debug("disconnect client: QUIT")
+				lastError = nil
 				break
 			}
 			if err == io.EOF {
 				if err := c.conn.Close(); err != nil {
-					c.log.info("IDLE timeout")
+					c.log.err("cannot close client connection")
 				}
+				c.log.debug("get EOF from client")
+				lastError = nil
 			} else {
 				switch err := err.(type) {
 				case net.Error:
 					if err.Timeout() {
 						c.conn.SetDeadline(time.Now().Add(time.Minute))
-						c.log.info("IDLE timeout")
+						lastError = fmt.Errorf("IDLE timeout")
 						r := result{
 							code: 421,
 							msg:  "command timeout : closing control connection",
@@ -177,23 +193,17 @@ func (c *clientHandler) readClientCommands(readClientCommandDone chan struct{}) 
 							log:  c.log,
 						}
 						if err := r.Response(c); err != nil {
-							c.log.err("response to client error: %v", err)
-						}
-						if err := c.writer.Flush(); err != nil {
-							c.log.err("network flush error: %v", err)
-						}
-						if err := c.conn.Close(); err != nil {
-							c.log.err("network close error: %v", err)
+							lastError = fmt.Errorf("response to client error: %v", err)
 						}
 					}
 				}
 			}
-
 			break
 		} else {
 			commandResponse := c.handleCommand(line)
 			if commandResponse != nil {
 				if err = commandResponse.Response(c); err != nil {
+					lastError = err
 					break
 				}
 			}
@@ -202,7 +212,7 @@ func (c *clientHandler) readClientCommands(readClientCommandDone chan struct{}) 
 	// set origin server connection timeout immediately for disconnect current connection
 	c.proxy.origin.SetDeadline(time.Now().Add(0))
 
-	readClientCommandDone <- struct{}{}
+	clientError <- lastError
 }
 
 func (c *clientHandler) writeLine(line string) error {
