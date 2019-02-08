@@ -88,18 +88,14 @@ func TestLogin(t *testing.T) {
 	}
 	eg := errgroup.Group{}
 
-	c := make(chan bool, len(testset)+1)
 	for i := 0; i < len(testset); i++ {
 		index := i
 
-		c <- true
 		eg.Go(func() error {
-			defer func() { <-c }()
-
 			client := localConnect(2121, t)
 			defer client.Quit()
 
-			// If Login failed with vsftpd user, Return Error
+			// If Login failed, Return Error
 			if err := client.Login(testset[index].User.ID, testset[index].User.Pass); err != nil {
 				return fmt.Errorf("integration.TestLogin() error = %v, wantErr %v", err, nil)
 			}
@@ -118,14 +114,10 @@ func TestAuth(t *testing.T) {
 	}
 	eg := errgroup.Group{}
 
-	c := make(chan bool, len(testset)+1)
 	for i := 0; i < len(testset); i++ {
 		index := i
 
-		c <- true
 		eg.Go(func() error {
-			defer func() { <-c }()
-
 			client := new(ftps.FTPS)
 			defer client.Quit()
 			client.Debug = true
@@ -211,15 +203,12 @@ func TestUpload(t *testing.T) {
 
 	removeDirFiles(t, "stor")
 
-	c := make(chan bool, (testCount * userCount))
 	for u := 0; u < userCount; u++ {
 		for i := 0; i < testCount; i++ {
-			c <- true
 			user := u
 			num := i
 
 			eg.Go(func() error {
-				defer func() { <-c }()
 				a := md5.New()
 				b := md5.New()
 
@@ -285,15 +274,12 @@ func TestDownload(t *testing.T) {
 
 	userCount := len(testset)
 
-	c := make(chan bool, (testCount * userCount))
 	for u := 0; u < userCount; u++ {
 		for i := 0; i < testCount; i++ {
-			c <- true
 			user := u
 			num := i
 
 			eg.Go(func() error {
-				defer func() { <-c }()
 				a := md5.New()
 				b := md5.New()
 
