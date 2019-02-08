@@ -65,7 +65,7 @@ proftpd: proftpd-cleanup
 	-v "`pwd`/tls/server.crt":/etc/ssl/certs/proftpd.crt \
 	-v "`pwd`/tls/server.key":/etc/ssl/private/proftpd.key \
 	-v "`pwd`/tls/server.crt":/etc/ssl/certs/chain.crt \
-	-p 20-21:20-21 -p 21100-21110:21100-21110 \
+	-p 20-21:20-21 -p 21100-21200:21100-21200 \
 	--name proftpd --restart=always proftpd-server:test
 proftpd-cleanup:
 	docker rm -f proftpd | true
