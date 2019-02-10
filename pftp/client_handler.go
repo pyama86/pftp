@@ -43,6 +43,7 @@ type clientHandler struct {
 	context             *Context
 	currentConnection   *int32
 	mutex               *sync.Mutex
+	connMutex           *sync.Mutex
 	log                 *logger
 	deadline            time.Time
 	srcIP               string
@@ -51,7 +52,7 @@ type clientHandler struct {
 	previousTLSCommands []string
 }
 
-func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32) *clientHandler {
+func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32, cMutex *sync.Mutex) *clientHandler {
 	p := &clientHandler{
 		id:                id,
 		conn:              connection,
@@ -62,6 +63,7 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		context:           newContext(c),
 		currentConnection: currentConnection,
 		mutex:             &sync.Mutex{},
+		connMutex:         cMutex,
 		log:               &logger{fromip: connection.RemoteAddr().String(), id: id},
 		srcIP:             connection.RemoteAddr().String(),
 		tlsProtocol:       0,
@@ -135,14 +137,11 @@ func (c *clientHandler) handleCommands() error {
 		return nil
 	}
 
-	if pError != nil {
-		c.log.debug(pError.Error())
-	}
-	if pError != io.EOF && cError != nil {
-		c.log.debug(cError.Error())
+	if pError == io.EOF || pError.(net.Error).Timeout() || cError.(net.Error).Timeout() {
+		c.log.info("client disconnected by Idle timeout")
 	}
 
-	return fmt.Errorf("abnormal end of proxy")
+	return cError
 }
 
 func (c *clientHandler) getResponseFromOrigin(proxyError chan error) {
@@ -189,7 +188,7 @@ func (c *clientHandler) readClientCommands(clientError chan error) {
 				case net.Error:
 					if err.Timeout() {
 						c.conn.SetDeadline(time.Now().Add(time.Minute))
-						lastError = fmt.Errorf("client disconnected by idle timeout")
+						lastError = err
 						r := result{
 							code: 421,
 							msg:  "command timeout : closing control connection",
@@ -223,6 +222,7 @@ func (c *clientHandler) readClientCommands(clientError chan error) {
 func (c *clientHandler) writeLine(line string) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
+
 	if _, err := c.writer.Write([]byte(line)); err != nil {
 		return err
 	}
@@ -292,6 +292,11 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 }
 
 func (c *clientHandler) connectProxy() error {
+	if c.connMutex != nil {
+		c.connMutex.Lock()
+		defer c.connMutex.Unlock()
+	}
+
 	if c.proxy != nil {
 		err := c.proxy.switchOrigin(c.srcIP, c.context.RemoteAddr, c.tlsProtocol, c.previousTLSCommands)
 		if err != nil {
@@ -307,6 +312,7 @@ func (c *clientHandler) connectProxy() error {
 				mutex:          c.mutex,
 				log:            c.log,
 				proxyProtocol:  c.config.ProxyProtocol,
+				welcomeMsg:     c.config.WelcomeMsg,
 				secureCommands: c.config.SecureCommands,
 			})
 
@@ -330,7 +336,7 @@ func (c *clientHandler) parseLine(line string) {
 
 // Hide parameters from log
 func (c *clientHandler) commandLog(line string) {
-	command := strings.ToUpper(strings.SplitN(strings.Trim(line, "\r\n"), " ", 2)[0])
+	command := strings.ToUpper(getCommand(line))
 	hideParams := false
 	for _, c := range c.config.SecureCommands {
 		if strings.Compare(command, c) == 0 {
@@ -344,4 +350,9 @@ func (c *clientHandler) commandLog(line string) {
 	} else {
 		c.log.info("read from client: %s", line)
 	}
+}
+
+// Get command from command line
+func getCommand(line string) string {
+	return strings.SplitN(strings.Trim(line, "\r\n"), " ", 2)[0]
 }

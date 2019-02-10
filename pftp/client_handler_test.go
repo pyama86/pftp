@@ -66,6 +66,7 @@ func Test_clientHandler_handleCommands(t *testing.T) {
 				nil,
 				1,
 				&cn,
+				nil,
 			)
 
 			if tt.hook != nil {
@@ -194,6 +195,7 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 				nil,
 				1,
 				&cn,
+				nil,
 			)
 
 			got := clientHandler.handleCommand(tt.args.line)
