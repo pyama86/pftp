@@ -266,13 +266,7 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 	cmd := handlers[c.command]
 	if cmd != nil {
 		if cmd.suspend {
-			err := c.proxy.suspend()
-			if err != nil {
-				return &result{
-					code: 500,
-					msg:  fmt.Sprintf("Internal error: %s", err),
-				}
-			}
+			c.proxy.suspend()
 			defer c.proxy.unsuspend()
 		}
 		res := cmd.f(c)
@@ -325,6 +319,11 @@ func (c *clientHandler) connectProxy() error {
 	return nil
 }
 
+// Get command from command line
+func getCommand(line string) []string {
+	return strings.SplitN(strings.Trim(line, "\r\n"), " ", 2)
+}
+
 func (c *clientHandler) parseLine(line string) {
 	params := strings.SplitN(strings.Trim(line, "\r\n"), " ", 2)
 	c.line = line
@@ -336,7 +335,7 @@ func (c *clientHandler) parseLine(line string) {
 
 // Hide parameters from log
 func (c *clientHandler) commandLog(line string) {
-	command := strings.ToUpper(getCommand(line))
+	command := strings.ToUpper(getCommand(line)[0])
 	hideParams := false
 	for _, c := range c.config.SecureCommands {
 		if strings.Compare(command, c) == 0 {
@@ -350,9 +349,4 @@ func (c *clientHandler) commandLog(line string) {
 	} else {
 		c.log.info("read from client: %s", line)
 	}
-}
-
-// Get command from command line
-func getCommand(line string) string {
-	return strings.SplitN(strings.Trim(line, "\r\n"), " ", 2)[0]
 }

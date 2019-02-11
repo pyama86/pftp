@@ -29,7 +29,6 @@ type proxyServer struct {
 	passThrough    bool
 	mutex          *sync.Mutex
 	log            *logger
-	sem            int
 	proxyProtocol  bool
 	stopChan       chan struct{}
 	stopChanDone   chan struct{}
@@ -80,35 +79,16 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 }
 
 func (s *proxyServer) sendToOrigin(line string) error {
-	cnt := 0
-	if s.timeout > 0 {
-		s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
+	s.commandLog(line)
+
+	if _, err := s.originWriter.WriteString(line); err != nil {
+		s.log.err("send to origin error: %s", err.Error())
+		return err
+	}
+	if err := s.originWriter.Flush(); err != nil {
+		return err
 	}
 
-	for {
-		if cnt > s.timeout {
-			return errors.New("Could not get semaphore to send to client")
-		}
-
-		s.commandLog(line)
-
-		if s.semFree() {
-			if _, err := s.originWriter.WriteString(line); err != nil {
-				s.log.err("send to origin error: %s", err.Error())
-				return err
-			}
-			if err := s.originWriter.Flush(); err != nil {
-				return err
-			}
-			if s.semFree() {
-				s.semLock()
-			}
-			break
-		}
-
-		time.Sleep(1 * time.Second)
-		cnt++
-	}
 	return nil
 }
 
@@ -116,38 +96,9 @@ func (s *proxyServer) responseProxy() error {
 	return s.start(s.originReader, s.clientWriter)
 }
 
-func (s *proxyServer) semLock() {
-	s.sem++
-}
-
-func (s *proxyServer) semUnlock() {
-	s.sem--
-}
-
-func (s *proxyServer) semFree() bool {
-	return s.sem < 1
-}
-
-func (s *proxyServer) semLocked() bool {
-	return s.sem > 0
-}
-
-func (s *proxyServer) suspend() error {
+func (s *proxyServer) suspend() {
 	s.log.debug("suspend proxy")
-	cnt := 0
-	for {
-		if cnt > s.timeout {
-			return errors.New("Could not get semaphore to send to client")
-		}
-
-		if s.semFree() {
-			s.passThrough = false
-			break
-		}
-		time.Sleep(1 * time.Second)
-		cnt++
-	}
-	return nil
+	s.passThrough = false
 }
 
 func (s *proxyServer) unsuspend() {
@@ -206,8 +157,8 @@ func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []s
 			return fmt.Errorf("failed to make TLS connection")
 		}
 
-		if strings.Compare(strings.ToUpper(getCommand(cmd)), "AUTH") == 0 {
-			code := getCommand(str)
+		if strings.Compare(strings.ToUpper(getCommand(cmd)[0]), "AUTH") == 0 {
+			code := getCode(str)[0]
 			if code != "234" {
 				lastError = fmt.Errorf("%s origin server has not support TLS connection", code)
 				break
@@ -237,9 +188,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	s.isSwitched = true
 
 	if s.passThrough {
-		if err := s.suspend(); err != nil {
-			return err
-		}
+		s.suspend()
 		defer s.unsuspend()
 	}
 
@@ -322,17 +271,37 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 				}
 
 				// response user setted welcome Msg
-				if strings.Compare(getCommand(buff), "220") == 0 && !s.isSwitched {
+				if strings.Compare(getCode(buff)[0], "220") == 0 && !s.isSwitched {
 					buff = "220 " + s.welcomeMsg + "\r\n"
+				}
+
+				if buff[3] == '-' {
+					params := getCode(buff)
+					multiLine := buff
+
+					for {
+						res, err := from.ReadString('\n')
+						if err != nil {
+							safeSetChanel(errchan, err)
+							done <- struct{}{}
+							return
+						}
+
+						// store multi-line response
+						multiLine += res
+
+						// check multi-line end
+						if getCode(res)[0] == params[0] && res[3] == ' ' {
+							buff = multiLine
+							break
+						}
+					}
 				}
 
 				s.log.debug("response from origin: %s", buff)
 
-				if s.passThrough || s.semLocked() {
+				if s.passThrough {
 					read <- buff
-					if s.semLocked() {
-						s.semUnlock()
-					}
 				}
 
 				<-send
@@ -383,7 +352,7 @@ loop:
 
 // Hide parameters from log
 func (s *proxyServer) commandLog(line string) {
-	command := getCommand(line)
+	command := getCommand(line)[0]
 	hideParams := false
 	for _, c := range s.secureCommands {
 		if strings.Compare(command, c) == 0 {
@@ -397,4 +366,9 @@ func (s *proxyServer) commandLog(line string) {
 	} else {
 		s.log.debug("send to origin: %s", line)
 	}
+}
+
+// response line
+func getCode(line string) []string {
+	return strings.SplitN(strings.Trim(line, "\r\n"), string(line[3]), 2)
 }
