@@ -50,9 +50,10 @@ type clientHandler struct {
 	tlsProtocol         uint16
 	isLoggedin          bool
 	previousTLSCommands []string
+	chkEstablished      chan struct{}
 }
 
-func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32, cMutex *sync.Mutex) *clientHandler {
+func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32, cMutex *sync.Mutex, clientEstabliched chan struct{}) *clientHandler {
 	p := &clientHandler{
 		id:                id,
 		conn:              connection,
@@ -68,6 +69,7 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		srcIP:             connection.RemoteAddr().String(),
 		tlsProtocol:       0,
 		isLoggedin:        false,
+		chkEstablished:    clientEstabliched,
 	}
 
 	return p
@@ -299,15 +301,15 @@ func (c *clientHandler) connectProxy() error {
 	} else {
 		p, err := newProxyServer(
 			&proxyServerConfig{
-				timeout:        c.config.ProxyTimeout,
-				clientReader:   c.reader,
-				clientWriter:   c.writer,
-				originAddr:     c.context.RemoteAddr,
-				mutex:          c.mutex,
-				log:            c.log,
-				proxyProtocol:  c.config.ProxyProtocol,
-				welcomeMsg:     c.config.WelcomeMsg,
-				secureCommands: c.config.SecureCommands,
+				timeout:       c.config.ProxyTimeout,
+				clientReader:  c.reader,
+				clientWriter:  c.writer,
+				originAddr:    c.context.RemoteAddr,
+				mutex:         c.mutex,
+				log:           c.log,
+				proxyProtocol: c.config.ProxyProtocol,
+				welcomeMsg:    c.config.WelcomeMsg,
+				established:   c.chkEstablished,
 			})
 
 		if err != nil {
@@ -335,17 +337,8 @@ func (c *clientHandler) parseLine(line string) {
 
 // Hide parameters from log
 func (c *clientHandler) commandLog(line string) {
-	command := strings.ToUpper(getCommand(line)[0])
-	hideParams := false
-	for _, c := range c.config.SecureCommands {
-		if strings.Compare(command, c) == 0 {
-			hideParams = true
-			break
-		}
-	}
-
-	if hideParams {
-		c.log.info("read from client: %s ********", command)
+	if strings.Compare(strings.ToUpper(getCommand(line)[0]), SECURE_COMMAND) == 0 {
+		c.log.info("read from client: %s ********", SECURE_COMMAND)
 	} else {
 		c.log.info("read from client: %s", line)
 	}
