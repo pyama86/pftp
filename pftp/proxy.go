@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	BUFFER_SIZE = 4096
+	BUFFER_SIZE    = 4096
+	SECURE_COMMAND = "PASS"
 )
 
 type proxyServer struct {
@@ -32,6 +33,7 @@ type proxyServer struct {
 	proxyProtocol  bool
 	stopChan       chan struct{}
 	stopChanDone   chan struct{}
+	established    chan struct{}
 	stop           bool
 	secureCommands []string
 	isSwitched     bool
@@ -48,6 +50,7 @@ type proxyServerConfig struct {
 	proxyProtocol  bool
 	welcomeMsg     string
 	secureCommands []string
+	established    chan struct{}
 }
 
 func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
@@ -69,9 +72,10 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		proxyProtocol:  conf.proxyProtocol,
 		stopChan:       make(chan struct{}),
 		stopChanDone:   make(chan struct{}),
-		welcomeMsg:     conf.welcomeMsg,
+		welcomeMsg:     "220 " + conf.welcomeMsg + "\r\n",
 		secureCommands: conf.secureCommands,
 		isSwitched:     false,
+		established:    conf.established,
 	}
 	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
 
@@ -270,9 +274,14 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 					s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
 				}
 
-				// response user setted welcome Msg
+				// response user setted welcome message
 				if strings.Compare(getCode(buff)[0], "220") == 0 && !s.isSwitched {
-					buff = "220 " + s.welcomeMsg + "\r\n"
+					buff = s.welcomeMsg
+
+					// send first response complate signal
+					if s.established != nil {
+						s.established <- struct{}{}
+					}
 				}
 
 				if buff[3] == '-' {
@@ -333,6 +342,8 @@ loop:
 			send <- struct{}{}
 		case err := <-errchan:
 			lastError = err
+			s.origin.Close()
+
 			break loop
 		case <-s.stopChan:
 			close(errchan)
@@ -352,17 +363,8 @@ loop:
 
 // Hide parameters from log
 func (s *proxyServer) commandLog(line string) {
-	command := getCommand(line)[0]
-	hideParams := false
-	for _, c := range s.secureCommands {
-		if strings.Compare(command, c) == 0 {
-			hideParams = true
-			break
-		}
-	}
-
-	if hideParams {
-		s.log.debug("send to origin: %s ********", command)
+	if strings.Compare(strings.ToUpper(getCommand(line)[0]), SECURE_COMMAND) == 0 {
+		s.log.debug("send to origin: %s ********", SECURE_COMMAND)
 	} else {
 		s.log.debug("send to origin: %s", line)
 	}

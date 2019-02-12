@@ -20,7 +20,6 @@ type config struct {
 	MaxConnections  int32       `toml:"max_connections"`
 	ProxyProtocol   bool        `toml:"proxy_protocol"`
 	WelcomeMsg      string      `toml:"welcome_message"`
-	SecureCommands  []string    `toml:"secure_commands"`
 	TLS             *tlsPair    `toml:"tls"`
 	TLSConfig       *tls.Config `toml:"-"`
 }
@@ -85,5 +84,4 @@ func defaultConfig(config *config) {
 	config.TransferTimeout = 900
 	config.ProxyProtocol = false
 	config.WelcomeMsg = "FTP proxy ready"
-	config.SecureCommands = []string{"PASS"}
 }
