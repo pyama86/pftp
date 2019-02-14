@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	proxyproto "github.com/pires/go-proxyproto"
@@ -20,37 +21,39 @@ const (
 )
 
 type proxyServer struct {
-	id             int
-	timeout        int
-	clientReader   *bufio.Reader
-	clientWriter   *bufio.Writer
-	originReader   *bufio.Reader
-	originWriter   *bufio.Writer
-	origin         net.Conn
-	passThrough    bool
-	mutex          *sync.Mutex
-	log            *logger
-	proxyProtocol  bool
-	stopChan       chan struct{}
-	stopChanDone   chan struct{}
-	established    chan struct{}
-	stop           bool
-	secureCommands []string
-	isSwitched     bool
-	welcomeMsg     string
+	id                int
+	timeout           int
+	clientReader      *bufio.Reader
+	clientWriter      *bufio.Writer
+	originReader      *bufio.Reader
+	originWriter      *bufio.Writer
+	origin            net.Conn
+	currentConnection *int32
+	passThrough       bool
+	mutex             *sync.Mutex
+	log               *logger
+	proxyProtocol     bool
+	stopChan          chan struct{}
+	stopChanDone      chan struct{}
+	established       chan struct{}
+	stop              bool
+	secureCommands    []string
+	isSwitched        bool
+	welcomeMsg        string
 }
 
 type proxyServerConfig struct {
-	timeout        int
-	clientReader   *bufio.Reader
-	clientWriter   *bufio.Writer
-	originAddr     string
-	mutex          *sync.Mutex
-	log            *logger
-	proxyProtocol  bool
-	welcomeMsg     string
-	secureCommands []string
-	established    chan struct{}
+	timeout           int
+	clientReader      *bufio.Reader
+	clientWriter      *bufio.Writer
+	originAddr        string
+	currentConnection *int32
+	mutex             *sync.Mutex
+	log               *logger
+	proxyProtocol     bool
+	welcomeMsg        string
+	secureCommands    []string
+	established       chan struct{}
 }
 
 func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
@@ -60,22 +63,23 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 	}
 
 	p := &proxyServer{
-		clientReader:   conf.clientReader,
-		clientWriter:   conf.clientWriter,
-		originWriter:   bufio.NewWriter(c),
-		originReader:   bufio.NewReader(c),
-		origin:         c,
-		timeout:        conf.timeout,
-		passThrough:    true,
-		mutex:          conf.mutex,
-		log:            conf.log,
-		proxyProtocol:  conf.proxyProtocol,
-		stopChan:       make(chan struct{}),
-		stopChanDone:   make(chan struct{}),
-		welcomeMsg:     "220 " + conf.welcomeMsg + "\r\n",
-		secureCommands: conf.secureCommands,
-		isSwitched:     false,
-		established:    conf.established,
+		clientReader:      conf.clientReader,
+		clientWriter:      conf.clientWriter,
+		originWriter:      bufio.NewWriter(c),
+		originReader:      bufio.NewReader(c),
+		currentConnection: conf.currentConnection,
+		origin:            c,
+		timeout:           conf.timeout,
+		passThrough:       true,
+		mutex:             conf.mutex,
+		log:               conf.log,
+		proxyProtocol:     conf.proxyProtocol,
+		stopChan:          make(chan struct{}),
+		stopChanDone:      make(chan struct{}),
+		welcomeMsg:        "220 " + conf.welcomeMsg + "\r\n",
+		secureCommands:    conf.secureCommands,
+		isSwitched:        false,
+		established:       conf.established,
 	}
 	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
 
@@ -277,6 +281,10 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 				// response user setted welcome message
 				if strings.Compare(getCode(buff)[0], "220") == 0 && !s.isSwitched {
 					buff = s.welcomeMsg
+
+					// increase current connection after establishe complate
+					atomic.AddInt32(s.currentConnection, 1)
+					s.log.info("current connection %d", atomic.LoadInt32(s.currentConnection))
 
 					// send first response complate signal
 					if s.established != nil {

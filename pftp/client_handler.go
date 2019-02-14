@@ -127,9 +127,6 @@ func (c *clientHandler) handleCommands() error {
 		}
 	}
 
-	// increase current connection
-	atomic.AddInt32(c.currentConnection, 1)
-
 	// wait until all goroutine has done
 	pError := <-proxyError
 	cError := <-clientError
@@ -301,15 +298,16 @@ func (c *clientHandler) connectProxy() error {
 	} else {
 		p, err := newProxyServer(
 			&proxyServerConfig{
-				timeout:       c.config.ProxyTimeout,
-				clientReader:  c.reader,
-				clientWriter:  c.writer,
-				originAddr:    c.context.RemoteAddr,
-				mutex:         c.mutex,
-				log:           c.log,
-				proxyProtocol: c.config.ProxyProtocol,
-				welcomeMsg:    c.config.WelcomeMsg,
-				established:   c.chkEstablished,
+				timeout:           c.config.ProxyTimeout,
+				clientReader:      c.reader,
+				clientWriter:      c.writer,
+				originAddr:        c.context.RemoteAddr,
+				currentConnection: c.currentConnection,
+				mutex:             c.mutex,
+				log:               c.log,
+				proxyProtocol:     c.config.ProxyProtocol,
+				welcomeMsg:        c.config.WelcomeMsg,
+				established:       c.chkEstablished,
 			})
 
 		if err != nil {
