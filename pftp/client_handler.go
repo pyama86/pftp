@@ -77,7 +77,9 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 
 func (c *clientHandler) end() {
 	c.conn.Close()
-	atomic.AddInt32(c.currentConnection, -1)
+	if c.isLoggedin {
+		atomic.AddInt32(c.currentConnection, -1)
+	}
 }
 
 func (c *clientHandler) setClientDeadLine(t int) {
@@ -126,9 +128,6 @@ func (c *clientHandler) handleCommands() error {
 			c.log.err("cannot send response to client")
 		}
 	}
-
-	// increase current connection
-	atomic.AddInt32(c.currentConnection, 1)
 
 	// wait until all goroutine has done
 	pError := <-proxyError
