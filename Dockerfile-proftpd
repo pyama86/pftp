@@ -10,6 +10,7 @@ ENV PROFTPD_TLS_REQUIRED="off"
 VOLUME ["/home/prouser"]
 
 RUN echo "AllowForeignAddress on" >> /etc/proftpd/proftpd.conf
+RUN echo "MasqueradeAddress 127.0.0.1" >> /etc/proftpd/proftpd.conf
 
 RUN useradd prouser
 RUN echo 'prouser:prouser' | chpasswd

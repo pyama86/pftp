@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -18,11 +19,13 @@ type middlewareFunc func(*Context, string) error
 type middleware map[string]middlewareFunc
 
 type FtpServer struct {
-	listener      net.Listener
-	clientCounter int
-	config        *config
-	middleware    middleware
-	shutdown      bool
+	listener       net.Listener
+	clientCounter  int
+	config         *config
+	middleware     middleware
+	shutdown       bool
+	handlerMutex   *sync.Mutex
+	chkEstabliched chan struct{}
 }
 
 func NewFtpServer(confFile string) (*FtpServer, error) {
@@ -32,8 +35,10 @@ func NewFtpServer(confFile string) (*FtpServer, error) {
 	}
 	m := middleware{}
 	return &FtpServer{
-		config:     c,
-		middleware: m,
+		config:         c,
+		middleware:     m,
+		handlerMutex:   &sync.Mutex{},
+		chkEstabliched: make(chan struct{}),
 	}, nil
 }
 
@@ -80,16 +85,25 @@ func (server *FtpServer) serve() error {
 			}
 		}
 
+		logrus.Info("FTP Client connected ", "clientIp ", conn.RemoteAddr())
+
 		if server.config.IdleTimeout > 0 {
 			conn.SetDeadline(time.Now().Add(time.Duration(server.config.IdleTimeout) * time.Second))
 		}
 
 		server.clientCounter++
-		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection)
-		logrus.Info("FTP Client connected ", "clientIp ", conn.RemoteAddr())
+
+		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection, server.handlerMutex, server.chkEstabliched)
 		eg.Go(func() error {
-			return c.handleCommands()
+			err := c.handleCommands()
+			if err != nil {
+				logrus.Error(err.Error())
+			}
+			return err
 		})
+
+		// wait until establish connection (welcome msg received from server)
+		<-server.chkEstabliched
 	}
 
 	return eg.Wait()

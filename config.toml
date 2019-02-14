@@ -3,6 +3,7 @@ idle_timeout = 120
 transfer_timeout = 600
 remote_addr = "127.0.0.1:21"
 proxy_protocol = false
+welcome_message = "sample pftp server ready"
 
 [tls]
 cert = "./tls/server.crt"

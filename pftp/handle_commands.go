@@ -11,8 +11,7 @@ import (
 )
 
 func (c *clientHandler) handleUSER() *result {
-	err := c.connectProxy()
-	if err != nil {
+	if err := c.connectProxy(); err != nil {
 		return &result{
 			code: 530,
 			msg:  "I can't deal with you (proxy error)",
@@ -114,6 +113,7 @@ func (c *clientHandler) handlePBSZ() *result {
 				}
 			}
 		}
+
 		return nil
 	}
 	return &result{

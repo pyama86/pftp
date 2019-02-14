@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"crypto/tls"
 	"errors"
-	"io"
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -15,34 +15,42 @@ import (
 )
 
 const (
-	BUFFER_SIZE = 4096
+	BUFFER_SIZE    = 4096
+	SECURE_COMMAND = "PASS"
 )
 
 type proxyServer struct {
-	id            int
-	timeout       int
-	clientReader  *bufio.Reader
-	clientWriter  *bufio.Writer
-	originReader  *bufio.Reader
-	originWriter  *bufio.Writer
-	origin        net.Conn
-	passThrough   bool
-	mutex         *sync.Mutex
-	log           *logger
-	sem           int
-	proxyProtocol bool
-	stopChan      chan struct{}
-	stop          bool
+	id             int
+	timeout        int
+	clientReader   *bufio.Reader
+	clientWriter   *bufio.Writer
+	originReader   *bufio.Reader
+	originWriter   *bufio.Writer
+	origin         net.Conn
+	passThrough    bool
+	mutex          *sync.Mutex
+	log            *logger
+	proxyProtocol  bool
+	stopChan       chan struct{}
+	stopChanDone   chan struct{}
+	established    chan struct{}
+	stop           bool
+	secureCommands []string
+	isSwitched     bool
+	welcomeMsg     string
 }
 
 type proxyServerConfig struct {
-	timeout       int
-	clientReader  *bufio.Reader
-	clientWriter  *bufio.Writer
-	originAddr    string
-	mutex         *sync.Mutex
-	log           *logger
-	proxyProtocol bool
+	timeout        int
+	clientReader   *bufio.Reader
+	clientWriter   *bufio.Writer
+	originAddr     string
+	mutex          *sync.Mutex
+	log            *logger
+	proxyProtocol  bool
+	welcomeMsg     string
+	secureCommands []string
+	established    chan struct{}
 }
 
 func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
@@ -52,17 +60,22 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 	}
 
 	p := &proxyServer{
-		clientReader:  conf.clientReader,
-		clientWriter:  conf.clientWriter,
-		originWriter:  bufio.NewWriter(c),
-		originReader:  bufio.NewReader(c),
-		origin:        c,
-		timeout:       conf.timeout,
-		passThrough:   true,
-		mutex:         conf.mutex,
-		log:           conf.log,
-		proxyProtocol: conf.proxyProtocol,
-		stopChan:      make(chan struct{}),
+		clientReader:   conf.clientReader,
+		clientWriter:   conf.clientWriter,
+		originWriter:   bufio.NewWriter(c),
+		originReader:   bufio.NewReader(c),
+		origin:         c,
+		timeout:        conf.timeout,
+		passThrough:    true,
+		mutex:          conf.mutex,
+		log:            conf.log,
+		proxyProtocol:  conf.proxyProtocol,
+		stopChan:       make(chan struct{}),
+		stopChanDone:   make(chan struct{}),
+		welcomeMsg:     "220 " + conf.welcomeMsg + "\r\n",
+		secureCommands: conf.secureCommands,
+		isSwitched:     false,
+		established:    conf.established,
 	}
 	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
 
@@ -70,28 +83,16 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 }
 
 func (s *proxyServer) sendToOrigin(line string) error {
-	cnt := 0
-	if s.timeout > 0 {
-		s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
+	s.commandLog(line)
+
+	if _, err := s.originWriter.WriteString(line); err != nil {
+		s.log.err("send to origin error: %s", err.Error())
+		return err
+	}
+	if err := s.originWriter.Flush(); err != nil {
+		return err
 	}
 
-	for {
-		if cnt > s.timeout {
-			return errors.New("Could not get semaphore to send to client")
-		}
-
-		s.log.debug("send to origin: %s", line)
-
-		if s.semFree() {
-			if _, err := s.origin.Write([]byte(line)); err != nil {
-				return err
-			}
-			s.semLock()
-			break
-		}
-		time.Sleep(1 * time.Second)
-		cnt++
-	}
 	return nil
 }
 
@@ -99,38 +100,9 @@ func (s *proxyServer) responseProxy() error {
 	return s.start(s.originReader, s.clientWriter)
 }
 
-func (s *proxyServer) semLock() {
-	s.sem++
-}
-
-func (s *proxyServer) semUnlock() {
-	s.sem--
-}
-
-func (s *proxyServer) semFree() bool {
-	return s.sem < 1
-}
-
-func (s *proxyServer) semLocked() bool {
-	return s.sem > 0
-}
-
-func (s *proxyServer) suspend() error {
+func (s *proxyServer) suspend() {
 	s.log.debug("suspend proxy")
-	cnt := 0
-	for {
-		if cnt > s.timeout {
-			return errors.New("Could not get semaphore to send to client")
-		}
-
-		if s.semFree() {
-			s.passThrough = false
-			break
-		}
-		time.Sleep(1 * time.Second)
-		cnt++
-	}
-	return nil
+	s.passThrough = false
 }
 
 func (s *proxyServer) unsuspend() {
@@ -172,112 +144,129 @@ func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) erro
 *  TLS version set by client to pftp tls version         *
 *  because client/pftp/origin must set same TLS version. */
 func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []string) error {
-	config := tls.Config{
-		InsecureSkipVerify: true,
-		MinVersion:         tlsProtocol,
-		MaxVersion:         tlsProtocol,
-	}
+	lastError := error(nil)
 
 	for _, cmd := range previousTLSCommands {
-		s.log.debug("send to origin: %s", cmd)
-		if _, err := s.origin.Write([]byte(cmd)); err != nil {
+		s.commandLog(cmd)
+		if _, err := s.originWriter.WriteString(cmd); err != nil {
+			return fmt.Errorf("failed to send AUTH command to origin")
+		}
+		if err := s.originWriter.Flush(); err != nil {
 			return err
 		}
 
-		// read response
-		if _, err := s.originReader.ReadString('\n'); err != nil {
-			return err
+		// Read response from new origin server
+		str, err := s.originReader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to make TLS connection")
 		}
 
-		// SSL/TLS wrapping on connection
-		if strings.Contains(cmd, "AUTH") {
-			s.origin = tls.Client(s.origin, &config)
-			s.originReader = bufio.NewReader(s.origin)
-			s.originWriter = bufio.NewWriter(s.origin)
+		if strings.Compare(strings.ToUpper(getCommand(cmd)[0]), "AUTH") == 0 {
+			code := getCode(str)[0]
+			if code != "234" {
+				lastError = fmt.Errorf("%s origin server has not support TLS connection", code)
+				break
+			} else {
+				config := tls.Config{
+					InsecureSkipVerify: true,
+					MinVersion:         tlsProtocol,
+					MaxVersion:         tlsProtocol,
+				}
+
+				s.log.debug("set TLS connection")
+				// SSL/TLS wrapping on connection
+				s.origin = tls.Client(s.origin, &config)
+				s.originReader = bufio.NewReader(s.origin)
+				s.originWriter = bufio.NewWriter(s.origin)
+			}
 		}
 	}
 
-	return nil
+	return lastError
 }
 
 func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProtocol uint16, previousTLSCommands []string) error {
-	s.log.debug("switch origin to: %s", originAddr)
+	s.log.info("switch origin to: %s", originAddr)
+	var err error
+
+	s.isSwitched = true
 
 	if s.passThrough {
-		err := s.suspend()
-		if err != nil {
-			return err
-		}
+		s.suspend()
 		defer s.unsuspend()
 	}
 
+	// disconnect old origin and close response listener
 	s.stopChan <- struct{}{}
+	<-s.stopChanDone
+	cnt := 0
+	lastError := error(nil)
 
-	c, err := net.Dial("tcp", originAddr)
-	if err != nil {
-		return err
-	}
-
-	old := s.origin
-	s.origin = c
-
-	// Send proxy protocol v1 header when set proxy protocol true
-	if s.proxyProtocol {
-		err := s.sendProxyHeader(clientAddr, originAddr)
-		if err != nil {
+	// if connection to new origin close immediatly, reconnect while proxy timeout
+	for {
+		// change connection and reset reader and writer buffer
+		if s.origin, err = net.Dial("tcp", originAddr); err != nil {
 			return err
+		}
+		s.originReader = bufio.NewReader(s.origin)
+		s.originWriter = bufio.NewWriter(s.origin)
+
+		// Send proxy protocol v1 header when set proxy protocol true
+		if s.proxyProtocol {
+			if err := s.sendProxyHeader(clientAddr, originAddr); err != nil {
+				return err
+			}
+		}
+
+		// Read welcome message from ftp connection
+		res, err := s.originReader.ReadString('\n')
+		if err != nil {
+			if cnt > s.timeout {
+				return errors.New("cannot connect to new origin server")
+			}
+
+			s.log.err("err from new origin: %s", err.Error())
+			s.log.debug("reconnect to origin")
+			cnt++
+
+			s.origin.Close()
+
+			// reconnect interval
+			time.Sleep(1 * time.Second)
+			continue
+		} else {
+			s.log.debug("response from new origin: %s", res)
+			break
 		}
 	}
 
-	reader := bufio.NewReader(c)
-	writer := bufio.NewWriter(c)
-	// read welcome message
-	if _, err := reader.ReadString('\n'); err != nil {
-		return err
-	}
-
-	*s.originReader = *reader
-	*s.originWriter = *writer
-	old.Close()
-
 	// If client connect with TLS connection, make TLS connection to origin ftp server too.
 	if err := s.sendTLSCommand(tlsProtocol, previousTLSCommands); err != nil {
-		return err
+		lastError = err
 	}
 
 	s.stop = false
-	return nil
+	return lastError
 }
 
 func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
-	if s.stop {
+	// return if proxy still unsuspended or s.stop is true
+	if s.stop || !s.passThrough {
 		return nil
 	}
 
-	buff := make([]byte, BUFFER_SIZE)
-	read := make(chan []byte, BUFFER_SIZE)
+	read := make(chan string)
 	done := make(chan struct{})
 	send := make(chan struct{})
 	errchan := make(chan error)
-	var lastError error
+	lastError := error(nil)
 
 	go func() {
 		for {
-			if n, err := from.Read(buff); err != nil {
-				if err != io.EOF {
+			buff, err := from.ReadString('\n')
+			if err != nil {
+				if !s.stop {
 					safeSetChanel(errchan, err)
-				} else {
-					// when receive EOS from origin, send EOF to client for terminate session completely
-					if s.passThrough || s.semLocked() {
-						read <- buff[:n]
-						if s.semLocked() {
-							s.semUnlock()
-						}
-					}
-					<-send
-
-					lastError = err
-					s.stopChan <- struct{}{}
 				}
 				break
 			} else {
@@ -285,14 +274,47 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 					s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
 				}
 
-				if s.passThrough || s.semLocked() {
-					read <- buff[:n]
-					if s.semLocked() {
-						s.semUnlock()
+				// response user setted welcome message
+				if strings.Compare(getCode(buff)[0], "220") == 0 && !s.isSwitched {
+					buff = s.welcomeMsg
+
+					// send first response complate signal
+					if s.established != nil {
+						s.established <- struct{}{}
 					}
 				}
+
+				if buff[3] == '-' {
+					params := getCode(buff)
+					multiLine := buff
+
+					for {
+						res, err := from.ReadString('\n')
+						if err != nil {
+							safeSetChanel(errchan, err)
+							done <- struct{}{}
+							return
+						}
+
+						// store multi-line response
+						multiLine += res
+
+						// check multi-line end
+						if getCode(res)[0] == params[0] && res[3] == ' ' {
+							buff = multiLine
+							break
+						}
+					}
+				}
+
+				s.log.debug("response from origin: %s", buff)
+
+				if s.passThrough {
+					read <- buff
+				}
+
+				<-send
 			}
-			<-send
 		}
 		done <- struct{}{}
 	}()
@@ -300,39 +322,55 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 loop:
 	for {
 		select {
-		case b, ok := <-read:
-			if !ok {
-				break loop
-			}
-
+		case b := <-read:
 			s.mutex.Lock()
-			_, err := to.Write(b)
+			_, err := to.WriteString(b)
 			if err != nil {
 				lastError = err
 				s.mutex.Unlock()
+				send <- struct{}{}
 				break loop
 			}
 
 			if err := to.Flush(); err != nil {
 				lastError = err
 				s.mutex.Unlock()
+				send <- struct{}{}
 				break loop
 			}
 			s.mutex.Unlock()
 			send <- struct{}{}
 		case err := <-errchan:
 			lastError = err
+			s.origin.Close()
+
 			break loop
 		case <-s.stopChan:
 			close(errchan)
+			s.stop = true
+
 			// close read groutine
 			s.origin.Close()
-			s.stop = true
+
+			s.stopChanDone <- struct{}{}
 			break loop
 		}
 	}
-	close(read)
 	<-done
 
 	return lastError
+}
+
+// Hide parameters from log
+func (s *proxyServer) commandLog(line string) {
+	if strings.Compare(strings.ToUpper(getCommand(line)[0]), SECURE_COMMAND) == 0 {
+		s.log.debug("send to origin: %s ********", SECURE_COMMAND)
+	} else {
+		s.log.debug("send to origin: %s", line)
+	}
+}
+
+// response line
+func getCode(line string) []string {
+	return strings.SplitN(strings.Trim(line, "\r\n"), string(line[3]), 2)
 }

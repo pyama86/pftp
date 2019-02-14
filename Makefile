@@ -54,8 +54,6 @@ vsftpd: vsftpd-cleanup
 	docker build -t vsftpd-server:test -f Dockerfile-vsftpd ./
 	docker run -d -v "`pwd`/misc/test/data":/home/vsftpd \
 	-p 10020-10021:20-21 -p 11100-11110:11100-11110 \
-	-e FTP_USER=vsuser -e FTP_PASS=vsuser \
-	-e PASV_ADDRESS=127.0.0.1 -e PASV_MIN_PORT=11100 -e PASV_MAX_PORT=11110 \
 	--name vsftpd --restart=always vsftpd-server:test
 
 vsftpd-cleanup:
@@ -67,14 +65,25 @@ proftpd: proftpd-cleanup
 	-v "`pwd`/tls/server.crt":/etc/ssl/certs/proftpd.crt \
 	-v "`pwd`/tls/server.key":/etc/ssl/private/proftpd.key \
 	-v "`pwd`/tls/server.crt":/etc/ssl/certs/chain.crt \
-	-p 20-21:20-21 -p 21100-21110:21100-21110 \
+	-p 20020-20021:20-21 -p 21100-21110:21100-21110 \
 	--name proftpd --restart=always proftpd-server:test
 proftpd-cleanup:
 	docker rm -f proftpd | true
 
-ftp: vsftpd proftpd
+baseftp: baseftp-cleanup
+	docker build -t baseftp-server:test -f Dockerfile-base ./
+	docker run -d \
+	-v "`pwd`/tls/server.crt":/etc/ssl/certs/proftpd.crt \
+	-v "`pwd`/tls/server.key":/etc/ssl/private/proftpd.key \
+	-v "`pwd`/tls/server.crt":/etc/ssl/certs/chain.crt \
+	-p 20-21:20-21 -p 31100-31110:31100-31110 \
+	--name baseftp --restart=always baseftp-server:test
+baseftp-cleanup:
+	docker rm -f baseftp | true
 
-ftp-cleanup: vsftpd-cleanup proftpd-cleanup
+ftp: baseftp vsftpd proftpd
+
+ftp-cleanup: baseftp-cleanup vsftpd-cleanup proftpd-cleanup
 
 integration:
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Integration Testing$(RESET)"

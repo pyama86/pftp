@@ -86,7 +86,7 @@ func AddResource(router *httprouter.Router, resource Resource) {
 // Testdomain data array
 var domains = []string{
 	"127.0.0.1:10021", // for vsuser
-	"127.0.0.1:21",    // for prouser
+	"127.0.0.1:20021", // for prouser
 }
 
 type GetUserDomain struct {
