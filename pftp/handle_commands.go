@@ -8,6 +8,7 @@ import (
 	"net"
 	"reflect"
 	"strings"
+	"sync/atomic"
 )
 
 func (c *clientHandler) handleUSER() *result {
@@ -29,6 +30,10 @@ func (c *clientHandler) handleUSER() *result {
 		}
 	}
 	c.isLoggedin = true
+
+	// increase current connection after send USER command for real login
+	atomic.AddInt32(c.currentConnection, 1)
+	c.log.info("current connection %d", atomic.LoadInt32(c.currentConnection))
 
 	return nil
 }

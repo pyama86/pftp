@@ -77,7 +77,9 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 
 func (c *clientHandler) end() {
 	c.conn.Close()
-	atomic.AddInt32(c.currentConnection, -1)
+	if c.isLoggedin {
+		atomic.AddInt32(c.currentConnection, -1)
+	}
 }
 
 func (c *clientHandler) setClientDeadLine(t int) {
@@ -298,16 +300,15 @@ func (c *clientHandler) connectProxy() error {
 	} else {
 		p, err := newProxyServer(
 			&proxyServerConfig{
-				timeout:           c.config.ProxyTimeout,
-				clientReader:      c.reader,
-				clientWriter:      c.writer,
-				originAddr:        c.context.RemoteAddr,
-				currentConnection: c.currentConnection,
-				mutex:             c.mutex,
-				log:               c.log,
-				proxyProtocol:     c.config.ProxyProtocol,
-				welcomeMsg:        c.config.WelcomeMsg,
-				established:       c.chkEstablished,
+				timeout:       c.config.ProxyTimeout,
+				clientReader:  c.reader,
+				clientWriter:  c.writer,
+				originAddr:    c.context.RemoteAddr,
+				mutex:         c.mutex,
+				log:           c.log,
+				proxyProtocol: c.config.ProxyProtocol,
+				welcomeMsg:    c.config.WelcomeMsg,
+				established:   c.chkEstablished,
 			})
 
 		if err != nil {
