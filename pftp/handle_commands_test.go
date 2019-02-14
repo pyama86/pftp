@@ -147,13 +147,15 @@ func Test_clientHandler_handleUSER(t *testing.T) {
 			},
 		},
 	}
+	var cn int32
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &clientHandler{
-				config:  tt.fields.config,
-				conn:    tt.fields.conn,
-				context: tt.fields.context,
-				log:     &logger{},
+				config:            tt.fields.config,
+				conn:              tt.fields.conn,
+				context:           tt.fields.context,
+				log:               &logger{},
+				currentConnection: &cn,
 			}
 			got := c.handleUSER()
 			if (got != nil && tt.want == nil) || (tt.want != nil && (got.code != tt.want.code || got.msg != tt.want.msg)) {
