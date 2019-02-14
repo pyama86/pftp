@@ -33,7 +33,7 @@ func (c *clientHandler) handleUSER() *result {
 
 	// increase current connection after send USER command for real login
 	atomic.AddInt32(c.currentConnection, 1)
-	c.log.info("current connection %d", atomic.LoadInt32(c.currentConnection))
+	c.log.debug("current connection count: %d", atomic.LoadInt32(c.currentConnection))
 
 	return nil
 }
