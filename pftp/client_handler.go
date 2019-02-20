@@ -130,7 +130,7 @@ func (c *clientHandler) handleCommands() error {
 	}
 
 	// wait until all goroutine has done
-	pError := <-proxyError
+	<-proxyError
 	cError := <-clientError
 
 	if c.command == "QUIT" {
@@ -138,9 +138,12 @@ func (c *clientHandler) handleCommands() error {
 		return nil
 	}
 
-	if pError == io.EOF || pError.(net.Error).Timeout() || cError.(net.Error).Timeout() {
-		c.log.info("client disconnected by Idle timeout")
+	if cError == io.EOF {
+		c.log.info("client disconnected by EOF")
+		return nil
 	}
+
+	c.log.info("client disconnected by timeout")
 
 	return cError
 }
@@ -175,15 +178,11 @@ func (c *clientHandler) readClientCommands(clientError chan error) {
 				break
 			}
 			if err == io.EOF {
-				if err := c.proxy.sendToOrigin("QUIT"); err != nil {
+				if err := c.proxy.sendToOrigin("QUIT\r\n"); err != nil {
 					c.log.err("got error when send QUIT to origin")
 				}
 
-				if err := c.conn.Close(); err != nil {
-					c.log.err("got error when close client connection")
-				}
-				c.log.info("client disconnected by EOF")
-				lastError = nil
+				lastError = err
 			} else {
 				switch err := err.(type) {
 				case net.Error:
