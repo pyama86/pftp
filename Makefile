@@ -15,7 +15,7 @@ default: build
 ci: depsdev ftp test lint integration ## Run test and more...
 
 depsdev: ## Installing dependencies for development
-	$(GO) get github.com/golang/lint/golint
+	$(GO) get golang.org/x/lint/golint
 	$(GO) get -u github.com/tcnksm/ghr
 	$(GO) get github.com/mitchellh/gox
 
