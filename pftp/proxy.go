@@ -83,6 +83,10 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 }
 
 func (s *proxyServer) sendToOrigin(line string) error {
+	if !strings.HasSuffix(line, "\r\n") {
+		return fmt.Errorf("command from client has not end with \\r\\n: %s", line)
+	}
+
 	s.commandLog(line)
 
 	if _, err := s.originWriter.WriteString(line); err != nil {
@@ -364,7 +368,7 @@ loop:
 // Hide parameters from log
 func (s *proxyServer) commandLog(line string) {
 	if strings.Compare(strings.ToUpper(getCommand(line)[0]), SECURE_COMMAND) == 0 {
-		s.log.debug("send to origin: %s ********", SECURE_COMMAND)
+		s.log.debug("send to origin: %s ********\r\n", SECURE_COMMAND)
 	} else {
 		s.log.debug("send to origin: %s", line)
 	}
