@@ -198,11 +198,11 @@ func (c *clientHandler) readClientCommands(clientError chan error) {
 						if err := r.Response(c); err != nil {
 							lastError = fmt.Errorf("response to client error: %v", err)
 						}
-
-						// set origin server connection timeout immediately for disconnect current connection
-						c.proxy.origin.SetDeadline(time.Now().Add(0))
 					}
 				}
+
+				// set origin server connection timeout immediately for disconnect current connection
+				c.proxy.origin.SetDeadline(time.Now().Add(0))
 			}
 			break
 		} else {
@@ -325,7 +325,7 @@ func getCommand(line string) []string {
 }
 
 func (c *clientHandler) parseLine(line string) {
-	params := strings.SplitN(strings.Trim(line, "\r\n"), " ", 2)
+	params := getCommand(line)
 	c.line = line
 	c.command = strings.ToUpper(params[0])
 	if len(params) > 1 {
@@ -336,7 +336,7 @@ func (c *clientHandler) parseLine(line string) {
 // Hide parameters from log
 func (c *clientHandler) commandLog(line string) {
 	if strings.Compare(strings.ToUpper(getCommand(line)[0]), SECURE_COMMAND) == 0 {
-		c.log.info("read from client: %s ********", SECURE_COMMAND)
+		c.log.info("read from client: %s ********\r\n", SECURE_COMMAND)
 	} else {
 		c.log.info("read from client: %s", line)
 	}

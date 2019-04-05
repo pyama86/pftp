@@ -83,6 +83,18 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 }
 
 func (s *proxyServer) sendToOrigin(line string) error {
+	// command line must contain CRLF only once in the end
+	if !strings.HasSuffix(line, "\r\n") || strings.Count(line, "\r") != 1 || strings.Count(line, "\n") != 1 {
+		s.log.debug("wrong command line. make line end by CRLF")
+
+		// delete CR & LF characters from line (only allow to end of line "\r\n")
+		line = strings.Replace(line, "\n", "", -1)
+		line = strings.Replace(line, "\r", "", -1)
+
+		// add write CRLF to end of line
+		line += "\r\n"
+	}
+
 	s.commandLog(line)
 
 	if _, err := s.originWriter.WriteString(line); err != nil {
@@ -364,7 +376,7 @@ loop:
 // Hide parameters from log
 func (s *proxyServer) commandLog(line string) {
 	if strings.Compare(strings.ToUpper(getCommand(line)[0]), SECURE_COMMAND) == 0 {
-		s.log.debug("send to origin: %s ********", SECURE_COMMAND)
+		s.log.debug("send to origin: %s ********\r\n", SECURE_COMMAND)
 	} else {
 		s.log.debug("send to origin: %s", line)
 	}
