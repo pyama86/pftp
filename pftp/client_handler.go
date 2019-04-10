@@ -53,7 +53,7 @@ type clientHandler struct {
 	chkEstablished      chan struct{}
 }
 
-func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32, cMutex *sync.Mutex, clientEstabliched chan struct{}) *clientHandler {
+func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32, cMutex *sync.Mutex, clientEstablished chan struct{}) *clientHandler {
 	p := &clientHandler{
 		id:                id,
 		conn:              connection,
@@ -69,17 +69,10 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		srcIP:             connection.RemoteAddr().String(),
 		tlsProtocol:       0,
 		isLoggedin:        false,
-		chkEstablished:    clientEstabliched,
+		chkEstablished:    clientEstablished,
 	}
 
 	return p
-}
-
-func (c *clientHandler) end() {
-	c.conn.Close()
-	if c.isLoggedin {
-		atomic.AddInt32(c.currentConnection, -1)
-	}
 }
 
 func (c *clientHandler) setClientDeadLine(t int) {
@@ -99,14 +92,12 @@ func (c *clientHandler) handleCommands() error {
 		return err
 	}
 
-	defer c.end()
-
 	defer func() {
 		close(proxyError)
 		close(clientError)
 
-		if c.proxy != nil {
-			c.proxy.Close()
+		if c.isLoggedin {
+			atomic.AddInt32(c.currentConnection, -1)
 		}
 	}()
 
@@ -153,8 +144,9 @@ func (c *clientHandler) getResponseFromOrigin(proxyError chan error) {
 	for {
 		err := c.proxy.responseProxy()
 		if err != nil {
-			// set client connection timeout immediately for disconnect current connection
-			c.conn.SetDeadline(time.Now().Add(0))
+			// set client connection close immediately
+			c.log.debug("close client connection")
+			c.conn.Close()
 
 			safeSetChanel(proxyError, err)
 			return
@@ -172,15 +164,10 @@ func (c *clientHandler) readClientCommands(clientError chan error) {
 
 		line, err := c.reader.ReadString('\n')
 		if err != nil {
-			// client disconnected by quit command
 			if c.command == "QUIT" {
 				lastError = nil
-				break
-			}
-			if err == io.EOF {
-				if err := c.proxy.sendToOrigin("QUIT\r\n"); err != nil {
-					c.log.err("got error when send QUIT to origin")
-				}
+			} else if err == io.EOF {
+				c.log.debug("got EOF from client")
 
 				lastError = err
 			} else {
@@ -200,10 +187,13 @@ func (c *clientHandler) readClientCommands(clientError chan error) {
 						}
 					}
 				}
-
-				// set origin server connection timeout immediately for disconnect current connection
-				c.proxy.origin.SetDeadline(time.Now().Add(0))
 			}
+			// set origin server connection close immediately
+			if c.proxy != nil {
+				c.log.debug("close origin connection")
+				c.proxy.Close()
+			}
+
 			break
 		} else {
 			commandResponse := c.handleCommand(line)
