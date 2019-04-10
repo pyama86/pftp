@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -122,8 +123,10 @@ func (s *proxyServer) unsuspend() {
 	s.passThrough = true
 }
 
-func (s *proxyServer) Close() {
-	s.origin.Close()
+func (s *proxyServer) Close() error {
+	err := s.origin.Close()
+
+	return err
 }
 
 func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) error {
@@ -277,6 +280,10 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 		for {
 			buff, err := from.ReadString('\n')
 			if err != nil {
+				if err == io.EOF {
+					s.log.debug("got EOF from origin")
+				}
+
 				if !s.stop {
 					safeSetChanel(errchan, err)
 				}
