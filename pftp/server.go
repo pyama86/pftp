@@ -25,7 +25,7 @@ type FtpServer struct {
 	middleware     middleware
 	shutdown       bool
 	handlerMutex   *sync.Mutex
-	chkEstabliched chan struct{}
+	chkEstablished chan struct{}
 }
 
 func NewFtpServer(confFile string) (*FtpServer, error) {
@@ -38,7 +38,7 @@ func NewFtpServer(confFile string) (*FtpServer, error) {
 		config:         c,
 		middleware:     m,
 		handlerMutex:   &sync.Mutex{},
-		chkEstabliched: make(chan struct{}),
+		chkEstablished: make(chan struct{}),
 	}, nil
 }
 
@@ -93,7 +93,7 @@ func (server *FtpServer) serve() error {
 
 		server.clientCounter++
 
-		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection, server.handlerMutex, server.chkEstabliched)
+		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection, server.handlerMutex, server.chkEstablished)
 		eg.Go(func() error {
 			err := c.handleCommands()
 			if err != nil {
@@ -103,7 +103,7 @@ func (server *FtpServer) serve() error {
 		})
 
 		// wait until establish connection (welcome msg received from server)
-		<-server.chkEstabliched
+		<-server.chkEstablished
 	}
 
 	return eg.Wait()
