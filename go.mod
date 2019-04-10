@@ -21,7 +21,7 @@ require (
 	github.com/tcnksm/ghr v0.12.0 // indirect
 	github.com/tcnksm/go-gitconfig v0.1.2 // indirect
 	github.com/tcnksm/go-latest v0.0.0-20170313132115-e3007ae9052e // indirect
-	golang.org/x/lint v0.0.0-20190313153728-d0100b6bd8b3 // indirect
+	golang.org/x/lint v0.0.0-20190409202823-959b441ac422 // indirect
 	golang.org/x/oauth2 v0.0.0-20190402181905-9f3314589c9a // indirect
 	golang.org/x/sync v0.0.0-20190227155943-e225da77a7e6
 )
