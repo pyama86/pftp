@@ -14,7 +14,7 @@ require (
 	github.com/marcobeierer/ftps v0.0.0-20180713194618-60e520f5feed
 	github.com/mattn/go-colorable v0.1.1 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
-	github.com/mitchellh/gox v1.0.0 // indirect
+	github.com/mitchellh/gox v1.0.1 // indirect
 	github.com/pires/go-proxyproto v0.0.0-20190111085350-4d51b51e3bfc
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/sirupsen/logrus v1.4.1
