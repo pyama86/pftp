@@ -19,13 +19,12 @@ type middlewareFunc func(*Context, string) error
 type middleware map[string]middlewareFunc
 
 type FtpServer struct {
-	listener       net.Listener
-	clientCounter  int
-	config         *config
-	middleware     middleware
-	shutdown       bool
-	handlerMutex   *sync.Mutex
-	chkEstablished chan struct{}
+	listener      net.Listener
+	clientCounter int
+	config        *config
+	middleware    middleware
+	shutdown      bool
+	handlerMutex  *sync.Mutex
 }
 
 func NewFtpServer(confFile string) (*FtpServer, error) {
@@ -35,10 +34,9 @@ func NewFtpServer(confFile string) (*FtpServer, error) {
 	}
 	m := middleware{}
 	return &FtpServer{
-		config:         c,
-		middleware:     m,
-		handlerMutex:   &sync.Mutex{},
-		chkEstablished: make(chan struct{}),
+		config:       c,
+		middleware:   m,
+		handlerMutex: &sync.Mutex{},
 	}, nil
 }
 
@@ -72,7 +70,7 @@ func (server *FtpServer) serve() error {
 	eg := errgroup.Group{}
 
 	for {
-		conn, err := server.listener.Accept()
+		netConn, err := server.listener.Accept()
 		if err != nil {
 			// if use server starter, break for while all childs end
 			if os.Getenv("SERVER_STARTER_PORT") != "" {
@@ -85,6 +83,14 @@ func (server *FtpServer) serve() error {
 			}
 		}
 
+		// set conn to TCPConn
+		conn := netConn.(*net.TCPConn)
+
+		// set linger 0 and tcp keepalive setting between client connection
+		conn.SetKeepAlive(true)
+		conn.SetKeepAlivePeriod(time.Duration(15) * time.Second)
+		conn.SetLinger(0)
+
 		logrus.Info("FTP Client connected ", "clientIp ", conn.RemoteAddr())
 
 		if server.config.IdleTimeout > 0 {
@@ -93,7 +99,7 @@ func (server *FtpServer) serve() error {
 
 		server.clientCounter++
 
-		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection, server.handlerMutex, server.chkEstablished)
+		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection, server.handlerMutex)
 		eg.Go(func() error {
 			err := c.handleCommands()
 			if err != nil {
@@ -101,9 +107,6 @@ func (server *FtpServer) serve() error {
 			}
 			return err
 		})
-
-		// wait until establish connection (welcome msg received from server)
-		<-server.chkEstablished
 	}
 
 	return eg.Wait()

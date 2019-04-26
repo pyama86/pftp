@@ -50,10 +50,9 @@ type clientHandler struct {
 	tlsProtocol         uint16
 	isLoggedin          bool
 	previousTLSCommands []string
-	chkEstablished      chan struct{}
 }
 
-func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32, cMutex *sync.Mutex, clientEstablished chan struct{}) *clientHandler {
+func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32, cMutex *sync.Mutex) *clientHandler {
 	p := &clientHandler{
 		id:                id,
 		conn:              connection,
@@ -69,7 +68,6 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		srcIP:             connection.RemoteAddr().String(),
 		tlsProtocol:       0,
 		isLoggedin:        false,
-		chkEstablished:    clientEstablished,
 	}
 
 	return p
@@ -84,7 +82,6 @@ func (c *clientHandler) setClientDeadLine(t int) {
 }
 
 func (c *clientHandler) handleCommands() error {
-	proxyError := make(chan error)
 	clientError := make(chan error)
 
 	err := c.connectProxy()
@@ -93,16 +90,20 @@ func (c *clientHandler) handleCommands() error {
 	}
 
 	defer func() {
-		close(proxyError)
 		close(clientError)
 
+		// decrease connection count
 		if c.isLoggedin {
 			atomic.AddInt32(c.currentConnection, -1)
 		}
+
+		// close each connection again
+		c.conn.Close()
+		c.proxy.Close()
 	}()
 
 	// run response read routine
-	go c.getResponseFromOrigin(proxyError)
+	go c.getResponseFromOrigin()
 
 	// run command read routine
 	go c.readClientCommands(clientError)
@@ -120,8 +121,7 @@ func (c *clientHandler) handleCommands() error {
 		}
 	}
 
-	// wait until all goroutine has done
-	<-proxyError
+	// wait until all client read goroutine has done
 	cError := <-clientError
 
 	if c.command == "QUIT" {
@@ -139,7 +139,7 @@ func (c *clientHandler) handleCommands() error {
 	return cError
 }
 
-func (c *clientHandler) getResponseFromOrigin(proxyError chan error) {
+func (c *clientHandler) getResponseFromOrigin() {
 	// サーバからのレスポンスはSuspendしない限り自動で返却される
 	for {
 		err := c.proxy.responseProxy()
@@ -148,7 +148,6 @@ func (c *clientHandler) getResponseFromOrigin(proxyError chan error) {
 			c.log.debug("close client connection")
 			c.conn.Close()
 
-			safeSetChanel(proxyError, err)
 			return
 		}
 	}
@@ -297,7 +296,6 @@ func (c *clientHandler) connectProxy() error {
 				log:           c.log,
 				proxyProtocol: c.config.ProxyProtocol,
 				welcomeMsg:    c.config.WelcomeMsg,
-				established:   c.chkEstablished,
 			})
 
 		if err != nil {
