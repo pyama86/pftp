@@ -34,7 +34,6 @@ type proxyServer struct {
 	proxyProtocol  bool
 	stopChan       chan struct{}
 	stopChanDone   chan struct{}
-	established    chan struct{}
 	stop           bool
 	secureCommands []string
 	isSwitched     bool
@@ -51,7 +50,6 @@ type proxyServerConfig struct {
 	proxyProtocol  bool
 	welcomeMsg     string
 	secureCommands []string
-	established    chan struct{}
 }
 
 func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
@@ -60,12 +58,18 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		return nil, err
 	}
 
+	// set conn to TCPConn
+	tcpConn := c.(*net.TCPConn)
+
+	// set linger 0 to local origin ftp server
+	tcpConn.SetLinger(0)
+
 	p := &proxyServer{
 		clientReader:   conf.clientReader,
 		clientWriter:   conf.clientWriter,
 		originWriter:   bufio.NewWriter(c),
 		originReader:   bufio.NewReader(c),
-		origin:         c,
+		origin:         tcpConn,
 		timeout:        conf.timeout,
 		passThrough:    true,
 		mutex:          conf.mutex,
@@ -76,7 +80,6 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		welcomeMsg:     "220 " + conf.welcomeMsg + "\r\n",
 		secureCommands: conf.secureCommands,
 		isSwitched:     false,
-		established:    conf.established,
 	}
 	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
 
@@ -125,7 +128,6 @@ func (s *proxyServer) unsuspend() {
 
 func (s *proxyServer) Close() error {
 	err := s.origin.Close()
-
 	return err
 }
 
@@ -214,6 +216,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	// disconnect old origin and close response listener
 	s.stopChan <- struct{}{}
 	<-s.stopChanDone
+
 	cnt := 0
 	lastError := error(nil)
 
@@ -244,7 +247,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 			s.log.debug("reconnect to origin")
 			cnt++
 
-			s.origin.Close()
+			s.Close()
 
 			// reconnect interval
 			time.Sleep(1 * time.Second)
@@ -296,11 +299,6 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 				// response user setted welcome message
 				if strings.Compare(getCode(buff)[0], "220") == 0 && !s.isSwitched {
 					buff = s.welcomeMsg
-
-					// send first response complate signal
-					if s.established != nil {
-						s.established <- struct{}{}
-					}
 				}
 
 				if buff[3] == '-' {
@@ -343,33 +341,35 @@ loop:
 		select {
 		case b := <-read:
 			s.mutex.Lock()
-			_, err := to.WriteString(b)
-			if err != nil {
-				lastError = err
+			if _, err := to.WriteString(b); err != nil {
 				s.mutex.Unlock()
+				lastError = err
+				s.Close()
 				send <- struct{}{}
+
 				break loop
 			}
 
 			if err := to.Flush(); err != nil {
-				lastError = err
 				s.mutex.Unlock()
+				lastError = err
+				s.Close()
 				send <- struct{}{}
+
 				break loop
 			}
 			s.mutex.Unlock()
 			send <- struct{}{}
 		case err := <-errchan:
 			lastError = err
-			s.origin.Close()
+			s.Close()
 
 			break loop
 		case <-s.stopChan:
-			close(errchan)
 			s.stop = true
 
 			// close read groutine
-			s.origin.Close()
+			s.Close()
 
 			s.stopChanDone <- struct{}{}
 			break loop
