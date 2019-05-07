@@ -43,15 +43,17 @@ type clientHandler struct {
 	context             *Context
 	currentConnection   *int32
 	mutex               *sync.Mutex
+	connMutex           *sync.Mutex
 	log                 *logger
 	deadline            time.Time
 	srcIP               string
 	tlsProtocol         uint16
 	isLoggedin          bool
 	previousTLSCommands []string
+	chkEstablished      chan struct{}
 }
 
-func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32) *clientHandler {
+func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32, cMutex *sync.Mutex, clientEstablished chan struct{}) *clientHandler {
 	p := &clientHandler{
 		id:                id,
 		conn:              connection,
@@ -62,10 +64,12 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		context:           newContext(c),
 		currentConnection: currentConnection,
 		mutex:             &sync.Mutex{},
+		connMutex:         cMutex,
 		log:               &logger{fromip: connection.RemoteAddr().String(), id: id},
 		srcIP:             connection.RemoteAddr().String(),
 		tlsProtocol:       0,
 		isLoggedin:        false,
+		chkEstablished:    clientEstablished,
 	}
 
 	return p
@@ -273,6 +277,11 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 }
 
 func (c *clientHandler) connectProxy() error {
+	if c.connMutex != nil {
+		c.connMutex.Lock()
+		defer c.connMutex.Unlock()
+	}
+
 	if c.proxy != nil {
 		err := c.proxy.switchOrigin(c.srcIP, c.context.RemoteAddr, c.tlsProtocol, c.previousTLSCommands)
 		if err != nil {
@@ -289,6 +298,7 @@ func (c *clientHandler) connectProxy() error {
 				log:           c.log,
 				proxyProtocol: c.config.ProxyProtocol,
 				welcomeMsg:    c.config.WelcomeMsg,
+				established:   c.chkEstablished,
 			})
 
 		if err != nil {

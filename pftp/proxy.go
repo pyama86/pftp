@@ -34,6 +34,7 @@ type proxyServer struct {
 	proxyProtocol  bool
 	stopChan       chan struct{}
 	stopChanDone   chan struct{}
+	established    chan struct{}
 	stop           bool
 	secureCommands []string
 	isSwitched     bool
@@ -50,6 +51,7 @@ type proxyServerConfig struct {
 	proxyProtocol  bool
 	welcomeMsg     string
 	secureCommands []string
+	established    chan struct{}
 }
 
 func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
@@ -80,6 +82,7 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		welcomeMsg:     "220 " + conf.welcomeMsg + "\r\n",
 		secureCommands: conf.secureCommands,
 		isSwitched:     false,
+		established:    conf.established,
 	}
 	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
 
@@ -299,6 +302,11 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 				// response user setted welcome message
 				if strings.Compare(getCode(buff)[0], "220") == 0 && !s.isSwitched {
 					buff = s.welcomeMsg
+
+					// send first response complate signal
+					if s.established != nil {
+						s.established <- struct{}{}
+					}
 				}
 
 				if buff[3] == '-' {
