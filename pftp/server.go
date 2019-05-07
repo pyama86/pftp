@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -24,7 +23,6 @@ type FtpServer struct {
 	config        *config
 	middleware    middleware
 	shutdown      bool
-	handlerMutex  *sync.Mutex
 }
 
 func NewFtpServer(confFile string) (*FtpServer, error) {
@@ -34,9 +32,8 @@ func NewFtpServer(confFile string) (*FtpServer, error) {
 	}
 	m := middleware{}
 	return &FtpServer{
-		config:       c,
-		middleware:   m,
-		handlerMutex: &sync.Mutex{},
+		config:     c,
+		middleware: m,
 	}, nil
 }
 
@@ -99,7 +96,7 @@ func (server *FtpServer) serve() error {
 
 		server.clientCounter++
 
-		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection, server.handlerMutex)
+		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection)
 		eg.Go(func() error {
 			err := c.handleCommands()
 			if err != nil {
