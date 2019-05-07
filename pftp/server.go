@@ -90,7 +90,7 @@ func (server *FtpServer) serve() error {
 
 		// set linger 0 and tcp keepalive setting between client connection
 		conn.SetKeepAlive(true)
-		conn.SetKeepAlivePeriod(time.Duration(15) * time.Second)
+		conn.SetKeepAlivePeriod(time.Duration(server.config.KeepaliveTime) * time.Second)
 		conn.SetLinger(0)
 
 		logrus.Info("FTP Client connected ", "clientIp ", conn.RemoteAddr())
