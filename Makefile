@@ -53,7 +53,7 @@ help:
 vsftpd: vsftpd-cleanup
 	docker build -t vsftpd-server:test -f Dockerfile-vsftpd ./
 	docker run -d -v "`pwd`/misc/test/data":/home/vsftpd \
-	-p 10020-10021:20-21 -p 11100-11110:11100-11110 \
+	-p 10020-10021:20-21 -p 11100-11150:11100-11150 \
 	--name vsftpd --restart=always vsftpd-server:test
 
 vsftpd-cleanup:
@@ -65,7 +65,7 @@ proftpd: proftpd-cleanup
 	-v "`pwd`/tls/server.crt":/etc/ssl/certs/proftpd.crt \
 	-v "`pwd`/tls/server.key":/etc/ssl/private/proftpd.key \
 	-v "`pwd`/tls/server.crt":/etc/ssl/certs/chain.crt \
-	-p 20020-20021:20-21 -p 21100-21110:21100-21110 \
+	-p 20020-20021:20-21 -p 21100-21150:21100-21150 \
 	--name proftpd --restart=always proftpd-server:test
 proftpd-cleanup:
 	docker rm -f proftpd | true
@@ -76,7 +76,7 @@ baseftp: baseftp-cleanup
 	-v "`pwd`/tls/server.crt":/etc/ssl/certs/proftpd.crt \
 	-v "`pwd`/tls/server.key":/etc/ssl/private/proftpd.key \
 	-v "`pwd`/tls/server.crt":/etc/ssl/certs/chain.crt \
-	-p 20-21:20-21 -p 31100-31110:31100-31110 \
+	-p 20-21:20-21 -p 31100-31150:31100-31150 \
 	--name baseftp --restart=always baseftp-server:test
 baseftp-cleanup:
 	docker rm -f baseftp | true
