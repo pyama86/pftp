@@ -84,6 +84,7 @@ func (c *clientHandler) setClientDeadLine(t int) {
 }
 
 func (c *clientHandler) handleCommands() error {
+	proxyError := make(chan error)
 	clientError := make(chan error)
 
 	err := c.connectProxy()
@@ -92,6 +93,7 @@ func (c *clientHandler) handleCommands() error {
 	}
 
 	defer func() {
+		close(proxyError)
 		close(clientError)
 
 		// decrease connection count
@@ -105,7 +107,7 @@ func (c *clientHandler) handleCommands() error {
 	}()
 
 	// run response read routine
-	go c.getResponseFromOrigin()
+	go c.getResponseFromOrigin(proxyError)
 
 	// run command read routine
 	go c.readClientCommands(clientError)
@@ -123,7 +125,8 @@ func (c *clientHandler) handleCommands() error {
 		}
 	}
 
-	// wait until all client read goroutine has done
+	// wait until all goroutine has done
+	<-proxyError
 	cError := <-clientError
 
 	if c.command == "QUIT" {
@@ -141,7 +144,7 @@ func (c *clientHandler) handleCommands() error {
 	return cError
 }
 
-func (c *clientHandler) getResponseFromOrigin() {
+func (c *clientHandler) getResponseFromOrigin(proxyError chan error) {
 	// サーバからのレスポンスはSuspendしない限り自動で返却される
 	for {
 		err := c.proxy.responseProxy()
@@ -150,6 +153,7 @@ func (c *clientHandler) getResponseFromOrigin() {
 			c.log.debug("close client connection")
 			c.conn.Close()
 
+			safeSetChanel(proxyError, err)
 			return
 		}
 	}
