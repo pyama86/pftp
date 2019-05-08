@@ -96,9 +96,14 @@ func (c *clientHandler) handleCommands() error {
 		close(proxyError)
 		close(clientError)
 
+		// decrease connection count
 		if c.isLoggedin {
 			atomic.AddInt32(c.currentConnection, -1)
 		}
+
+		// close each connection again
+		c.conn.Close()
+		c.proxy.Close()
 	}()
 
 	// run response read routine

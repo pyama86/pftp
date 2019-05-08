@@ -72,7 +72,7 @@ func (server *FtpServer) serve() error {
 	eg := errgroup.Group{}
 
 	for {
-		conn, err := server.listener.Accept()
+		netConn, err := server.listener.Accept()
 		if err != nil {
 			// if use server starter, break for while all childs end
 			if os.Getenv("SERVER_STARTER_PORT") != "" {
@@ -84,6 +84,14 @@ func (server *FtpServer) serve() error {
 				return err
 			}
 		}
+
+		// set conn to TCPConn
+		conn := netConn.(*net.TCPConn)
+
+		// set linger 0 and tcp keepalive setting between client connection
+		conn.SetKeepAlive(true)
+		conn.SetKeepAlivePeriod(time.Duration(server.config.KeepaliveTime) * time.Second)
+		conn.SetLinger(0)
 
 		logrus.Info("FTP Client connected ", "clientIp ", conn.RemoteAddr())
 

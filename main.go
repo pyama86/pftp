@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/Gurpartap/logrus-stack"
+	logrus_stack "github.com/Gurpartap/logrus-stack"
 	"github.com/pyama86/pftp/example/webapi"
 	"github.com/pyama86/pftp/pftp"
 	"github.com/sirupsen/logrus"
@@ -38,7 +38,6 @@ func User(c *pftp.Context, param string) error {
 	res, err := webapi.GetDomainFromWebAPI(confFile, param)
 	if err != nil {
 		logrus.Debug(fmt.Sprintf("cannot get domain from webapi server:%v", err))
-		c.RemoteAddr = "127.0.0.1:21"
 	} else {
 		c.RemoteAddr = *res
 	}
