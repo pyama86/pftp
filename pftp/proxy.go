@@ -28,6 +28,7 @@ type proxyServer struct {
 	originReader   *bufio.Reader
 	originWriter   *bufio.Writer
 	origin         net.Conn
+	originAddr     string
 	passThrough    bool
 	mutex          *sync.Mutex
 	log            *logger
@@ -38,6 +39,7 @@ type proxyServer struct {
 	stop           bool
 	secureCommands []string
 	isSwitched     bool
+	dataChanProxy  bool
 	welcomeMsg     string
 }
 
@@ -51,6 +53,7 @@ type proxyServerConfig struct {
 	proxyProtocol  bool
 	welcomeMsg     string
 	secureCommands []string
+	dataChanProxy  bool
 	established    chan struct{}
 }
 
@@ -72,6 +75,7 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		originWriter:   bufio.NewWriter(c),
 		originReader:   bufio.NewReader(c),
 		origin:         tcpConn,
+		originAddr:     conf.originAddr,
 		timeout:        conf.timeout,
 		passThrough:    true,
 		mutex:          conf.mutex,
@@ -83,6 +87,7 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		secureCommands: conf.secureCommands,
 		isSwitched:     false,
 		established:    conf.established,
+		dataChanProxy:  conf.dataChanProxy,
 	}
 	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
 
@@ -223,10 +228,12 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	cnt := 0
 	lastError := error(nil)
 
+	s.originAddr = originAddr
+
 	// if connection to new origin close immediatly, reconnect while proxy timeout
 	for {
 		// change connection and reset reader and writer buffer
-		if s.origin, err = net.Dial("tcp", originAddr); err != nil {
+		if s.origin, err = net.Dial("tcp", s.originAddr); err != nil {
 			return err
 		}
 		s.originReader = bufio.NewReader(s.origin)
@@ -234,7 +241,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 
 		// Send proxy protocol v1 header when set proxy protocol true
 		if s.proxyProtocol {
-			if err := s.sendProxyHeader(clientAddr, originAddr); err != nil {
+			if err := s.sendProxyHeader(clientAddr, s.originAddr); err != nil {
 				return err
 			}
 		}
@@ -299,6 +306,8 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 					s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
 				}
 
+				s.log.debug("response from origin: %s", buff)
+
 				// response user setted welcome message
 				if strings.Compare(getCode(buff)[0], "220") == 0 && !s.isSwitched {
 					buff = s.welcomeMsg
@@ -309,6 +318,43 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 					}
 				}
 
+				// is data channel proxy used
+				if s.dataChanProxy {
+					// when response is accept PASV command
+					if strings.Compare(getCode(buff)[0], "227") == 0 && s.isSwitched {
+						// make new listener and store listener port
+						pasvIP, listenPort, err := newDataListener(buff, s.originAddr, s.timeout, s.log, "PASV")
+						if err != nil {
+							safeSetChanel(errchan, err)
+							done <- struct{}{}
+							return
+						}
+
+						// make new response line
+						buff = fmt.Sprintf("%s(%s,%s)\r\n",
+							strings.SplitN(strings.Trim(buff, "\r\n"), "(", 2)[0],
+							strings.ReplaceAll(pasvIP, ".", ","),
+							strconv.Itoa(listenPort/256)+","+strconv.Itoa(listenPort%256))
+					}
+
+					// when response is accept EPSV command
+					if strings.Compare(getCode(buff)[0], "229") == 0 && s.isSwitched {
+						// make new listener and store listener port
+						_, listenPort, err := newDataListener(buff, s.originAddr, s.timeout, s.log, "EPSV")
+						if err != nil {
+							safeSetChanel(errchan, err)
+							done <- struct{}{}
+							return
+						}
+
+						// make new response line
+						buff = fmt.Sprintf("%s(|||%s|)\r\n",
+							strings.SplitN(strings.Trim(buff, "\r\n"), "(", 2)[0],
+							strconv.Itoa(listenPort))
+					}
+				}
+
+				// handling multi-line response
 				if buff[3] == '-' {
 					params := getCode(buff)
 					multiLine := buff
@@ -331,8 +377,6 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 						}
 					}
 				}
-
-				s.log.debug("response from origin: %s", buff)
 
 				if s.passThrough {
 					read <- buff
@@ -397,7 +441,7 @@ func (s *proxyServer) commandLog(line string) {
 	}
 }
 
-// response line
+// split response line
 func getCode(line string) []string {
 	return strings.SplitN(strings.Trim(line, "\r\n"), string(line[3]), 2)
 }

@@ -4,6 +4,7 @@ transfer_timeout = 600
 keepalive_time = 600
 remote_addr = "127.0.0.1:21"
 proxy_protocol = false
+data_channel_proxy = true
 welcome_message = "sample pftp server ready"
 
 [tls]

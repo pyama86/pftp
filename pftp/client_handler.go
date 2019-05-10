@@ -303,6 +303,7 @@ func (c *clientHandler) connectProxy() error {
 				proxyProtocol: c.config.ProxyProtocol,
 				welcomeMsg:    c.config.WelcomeMsg,
 				established:   c.chkEstablished,
+				dataChanProxy: c.config.DataChanProxy,
 			})
 
 		if err != nil {
