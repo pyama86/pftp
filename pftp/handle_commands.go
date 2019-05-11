@@ -221,11 +221,11 @@ func (c *clientHandler) handlePORT() *result {
 		localIP := strings.Split(c.proxy.GetConn().LocalAddr().String(), ":")[0]
 
 		// make new listener and store listener port
-		listenerIP, listenerPort, err := newDataListener(c.line, localIP, c.config.ProxyTimeout, c.log, "PORT")
+		listenerIP, listenerPort, err := newDataListener(c.line, localIP, c.config, c.log, "PORT")
 		if err != nil {
 			return &result{
 				code: 421,
-				msg:  "cannot open data socket",
+				msg:  "cannot create data channel socket",
 				err:  err,
 				log:  c.log,
 			}
