@@ -38,7 +38,6 @@ func User(c *pftp.Context, param string) error {
 	res, err := webapi.GetDomainFromWebAPI(confFile, param)
 	if err != nil {
 		logrus.Debug(fmt.Sprintf("cannot get domain from webapi server:%v", err))
-		c.RemoteAddr = "127.0.0.1:20021"
 	} else {
 		c.RemoteAddr = *res
 	}
