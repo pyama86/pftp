@@ -5,6 +5,7 @@ keepalive_time = 600
 remote_addr = "127.0.0.1:21"
 proxy_protocol = false
 data_channel_proxy = true
+data_port_range = "61000-61000"
 welcome_message = "sample pftp server ready"
 
 [tls]

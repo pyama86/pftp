@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"strconv"
 	"strings"
@@ -18,49 +19,73 @@ const (
 )
 
 type dataListener struct {
-	responseCode  string
-	listener      *net.TCPListener
-	txConn        net.Conn
-	rxConn        net.Conn
-	remoteAddr    string
-	remoteIP      string
-	remotePort    int
-	keepaliveTime int
-	isConnected   bool
-	receivedIP    string
-	listenerPort  int
-	log           *logger
+	responseCode string
+	listener     *net.TCPListener
+	txConn       net.Conn
+	rxConn       net.Conn
+	remoteAddr   string
+	remoteIP     string
+	remotePort   int
+	isConnected  bool
+	receivedIP   string
+	listenerPort int
+	config       *config
+	log          *logger
 }
 
 // Make listener for data connection
-func newDataListener(line string, receivedIP string, keepaliveTime int, log *logger, resCode string) (string, int, error) {
+func newDataListener(line string, receivedIP string, config *config, log *logger, resCode string) (string, int, error) {
 	var err error
+	var lAddr *net.TCPAddr
 
 	d := &dataListener{
-		responseCode:  resCode,
-		receivedIP:    receivedIP,
-		listener:      nil,
-		txConn:        nil,
-		rxConn:        nil,
-		keepaliveTime: keepaliveTime,
-		isConnected:   false,
-		log:           log,
-	}
-	lAddr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:")
-	if err != nil {
-		d.log.err("cannot resolve TCPAddr")
-		return "", -1, err
+		responseCode: resCode,
+		receivedIP:   receivedIP,
+		listener:     nil,
+		txConn:       nil,
+		rxConn:       nil,
+		isConnected:  false,
+		config:       config,
+		log:          log,
 	}
 
-	if d.listener, err = net.ListenTCP("tcp4", lAddr); err != nil {
-		d.log.err("cannot open data channel socket: %v", err)
-		return "", -1, err
-	}
-	// set listener timeout
-	d.listener.SetDeadline(time.Now().Add(time.Duration(LISTENER_TIMEOUT) * time.Second))
+	// reallocate listener port when selected port is busy until LISTEN_TIMEOUT
+	counter := 0
+	for {
+		lPort := d.getListenPort()
 
-	// get listen port
-	d.listenerPort, _ = strconv.Atoi(strings.SplitN(d.listener.Addr().String(), ":", 2)[1])
+		switch lPort {
+		case 0:
+			lAddr, err = net.ResolveTCPAddr("tcp", "0.0.0.0:")
+		default:
+			lAddr, err = net.ResolveTCPAddr("tcp", net.JoinHostPort("0.0.0.0", strconv.Itoa(lPort)))
+		}
+		if err != nil {
+			d.log.err("cannot resolve TCPAddr")
+			return "", -1, err
+		}
+
+		if d.listener, err = net.ListenTCP("tcp4", lAddr); err != nil {
+			if counter > LISTENER_TIMEOUT {
+				d.log.err("cannot make data port")
+
+				return "", -1, err
+			}
+
+			d.log.debug("cannot use choosen port. try to select another port after 1 second...")
+
+			time.Sleep(time.Duration(1) * time.Second)
+			continue
+
+		} else {
+			// set listener timeout
+			d.listener.SetDeadline(time.Now().Add(time.Duration(LISTENER_TIMEOUT) * time.Second))
+
+			// get listen port
+			d.listenerPort, _ = strconv.Atoi(strings.SplitN(d.listener.Addr().String(), ":", 2)[1])
+			break
+		}
+	}
 
 	startIndex := strings.Index(line, "(")
 	endIndex := strings.LastIndex(line, ")")
@@ -123,14 +148,14 @@ func (d *dataListener) startDataListener() error {
 	// set conn to TCPConn
 	tcpConn := d.rxConn.(*net.TCPConn)
 
-	if d.keepaliveTime > 0 {
+	if d.config.KeepaliveTime > 0 {
 		// set linger 0 and tcp keepalive setting between client connection
 		tcpConn.SetKeepAlive(true)
-		tcpConn.SetKeepAlivePeriod(time.Duration(d.keepaliveTime) * time.Second)
+		tcpConn.SetKeepAlivePeriod(time.Duration(d.config.KeepaliveTime) * time.Second)
 		tcpConn.SetLinger(0)
 
 		// set deadline
-		tcpConn.SetDeadline(time.Now().Add(time.Duration(d.keepaliveTime) * time.Second))
+		tcpConn.SetDeadline(time.Now().Add(time.Duration(d.config.KeepaliveTime) * time.Second))
 	}
 
 	err = d.connectToRemoteDataChan()
@@ -167,11 +192,11 @@ func (d *dataListener) connectToRemoteDataChan() error {
 
 	// set linger 0 and tcp keepalive setting between client connection
 	tcpConn.SetKeepAlive(true)
-	tcpConn.SetKeepAlivePeriod(time.Duration(d.keepaliveTime) * time.Second)
+	tcpConn.SetKeepAlivePeriod(time.Duration(d.config.KeepaliveTime) * time.Second)
 	tcpConn.SetLinger(0)
 
 	// set deadline
-	tcpConn.SetDeadline(time.Now().Add(time.Duration(d.keepaliveTime) * time.Second))
+	tcpConn.SetDeadline(time.Now().Add(time.Duration(d.config.KeepaliveTime) * time.Second))
 
 	return nil
 }
@@ -181,10 +206,7 @@ func (d *dataListener) dataTransfer(reader net.Conn, writer net.Conn) error {
 	var err error
 
 	buffer := make([]byte, DATA_TRANSFER_BUFFER_SIZE)
-	if bytes, err := io.CopyBuffer(writer, reader, buffer); err == nil {
-		d.log.debug("data transfer in porxy successs with %d byte", bytes)
-		err = nil
-	} else {
+	if _, err := io.CopyBuffer(writer, reader, buffer); err != nil {
 		err = fmt.Errorf("got error on data transfer: %s", err.Error())
 	}
 
@@ -219,4 +241,31 @@ func shutdownWrite(conn net.Conn) {
 	if v, ok := conn.(interface{ CloseWrite() error }); ok {
 		v.CloseWrite()
 	}
+}
+
+// get listen port
+// return 0 means random port
+func (d *dataListener) getListenPort() int {
+	if len(d.config.DataPortRange) > 0 {
+		portRange := strings.Split(d.config.DataPortRange, "-")
+
+		if len(portRange) != 2 {
+			d.log.debug("The port range config wrong. choose random port")
+			return 0
+		}
+
+		min, _ := strconv.Atoi(strings.TrimSpace(portRange[0]))
+		max, _ := strconv.Atoi(strings.TrimSpace(portRange[1]))
+
+		r := max - min
+
+		if r <= 0 {
+			r = 1
+		}
+
+		return min + rand.Intn(r)
+	}
+
+	// let system automatically chose one port
+	return 0
 }

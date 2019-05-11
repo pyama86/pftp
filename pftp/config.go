@@ -22,6 +22,7 @@ type config struct {
 	WelcomeMsg      string      `toml:"welcome_message"`
 	KeepaliveTime   int         `toml:"keepalive_time"`
 	DataChanProxy   bool        `toml:"data_channel_proxy"`
+	DataPortRange   string      `toml:"data_port_range"`
 	TLS             *tlsPair    `toml:"tls"`
 	TLSConfig       *tls.Config `toml:"-"`
 }
@@ -87,5 +88,6 @@ func defaultConfig(config *config) {
 	config.KeepaliveTime = 900
 	config.ProxyProtocol = false
 	config.DataChanProxy = false
+	config.DataPortRange = ""
 	config.WelcomeMsg = "FTP proxy ready"
 }
