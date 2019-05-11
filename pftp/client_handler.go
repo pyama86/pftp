@@ -25,6 +25,7 @@ func init() {
 	handlers["AUTH"] = &handleFunc{(*clientHandler).handleAUTH, true}
 	handlers["PBSZ"] = &handleFunc{(*clientHandler).handlePBSZ, true}
 	handlers["PROT"] = &handleFunc{(*clientHandler).handlePROT, true}
+	handlers["PORT"] = &handleFunc{(*clientHandler).handlePORT, true}
 	handlers["RETR"] = &handleFunc{(*clientHandler).handleTransfer, false}
 	handlers["STOR"] = &handleFunc{(*clientHandler).handleTransfer, false}
 }
@@ -298,12 +299,14 @@ func (c *clientHandler) connectProxy() error {
 				clientReader:  c.reader,
 				clientWriter:  c.writer,
 				originAddr:    c.context.RemoteAddr,
+				localIP:       strings.Split(c.conn.LocalAddr().String(), ":")[0],
 				mutex:         c.mutex,
 				log:           c.log,
 				proxyProtocol: c.config.ProxyProtocol,
 				welcomeMsg:    c.config.WelcomeMsg,
 				established:   c.chkEstablished,
 				dataChanProxy: c.config.DataChanProxy,
+				keepaliveTime: c.config.KeepaliveTime,
 			})
 
 		if err != nil {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 )
@@ -210,6 +211,49 @@ func (c *clientHandler) handleProxyHeader() *result {
 	}
 
 	c.srcIP = params[2] + ":" + params[4]
+
+	return nil
+}
+
+func (c *clientHandler) handlePORT() *result {
+	// is data channel proxy used
+	if c.config.DataChanProxy {
+		localIP := strings.Split(c.proxy.GetConn().LocalAddr().String(), ":")[0]
+
+		// make new listener and store listener port
+		listenerIP, listenerPort, err := newDataListener(c.line, localIP, c.config.ProxyTimeout, c.log, "PORT")
+		if err != nil {
+			return &result{
+				code: 421,
+				msg:  "cannot open data socket",
+				err:  err,
+				log:  c.log,
+			}
+		}
+
+		// prepare PORT command line
+		line := fmt.Sprintf("PORT %s,%s,%s\r\n",
+			strings.ReplaceAll(listenerIP, ".", ","),
+			strconv.Itoa(listenerPort/256),
+			strconv.Itoa(listenerPort%256))
+
+		// send PORT command to origin
+		if err := c.proxy.sendToOrigin(line); err != nil {
+			return &result{
+				code: 500,
+				msg:  fmt.Sprintf("Internal error: %s", err),
+			}
+		}
+	} else {
+		if err := c.proxy.sendToOrigin(c.line); err != nil {
+			return &result{
+				code: 530,
+				msg:  "I can't deal with you (proxy error)",
+				err:  err,
+				log:  c.log,
+			}
+		}
+	}
 
 	return nil
 }
