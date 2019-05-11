@@ -28,7 +28,7 @@ type proxyServer struct {
 	originReader   *bufio.Reader
 	originWriter   *bufio.Writer
 	origin         net.Conn
-	originAddr     string
+	localIP        string
 	passThrough    bool
 	mutex          *sync.Mutex
 	log            *logger
@@ -41,12 +41,14 @@ type proxyServer struct {
 	isSwitched     bool
 	dataChanProxy  bool
 	welcomeMsg     string
+	keepaliveTime  int
 }
 
 type proxyServerConfig struct {
 	timeout        int
 	clientReader   *bufio.Reader
 	clientWriter   *bufio.Writer
+	localIP        string
 	originAddr     string
 	mutex          *sync.Mutex
 	log            *logger
@@ -55,6 +57,7 @@ type proxyServerConfig struct {
 	secureCommands []string
 	dataChanProxy  bool
 	established    chan struct{}
+	keepaliveTime  int
 }
 
 func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
@@ -63,10 +66,10 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		return nil, err
 	}
 
-	// set conn to TCPConn
+	// set linger 0 and tcp keepalive setting between origin connection
 	tcpConn := c.(*net.TCPConn)
-
-	// set linger 0 to local origin ftp server
+	tcpConn.SetKeepAlive(true)
+	tcpConn.SetKeepAlivePeriod(time.Duration(conf.keepaliveTime) * time.Second)
 	tcpConn.SetLinger(0)
 
 	p := &proxyServer{
@@ -74,8 +77,8 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		clientWriter:   conf.clientWriter,
 		originWriter:   bufio.NewWriter(c),
 		originReader:   bufio.NewReader(c),
+		localIP:        conf.localIP,
 		origin:         tcpConn,
-		originAddr:     conf.originAddr,
 		timeout:        conf.timeout,
 		passThrough:    true,
 		mutex:          conf.mutex,
@@ -88,7 +91,9 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		isSwitched:     false,
 		established:    conf.established,
 		dataChanProxy:  conf.dataChanProxy,
+		keepaliveTime:  conf.keepaliveTime,
 	}
+
 	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
 
 	return p, err
@@ -137,6 +142,10 @@ func (s *proxyServer) unsuspend() {
 func (s *proxyServer) Close() error {
 	err := s.origin.Close()
 	return err
+}
+
+func (s *proxyServer) GetConn() net.Conn {
+	return s.origin
 }
 
 func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) error {
@@ -213,6 +222,7 @@ func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []s
 func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProtocol uint16, previousTLSCommands []string) error {
 	s.log.info("switch origin to: %s", originAddr)
 	var err error
+	var conn net.Conn
 
 	s.isSwitched = true
 
@@ -228,20 +238,19 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	cnt := 0
 	lastError := error(nil)
 
-	s.originAddr = originAddr
-
 	// if connection to new origin close immediatly, reconnect while proxy timeout
 	for {
 		// change connection and reset reader and writer buffer
-		if s.origin, err = net.Dial("tcp", s.originAddr); err != nil {
+		conn, err = net.Dial("tcp", originAddr)
+		if err != nil {
 			return err
 		}
-		s.originReader = bufio.NewReader(s.origin)
-		s.originWriter = bufio.NewWriter(s.origin)
+		s.originReader = bufio.NewReader(conn)
+		s.originWriter = bufio.NewWriter(conn)
 
 		// Send proxy protocol v1 header when set proxy protocol true
 		if s.proxyProtocol {
-			if err := s.sendProxyHeader(clientAddr, s.originAddr); err != nil {
+			if err := s.sendProxyHeader(clientAddr, originAddr); err != nil {
 				return err
 			}
 		}
@@ -267,6 +276,13 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 			break
 		}
 	}
+
+	// set linger 0 and tcp keepalive setting between switched origin connection
+	tcpConn := conn.(*net.TCPConn)
+	tcpConn.SetKeepAlive(true)
+	tcpConn.SetKeepAlivePeriod(time.Duration(s.keepaliveTime) * time.Second)
+	tcpConn.SetLinger(0)
+	s.origin = tcpConn
 
 	// If client connect with TLS connection, make TLS connection to origin ftp server too.
 	if err := s.sendTLSCommand(tlsProtocol, previousTLSCommands); err != nil {
@@ -319,38 +335,38 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 				}
 
 				// is data channel proxy used
-				if s.dataChanProxy {
-					// when response is accept PASV command
-					if strings.Compare(getCode(buff)[0], "227") == 0 && s.isSwitched {
+				if s.dataChanProxy && s.isSwitched {
+					switch getCode(buff)[0] {
+					case "227": // when response is accept PASV command
 						// make new listener and store listener port
-						pasvIP, listenPort, err := newDataListener(buff, s.originAddr, s.timeout, s.log, "PASV")
+						listenerIP, listenerPort, err := newDataListener(buff, s.localIP, s.keepaliveTime, s.log, "PASV")
 						if err != nil {
 							safeSetChanel(errchan, err)
 							done <- struct{}{}
 							return
 						}
 
-						// make new response line
-						buff = fmt.Sprintf("%s(%s,%s)\r\n",
+						// make proxy response line
+						buff = fmt.Sprintf("%s(%s,%s,%s)\r\n",
 							strings.SplitN(strings.Trim(buff, "\r\n"), "(", 2)[0],
-							strings.ReplaceAll(pasvIP, ".", ","),
-							strconv.Itoa(listenPort/256)+","+strconv.Itoa(listenPort%256))
-					}
+							strings.ReplaceAll(listenerIP, ".", ","),
+							strconv.Itoa(listenerPort/256),
+							strconv.Itoa(listenerPort%256))
+					case "229": // when response is accept EPSV command
+						remoteIP := strings.Split(s.origin.RemoteAddr().String(), ":")[0]
 
-					// when response is accept EPSV command
-					if strings.Compare(getCode(buff)[0], "229") == 0 && s.isSwitched {
 						// make new listener and store listener port
-						_, listenPort, err := newDataListener(buff, s.originAddr, s.timeout, s.log, "EPSV")
+						_, listenerPort, err := newDataListener(buff, remoteIP, s.keepaliveTime, s.log, "EPSV")
 						if err != nil {
 							safeSetChanel(errchan, err)
 							done <- struct{}{}
 							return
 						}
 
-						// make new response line
+						// make proxy response line
 						buff = fmt.Sprintf("%s(|||%s|)\r\n",
 							strings.SplitN(strings.Trim(buff, "\r\n"), "(", 2)[0],
-							strconv.Itoa(listenPort))
+							strconv.Itoa(listenerPort))
 					}
 				}
 
