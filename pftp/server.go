@@ -85,10 +85,8 @@ func (server *FtpServer) serve() error {
 			}
 		}
 
-		// set conn to TCPConn
-		conn := netConn.(*net.TCPConn)
-
 		// set linger 0 and tcp keepalive setting between client connection
+		conn := netConn.(*net.TCPConn)
 		conn.SetKeepAlive(true)
 		conn.SetKeepAlivePeriod(time.Duration(server.config.KeepaliveTime) * time.Second)
 		conn.SetLinger(0)
