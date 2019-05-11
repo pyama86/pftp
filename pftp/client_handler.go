@@ -295,18 +295,14 @@ func (c *clientHandler) connectProxy() error {
 	} else {
 		p, err := newProxyServer(
 			&proxyServerConfig{
-				timeout:       c.config.ProxyTimeout,
-				clientReader:  c.reader,
-				clientWriter:  c.writer,
-				originAddr:    c.context.RemoteAddr,
-				localIP:       strings.Split(c.conn.LocalAddr().String(), ":")[0],
-				mutex:         c.mutex,
-				log:           c.log,
-				proxyProtocol: c.config.ProxyProtocol,
-				welcomeMsg:    c.config.WelcomeMsg,
-				established:   c.chkEstablished,
-				dataChanProxy: c.config.DataChanProxy,
-				keepaliveTime: c.config.KeepaliveTime,
+				clientReader: c.reader,
+				clientWriter: c.writer,
+				originAddr:   c.context.RemoteAddr,
+				localIP:      strings.Split(c.conn.LocalAddr().String(), ":")[0],
+				mutex:        c.mutex,
+				log:          c.log,
+				established:  c.chkEstablished,
+				config:       c.config,
 			})
 
 		if err != nil {

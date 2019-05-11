@@ -22,7 +22,6 @@ const (
 
 type proxyServer struct {
 	id             int
-	timeout        int
 	clientReader   *bufio.Reader
 	clientWriter   *bufio.Writer
 	originReader   *bufio.Reader
@@ -32,32 +31,25 @@ type proxyServer struct {
 	passThrough    bool
 	mutex          *sync.Mutex
 	log            *logger
-	proxyProtocol  bool
 	stopChan       chan struct{}
 	stopChanDone   chan struct{}
 	established    chan struct{}
 	stop           bool
 	secureCommands []string
 	isSwitched     bool
-	dataChanProxy  bool
 	welcomeMsg     string
-	keepaliveTime  int
+	config         *config
 }
 
 type proxyServerConfig struct {
-	timeout        int
-	clientReader   *bufio.Reader
-	clientWriter   *bufio.Writer
-	localIP        string
-	originAddr     string
-	mutex          *sync.Mutex
-	log            *logger
-	proxyProtocol  bool
-	welcomeMsg     string
-	secureCommands []string
-	dataChanProxy  bool
-	established    chan struct{}
-	keepaliveTime  int
+	clientReader *bufio.Reader
+	clientWriter *bufio.Writer
+	localIP      string
+	originAddr   string
+	mutex        *sync.Mutex
+	log          *logger
+	established  chan struct{}
+	config       *config
 }
 
 func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
@@ -69,29 +61,25 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 	// set linger 0 and tcp keepalive setting between origin connection
 	tcpConn := c.(*net.TCPConn)
 	tcpConn.SetKeepAlive(true)
-	tcpConn.SetKeepAlivePeriod(time.Duration(conf.keepaliveTime) * time.Second)
+	tcpConn.SetKeepAlivePeriod(time.Duration(conf.config.KeepaliveTime) * time.Second)
 	tcpConn.SetLinger(0)
 
 	p := &proxyServer{
-		clientReader:   conf.clientReader,
-		clientWriter:   conf.clientWriter,
-		originWriter:   bufio.NewWriter(c),
-		originReader:   bufio.NewReader(c),
-		localIP:        conf.localIP,
-		origin:         tcpConn,
-		timeout:        conf.timeout,
-		passThrough:    true,
-		mutex:          conf.mutex,
-		log:            conf.log,
-		proxyProtocol:  conf.proxyProtocol,
-		stopChan:       make(chan struct{}),
-		stopChanDone:   make(chan struct{}),
-		welcomeMsg:     "220 " + conf.welcomeMsg + "\r\n",
-		secureCommands: conf.secureCommands,
-		isSwitched:     false,
-		established:    conf.established,
-		dataChanProxy:  conf.dataChanProxy,
-		keepaliveTime:  conf.keepaliveTime,
+		clientReader: conf.clientReader,
+		clientWriter: conf.clientWriter,
+		originWriter: bufio.NewWriter(c),
+		originReader: bufio.NewReader(c),
+		localIP:      conf.localIP,
+		origin:       tcpConn,
+		passThrough:  true,
+		mutex:        conf.mutex,
+		log:          conf.log,
+		stopChan:     make(chan struct{}),
+		stopChanDone: make(chan struct{}),
+		welcomeMsg:   "220 " + conf.config.WelcomeMsg + "\r\n",
+		isSwitched:   false,
+		established:  conf.established,
+		config:       conf.config,
 	}
 
 	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
@@ -249,7 +237,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 		s.originWriter = bufio.NewWriter(conn)
 
 		// Send proxy protocol v1 header when set proxy protocol true
-		if s.proxyProtocol {
+		if s.config.ProxyProtocol {
 			if err := s.sendProxyHeader(clientAddr, originAddr); err != nil {
 				return err
 			}
@@ -258,7 +246,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 		// Read welcome message from ftp connection
 		res, err := s.originReader.ReadString('\n')
 		if err != nil {
-			if cnt > s.timeout {
+			if cnt > s.config.ProxyTimeout {
 				return errors.New("cannot connect to new origin server")
 			}
 
@@ -280,7 +268,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	// set linger 0 and tcp keepalive setting between switched origin connection
 	tcpConn := conn.(*net.TCPConn)
 	tcpConn.SetKeepAlive(true)
-	tcpConn.SetKeepAlivePeriod(time.Duration(s.keepaliveTime) * time.Second)
+	tcpConn.SetKeepAlivePeriod(time.Duration(s.config.KeepaliveTime) * time.Second)
 	tcpConn.SetLinger(0)
 	s.origin = tcpConn
 
@@ -318,8 +306,8 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 				}
 				break
 			} else {
-				if s.timeout > 0 {
-					s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.timeout))))
+				if s.config.ProxyTimeout > 0 {
+					s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.config.ProxyTimeout))))
 				}
 
 				s.log.debug("response from origin: %s", buff)
@@ -335,38 +323,36 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 				}
 
 				// is data channel proxy used
-				if s.dataChanProxy && s.isSwitched {
+				if s.config.DataChanProxy && s.isSwitched {
 					switch getCode(buff)[0] {
 					case "227": // when response is accept PASV command
 						// make new listener and store listener port
-						listenerIP, listenerPort, err := newDataListener(buff, s.localIP, s.keepaliveTime, s.log, "PASV")
+						listenerIP, listenerPort, err := newDataListener(buff, s.localIP, s.config, s.log, "PASV")
 						if err != nil {
-							safeSetChanel(errchan, err)
-							done <- struct{}{}
-							return
+							// if failed to create data socket, make 421 response line
+							buff = fmt.Sprintf("421 cannot create data channel socket\r\n")
+						} else {
+							// make proxy response line
+							buff = fmt.Sprintf("%s(%s,%s,%s)\r\n",
+								strings.SplitN(strings.Trim(buff, "\r\n"), "(", 2)[0],
+								strings.ReplaceAll(listenerIP, ".", ","),
+								strconv.Itoa(listenerPort/256),
+								strconv.Itoa(listenerPort%256))
 						}
-
-						// make proxy response line
-						buff = fmt.Sprintf("%s(%s,%s,%s)\r\n",
-							strings.SplitN(strings.Trim(buff, "\r\n"), "(", 2)[0],
-							strings.ReplaceAll(listenerIP, ".", ","),
-							strconv.Itoa(listenerPort/256),
-							strconv.Itoa(listenerPort%256))
 					case "229": // when response is accept EPSV command
 						remoteIP := strings.Split(s.origin.RemoteAddr().String(), ":")[0]
 
 						// make new listener and store listener port
-						_, listenerPort, err := newDataListener(buff, remoteIP, s.keepaliveTime, s.log, "EPSV")
+						_, listenerPort, err := newDataListener(buff, remoteIP, s.config, s.log, "EPSV")
 						if err != nil {
-							safeSetChanel(errchan, err)
-							done <- struct{}{}
-							return
+							// if failed to create data socket, make 421 response line
+							buff = fmt.Sprintf("421 cannot create data channel socket\r\n")
+						} else {
+							// make proxy response line
+							buff = fmt.Sprintf("%s(|||%s|)\r\n",
+								strings.SplitN(strings.Trim(buff, "\r\n"), "(", 2)[0],
+								strconv.Itoa(listenerPort))
 						}
-
-						// make proxy response line
-						buff = fmt.Sprintf("%s(|||%s|)\r\n",
-							strings.SplitN(strings.Trim(buff, "\r\n"), "(", 2)[0],
-							strconv.Itoa(listenerPort))
 					}
 				}
 
