@@ -103,8 +103,13 @@ func (c *clientHandler) handleCommands() error {
 		}
 
 		// close each connection again
-		c.conn.Close()
-		c.proxy.Close()
+		if c.conn != nil {
+			c.conn.Close()
+		}
+
+		if c.proxy != nil {
+			c.proxy.Close()
+		}
 	}()
 
 	// run response read routine
@@ -150,9 +155,21 @@ func (c *clientHandler) getResponseFromOrigin(proxyError chan error) {
 	for {
 		err := c.proxy.responseProxy()
 		if err != nil {
-			// set client connection close immediately
-			c.log.debug("close client connection")
-			c.conn.Close()
+			if err == io.EOF {
+				c.log.debug("EOF from origin connection")
+
+				// send EOF to client connection
+				sendEOF(c.conn)
+
+				// close origin connection
+				c.proxy.Close()
+			} else {
+				// set client connection close immediately
+				if c.conn != nil {
+					c.log.err("error from origin connection: %s", err.Error())
+					c.conn.Close()
+				}
+			}
 
 			safeSetChanel(proxyError, err)
 			return
@@ -173,7 +190,12 @@ func (c *clientHandler) readClientCommands(clientError chan error) {
 			if c.command == "QUIT" {
 				lastError = nil
 			} else if err == io.EOF {
-				c.log.debug("got EOF from client")
+				c.log.debug("EOF from client connection")
+
+				sendEOF(c.proxy.GetConn())
+
+				// close client connection
+				c.conn.Close()
 
 				lastError = err
 			} else {
@@ -193,11 +215,12 @@ func (c *clientHandler) readClientCommands(clientError chan error) {
 						}
 					}
 				}
-			}
-			// set origin server connection close immediately
-			if c.proxy != nil {
-				c.log.debug("close origin connection")
-				c.proxy.Close()
+
+				// set origin server connection close immediately
+				if c.proxy != nil {
+					c.log.debug("close origin connection")
+					c.proxy.Close()
+				}
 			}
 
 			break
