@@ -15,4 +15,4 @@ RUN echo "MasqueradeAddress 127.0.0.1" >> /etc/proftpd/proftpd.conf
 RUN useradd prouser
 RUN echo 'prouser:prouser' | chpasswd
 
-EXPOSE 20 21
+EXPOSE 21

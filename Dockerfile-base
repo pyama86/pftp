@@ -7,4 +7,4 @@ ENV PROFTPD_TLS_REQUIRED="off"
 
 RUN echo "AllowForeignAddress on" >> /etc/proftpd/proftpd.conf
 
-EXPOSE 20 21
+EXPOSE 21
