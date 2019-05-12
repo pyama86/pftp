@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -270,6 +269,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	tcpConn.SetKeepAlive(true)
 	tcpConn.SetKeepAlivePeriod(time.Duration(s.config.KeepaliveTime) * time.Second)
 	tcpConn.SetLinger(0)
+
 	s.origin = tcpConn
 
 	// If client connect with TLS connection, make TLS connection to origin ftp server too.
@@ -297,10 +297,6 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 		for {
 			buff, err := from.ReadString('\n')
 			if err != nil {
-				if err == io.EOF {
-					s.log.debug("got EOF from origin")
-				}
-
 				if !s.stop {
 					safeSetChanel(errchan, err)
 				}
