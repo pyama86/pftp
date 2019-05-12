@@ -2,6 +2,11 @@ package pftp
 
 import (
 	"crypto/tls"
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/BurntSushi/toml"
 )
@@ -77,6 +82,11 @@ func loadConfig(path string) (*config, error) {
 		}
 	}
 
+	if err := dataPortRangeValidation(c.DataPortRange); err != nil {
+		logrus.Debug(err)
+		c.DataPortRange = ""
+	}
+
 	return &c, nil
 }
 
@@ -90,4 +100,23 @@ func defaultConfig(config *config) {
 	config.DataChanProxy = false
 	config.DataPortRange = ""
 	config.WelcomeMsg = "FTP proxy ready"
+}
+
+func dataPortRangeValidation(r string) error {
+	var err error
+	portRange := strings.Split(r, "-")
+
+	if len(portRange) != 2 {
+		err = fmt.Errorf("Data port range config wrong. set default(random port)")
+	}
+
+	min, _ := strconv.Atoi(strings.TrimSpace(portRange[0]))
+	max, _ := strconv.Atoi(strings.TrimSpace(portRange[1]))
+
+	// check each configs
+	if min <= 0 || min > 65535 || max <= 0 || max > 65535 || min > max {
+		err = fmt.Errorf("Data port range config wrong. set default(random port)")
+	}
+
+	return err
 }
