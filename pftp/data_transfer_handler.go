@@ -19,7 +19,7 @@ const (
 )
 
 type dataListener struct {
-	responseCode string
+	mode         string
 	listener     *net.TCPListener
 	txConn       net.Conn
 	rxConn       net.Conn
@@ -34,32 +34,25 @@ type dataListener struct {
 }
 
 // Make listener for data connection
-func newDataListener(line string, receivedIP string, config *config, log *logger, resCode string) (string, int, error) {
+func newDataListener(line string, receivedIP string, config *config, log *logger, mode string) (string, int, error) {
 	var err error
 	var lAddr *net.TCPAddr
 
 	d := &dataListener{
-		responseCode: resCode,
-		receivedIP:   receivedIP,
-		listener:     nil,
-		txConn:       nil,
-		rxConn:       nil,
-		isConnected:  false,
-		config:       config,
-		log:          log,
+		mode:        mode,
+		receivedIP:  receivedIP,
+		listener:    nil,
+		txConn:      nil,
+		rxConn:      nil,
+		isConnected: false,
+		config:      config,
+		log:         log,
 	}
 
 	// reallocate listener port when selected port is busy until LISTEN_TIMEOUT
 	counter := 0
 	for {
-		lPort := d.getListenPort()
-
-		switch lPort {
-		case 0:
-			lAddr, err = net.ResolveTCPAddr("tcp", "0.0.0.0:")
-		default:
-			lAddr, err = net.ResolveTCPAddr("tcp", net.JoinHostPort("0.0.0.0", strconv.Itoa(lPort)))
-		}
+		lAddr, err = net.ResolveTCPAddr("tcp", net.JoinHostPort("", d.getListenPort()))
 		if err != nil {
 			d.log.err("cannot resolve TCPAddr")
 			return "", -1, err
@@ -90,27 +83,37 @@ func newDataListener(line string, receivedIP string, config *config, log *logger
 	startIndex := strings.Index(line, "(")
 	endIndex := strings.LastIndex(line, ")")
 
-	switch d.responseCode {
+	switch d.mode {
 	case "PASV":
 		// PASV response format : "227 Entering Passive Mode (h1,h2,h3,h4,p1,p2)."
 		if startIndex == -1 || endIndex == -1 {
-			err = errors.New("Invalid PASV response format")
+			return "", -1, errors.New("Invalid PASV response format")
+		}
+		if d.remoteIP, d.remotePort, err = parseToAddr(line[startIndex+1 : endIndex]); err != nil {
 			return "", -1, err
 		}
-		d.remoteIP, d.remotePort = parseToAddr(line[startIndex+1 : endIndex])
 	case "EPSV":
+		d.remoteIP = d.receivedIP
+
 		// EPSV response format : "229 Entering Extended Passive Mode (|||port|)"
 		if startIndex == -1 || endIndex == -1 {
-			err = errors.New("Invalid PASV response format")
-			return "", -1, err
+			return "", -1, errors.New("Invalid EPSV response format")
 		}
+
+		// get port and verify it
 		originPort := strings.Trim(line[startIndex+1:endIndex], "|")
-		d.remoteIP = d.receivedIP
-		d.remotePort, _ = strconv.Atoi(originPort)
+		port, _ := strconv.Atoi(originPort)
+		if port <= 0 || port > 65535 {
+			return "", 0, fmt.Errorf("Invalid port range")
+		}
+
+		d.remotePort = port
 	case "PORT":
 		// PORT command format : "PORT h1,h2,h3,h4,p1,p2\r\n"
 		line = strings.Split(strings.Trim(line, "\r\n"), " ")[1]
-		d.remoteIP, d.remotePort = parseToAddr(line)
+		if d.remoteIP, d.remotePort, err = parseToAddr(line); err != nil {
+			return "", -1, err
+		}
 	}
 
 	// start listener & listener timer
@@ -127,14 +130,21 @@ func (d *dataListener) startDataListener() error {
 
 	defer func() {
 		// close each net.Conn absolutely(for end goroutine)
-		d.rxConn.Close()
-		d.txConn.Close()
+		if d.rxConn != nil {
+			d.rxConn.Close()
+		}
+
+		if d.txConn != nil {
+			d.txConn.Close()
+		}
 
 		// close listener
-		d.listener.Close()
+		if d.listener != nil {
+			d.listener.Close()
+		}
 	}()
 
-	d.rxConn, err = d.listener.Accept()
+	conn, err := d.listener.AcceptTCP()
 	if err != nil {
 		d.log.err("listen error : %s", err.Error())
 		return err
@@ -143,20 +153,16 @@ func (d *dataListener) startDataListener() error {
 	d.listener.Close()
 	d.listener = nil
 
-	d.log.info("Data channel connected from %s", d.rxConn.RemoteAddr().String())
+	d.log.info("Data channel connected from %s", conn.RemoteAddr().String())
 
-	// set conn to TCPConn
-	tcpConn := d.rxConn.(*net.TCPConn)
-
+	// set linger 0 and tcp keepalive setting between client connection
 	if d.config.KeepaliveTime > 0 {
-		// set linger 0 and tcp keepalive setting between client connection
-		tcpConn.SetKeepAlive(true)
-		tcpConn.SetKeepAlivePeriod(time.Duration(d.config.KeepaliveTime) * time.Second)
-		tcpConn.SetLinger(0)
-
-		// set deadline
-		tcpConn.SetDeadline(time.Now().Add(time.Duration(d.config.KeepaliveTime) * time.Second))
+		conn.SetKeepAlive(true)
+		conn.SetKeepAlivePeriod(time.Duration(d.config.KeepaliveTime) * time.Second)
+		conn.SetLinger(0)
 	}
+
+	d.rxConn = conn
 
 	err = d.connectToRemoteDataChan()
 	if err != nil {
@@ -182,21 +188,38 @@ func (d *dataListener) startDataListener() error {
 func (d *dataListener) connectToRemoteDataChan() error {
 	var err error
 
-	d.txConn, err = net.Dial("tcp", net.JoinHostPort(d.remoteIP, strconv.Itoa(d.remotePort)))
+	rAddr := net.JoinHostPort(d.remoteIP, strconv.Itoa(d.remotePort))
+
+	var conn net.Conn
+	switch d.mode {
+	case "PORT":
+		// if use active mode, dial to client only by port 20
+		lAddr, err := net.ResolveTCPAddr("tcp", ":20")
+		if err != nil {
+			d.log.err("cannot resolve TCPAddr")
+			return err
+		}
+
+		// set port reuse and local addr( :20 )
+		d := net.Dialer{
+			Control:   setReuseIPPort,
+			LocalAddr: lAddr,
+		}
+		conn, err = d.Dial("tcp", rAddr)
+	default:
+		conn, err = net.Dial("tcp", rAddr)
+	}
 	if err != nil {
 		return err
 	}
 
-	// set conn to TCPConn
-	tcpConn := d.txConn.(*net.TCPConn)
-
 	// set linger 0 and tcp keepalive setting between client connection
+	tcpConn := conn.(*net.TCPConn)
 	tcpConn.SetKeepAlive(true)
 	tcpConn.SetKeepAlivePeriod(time.Duration(d.config.KeepaliveTime) * time.Second)
 	tcpConn.SetLinger(0)
 
-	// set deadline
-	tcpConn.SetDeadline(time.Now().Add(time.Duration(d.config.KeepaliveTime) * time.Second))
+	d.txConn = tcpConn
 
 	return nil
 }
@@ -211,61 +234,56 @@ func (d *dataListener) dataTransfer(reader net.Conn, writer net.Conn) error {
 	}
 
 	// send EOF to writer
-	shutdownWrite(writer)
+	sendEOF(writer)
 
 	return err
 }
 
 // parse PASV IP and Port from server response
-func parseToAddr(line string) (string, int) {
-	var ip string = ""
-
+func parseToAddr(line string) (string, int, error) {
 	addr := strings.Split(line, ",")
-	for i := 0; i < 4; i++ {
-		ip += addr[i]
-		if i < 3 {
-			ip += "."
-		}
+
+	if len(addr) != 6 {
+		return "", 0, fmt.Errorf("Invalid address format")
 	}
 
-	// Let's compute the port number
+	// Get IP string from line
+	ip := strings.Join(addr[0:4], ".")
+
+	// get port number from line
 	port1, _ := strconv.Atoi(addr[4])
 	port2, _ := strconv.Atoi(addr[5])
 
-	return ip, (port1 * 256) + port2
-}
+	port := (port1 << 8) + port2
 
-// send EOF to write
-func shutdownWrite(conn net.Conn) {
-	// anonymous interface. Could explicitly use TCP instead.
-	if v, ok := conn.(interface{ CloseWrite() error }); ok {
-		v.CloseWrite()
+	// check IP and Port is valid
+	if net.ParseIP(ip) == nil {
+		return "", 0, fmt.Errorf("Invalid IP format")
 	}
+
+	if port <= 0 || port > 65535 {
+		return "", 0, fmt.Errorf("Invalid port range")
+	}
+
+	return ip, port, nil
 }
 
 // get listen port
-// return 0 means random port
-func (d *dataListener) getListenPort() int {
-	if len(d.config.DataPortRange) > 0 {
-		portRange := strings.Split(d.config.DataPortRange, "-")
-
-		if len(portRange) != 2 {
-			d.log.debug("The port range config wrong. choose random port")
-			return 0
-		}
-
-		min, _ := strconv.Atoi(strings.TrimSpace(portRange[0]))
-		max, _ := strconv.Atoi(strings.TrimSpace(portRange[1]))
-
-		r := max - min
-
-		if r <= 0 {
-			r = 1
-		}
-
-		return min + rand.Intn(r)
+func (d *dataListener) getListenPort() string {
+	// random port select
+	if len(d.config.DataPortRange) == 0 {
+		return ""
 	}
 
-	// let system automatically chose one port
-	return 0
+	portRange := strings.Split(d.config.DataPortRange, "-")
+	min, _ := strconv.Atoi(strings.TrimSpace(portRange[0]))
+	max, _ := strconv.Atoi(strings.TrimSpace(portRange[1]))
+
+	// return min port number
+	if min == max {
+		return strconv.Itoa(min)
+	}
+
+	// random select in min - max range
+	return strconv.Itoa(min + rand.Intn(max-min))
 }
