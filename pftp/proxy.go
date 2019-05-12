@@ -86,7 +86,19 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 	return p, err
 }
 
-func (s *proxyServer) sendToOrigin(line string) error {
+// check command line validation
+func (s *proxyServer) commandLineCheck(line string) string {
+	// if first byte of command line is not alphabet, delete it until start with alphabet for avoid errors
+	// FTP commands always start with alphabet.
+	// ex) "\xff\xf4\xffABOR\r\n" -> "ABOR\r\n"
+	for {
+		b := line[0]
+		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') {
+			break
+		}
+		line = line[1:]
+	}
+
 	// command line must contain CRLF only once in the end
 	if !strings.HasSuffix(line, "\r\n") || strings.Count(line, "\r") != 1 || strings.Count(line, "\n") != 1 {
 		s.log.debug("wrong command line. make line end by CRLF")
@@ -98,6 +110,14 @@ func (s *proxyServer) sendToOrigin(line string) error {
 		// add write CRLF to end of line
 		line += "\r\n"
 	}
+
+	return line
+}
+
+func (s *proxyServer) sendToOrigin(line string) error {
+
+	// check command line
+	line = s.commandLineCheck(line)
 
 	s.commandLog(line)
 
