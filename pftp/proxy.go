@@ -88,14 +88,14 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 
 // check command line validation
 func (s *proxyServer) commandLineCheck(line string) string {
-	if len(line) == 0 {
-		return line
-	}
-
 	// if first byte of command line is not alphabet, delete it until start with alphabet for avoid errors
 	// FTP commands always start with alphabet.
 	// ex) "\xff\xf4\xffABOR\r\n" -> "ABOR\r\n"
 	for {
+		// if line is empty, abort check
+		if len(line) == 0 {
+			return line
+		}
 		b := line[0]
 		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') {
 			break
