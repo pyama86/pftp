@@ -88,6 +88,10 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 
 // check command line validation
 func (s *proxyServer) commandLineCheck(line string) string {
+	if len(line) == 0 {
+		return line
+	}
+
 	// if first byte of command line is not alphabet, delete it until start with alphabet for avoid errors
 	// FTP commands always start with alphabet.
 	// ex) "\xff\xf4\xffABOR\r\n" -> "ABOR\r\n"
@@ -115,8 +119,7 @@ func (s *proxyServer) commandLineCheck(line string) string {
 }
 
 func (s *proxyServer) sendToOrigin(line string) error {
-
-	// check command line
+	// check command line and fix
 	line = s.commandLineCheck(line)
 
 	s.commandLog(line)
@@ -343,7 +346,7 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 					switch getCode(buff)[0] {
 					case "227": // when response is accept PASV command
 						// make new listener and store listener port
-						listenerIP, listenerPort, err := newDataListener(buff, s.localIP, s.config, s.log, "PASV")
+						listenerIP, listenerPort, err := newDataHandler(buff, s.localIP, s.config, s.log, "PASV")
 						if err != nil {
 							// if failed to create data socket, make 421 response line
 							buff = fmt.Sprintf("421 cannot create data channel socket\r\n")
@@ -359,7 +362,7 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 						remoteIP := strings.Split(s.origin.RemoteAddr().String(), ":")[0]
 
 						// make new listener and store listener port
-						_, listenerPort, err := newDataListener(buff, remoteIP, s.config, s.log, "EPSV")
+						_, listenerPort, err := newDataHandler(buff, remoteIP, s.config, s.log, "EPSV")
 						if err != nil {
 							// if failed to create data socket, make 421 response line
 							buff = fmt.Sprintf("421 cannot create data channel socket\r\n")
