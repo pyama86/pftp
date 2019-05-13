@@ -18,7 +18,7 @@ const (
 	LISTENER_TIMEOUT          = 30
 )
 
-type dataListener struct {
+type dataHandler struct {
 	mode         string
 	listener     *net.TCPListener
 	txConn       net.Conn
@@ -26,7 +26,6 @@ type dataListener struct {
 	remoteAddr   string
 	remoteIP     string
 	remotePort   int
-	isConnected  bool
 	receivedIP   string
 	listenerPort int
 	config       *config
@@ -34,25 +33,69 @@ type dataListener struct {
 }
 
 // Make listener for data connection
-func newDataListener(line string, receivedIP string, config *config, log *logger, mode string) (string, int, error) {
+func newDataHandler(line string, receivedIP string, config *config, log *logger, mode string) (string, int, error) {
 	var err error
 	var lAddr *net.TCPAddr
 
-	d := &dataListener{
-		mode:        mode,
-		receivedIP:  receivedIP,
-		listener:    nil,
-		txConn:      nil,
-		rxConn:      nil,
-		isConnected: false,
-		config:      config,
-		log:         log,
+	d := &dataHandler{
+		mode:       mode,
+		receivedIP: receivedIP,
+		listener:   nil,
+		txConn:     nil,
+		rxConn:     nil,
+		config:     config,
+		log:        log,
+	}
+
+	startIndex := strings.Index(line, "(")
+	endIndex := strings.LastIndex(line, ")")
+
+	switch d.mode {
+	case "PASV":
+		// PASV response format : "227 Entering Passive Mode (h1,h2,h3,h4,p1,p2)."
+		if startIndex == -1 || endIndex == -1 {
+			return "", -1, errors.New("invalid data address")
+		}
+
+		if d.remoteIP, d.remotePort, err = parseToAddr(line[startIndex+1 : endIndex]); err != nil {
+			return "", -1, err
+		}
+	case "EPSV":
+		// EPSV response format : "229 Entering Extended Passive Mode (|||port|)"
+		if startIndex == -1 || endIndex == -1 {
+			return "", -1, errors.New("invalid data address")
+		}
+
+		d.remoteIP = d.receivedIP
+
+		// get port and verify it
+		originPort := strings.Trim(line[startIndex+1:endIndex], "|")
+		port, _ := strconv.Atoi(originPort)
+		if port <= 0 || port > 65535 {
+			return "", -1, fmt.Errorf("invalid data address")
+		}
+
+		d.remotePort = port
+	case "PORT":
+		// PORT command format : "PORT h1,h2,h3,h4,p1,p2\r\n"
+		if startIndex != -1 || endIndex != -1 {
+			return "", -1, errors.New("invalid data address")
+		}
+
+		if d.remoteIP, d.remotePort, err = parseToAddr(strings.Split(strings.Trim(line, "\r\n"), " ")[1]); err != nil {
+			return "", -1, err
+		}
+	}
+
+	// if config == nil, does not open open and start listener
+	if config == nil {
+		return d.receivedIP, d.listenerPort, nil
 	}
 
 	// reallocate listener port when selected port is busy until LISTEN_TIMEOUT
 	counter := 0
 	for {
-		lAddr, err = net.ResolveTCPAddr("tcp", net.JoinHostPort("", d.getListenPort()))
+		lAddr, err = net.ResolveTCPAddr("tcp", net.JoinHostPort(d.receivedIP, d.getListenPort()))
 		if err != nil {
 			d.log.err("cannot resolve TCPAddr")
 			return "", -1, err
@@ -80,42 +123,6 @@ func newDataListener(line string, receivedIP string, config *config, log *logger
 		}
 	}
 
-	startIndex := strings.Index(line, "(")
-	endIndex := strings.LastIndex(line, ")")
-
-	switch d.mode {
-	case "PASV":
-		// PASV response format : "227 Entering Passive Mode (h1,h2,h3,h4,p1,p2)."
-		if startIndex == -1 || endIndex == -1 {
-			return "", -1, errors.New("Invalid PASV response format")
-		}
-		if d.remoteIP, d.remotePort, err = parseToAddr(line[startIndex+1 : endIndex]); err != nil {
-			return "", -1, err
-		}
-	case "EPSV":
-		d.remoteIP = d.receivedIP
-
-		// EPSV response format : "229 Entering Extended Passive Mode (|||port|)"
-		if startIndex == -1 || endIndex == -1 {
-			return "", -1, errors.New("Invalid EPSV response format")
-		}
-
-		// get port and verify it
-		originPort := strings.Trim(line[startIndex+1:endIndex], "|")
-		port, _ := strconv.Atoi(originPort)
-		if port <= 0 || port > 65535 {
-			return "", 0, fmt.Errorf("Invalid port range")
-		}
-
-		d.remotePort = port
-	case "PORT":
-		// PORT command format : "PORT h1,h2,h3,h4,p1,p2\r\n"
-		line = strings.Split(strings.Trim(line, "\r\n"), " ")[1]
-		if d.remoteIP, d.remotePort, err = parseToAddr(line); err != nil {
-			return "", -1, err
-		}
-	}
-
 	// start listener & listener timer
 	go d.startDataListener()
 
@@ -123,7 +130,7 @@ func newDataListener(line string, receivedIP string, config *config, log *logger
 }
 
 // Make listener for data connection
-func (d *dataListener) startDataListener() error {
+func (d *dataHandler) startDataListener() error {
 	var err error
 
 	eg := errgroup.Group{}
@@ -185,7 +192,7 @@ func (d *dataListener) startDataListener() error {
 }
 
 // Connect to origin server data channel
-func (d *dataListener) connectToRemoteDataChan() error {
+func (d *dataHandler) connectToRemoteDataChan() error {
 	var err error
 
 	rAddr := net.JoinHostPort(d.remoteIP, strconv.Itoa(d.remotePort))
@@ -225,7 +232,7 @@ func (d *dataListener) connectToRemoteDataChan() error {
 }
 
 // send data until got EOF
-func (d *dataListener) dataTransfer(reader net.Conn, writer net.Conn) error {
+func (d *dataHandler) dataTransfer(reader net.Conn, writer net.Conn) error {
 	var err error
 
 	buffer := make([]byte, DATA_TRANSFER_BUFFER_SIZE)
@@ -244,7 +251,7 @@ func parseToAddr(line string) (string, int, error) {
 	addr := strings.Split(line, ",")
 
 	if len(addr) != 6 {
-		return "", 0, fmt.Errorf("Invalid address format")
+		return "", -1, fmt.Errorf("invalid data address")
 	}
 
 	// Get IP string from line
@@ -258,18 +265,18 @@ func parseToAddr(line string) (string, int, error) {
 
 	// check IP and Port is valid
 	if net.ParseIP(ip) == nil {
-		return "", 0, fmt.Errorf("Invalid IP format")
+		return "", -1, fmt.Errorf("invalid data address")
 	}
 
 	if port <= 0 || port > 65535 {
-		return "", 0, fmt.Errorf("Invalid port range")
+		return "", -1, fmt.Errorf("invalid data address")
 	}
 
 	return ip, port, nil
 }
 
 // get listen port
-func (d *dataListener) getListenPort() string {
+func (d *dataHandler) getListenPort() string {
 	// random port select
 	if len(d.config.DataPortRange) == 0 {
 		return ""
