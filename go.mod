@@ -1,7 +1,7 @@
 module github.com/pyama86/pftp
 
 require (
-	cloud.google.com/go v0.38.0 // indirect
+	cloud.google.com/go v0.39.0 // indirect
 	github.com/BurntSushi/toml v0.3.1
 	github.com/Gurpartap/logrus-stack v0.0.0-20170710170904-89c00d8a28f4
 	github.com/facebookgo/stack v0.0.0-20160209184415-751773369052 // indirect
@@ -32,9 +32,7 @@ require (
 	golang.org/x/text v0.3.2 // indirect
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
 	golang.org/x/tools v0.0.0-20190511041617-99f201b6807e // indirect
-	google.golang.org/api v0.5.0 // indirect
 	google.golang.org/appengine v1.5.0 // indirect
-	google.golang.org/genproto v0.0.0-20190508193815-b515fa19cec8 // indirect
 	google.golang.org/grpc v1.20.1 // indirect
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
 	gopkg.in/yaml.v2 v2.2.2 // indirect
