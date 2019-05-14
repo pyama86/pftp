@@ -103,20 +103,26 @@ func defaultConfig(config *config) {
 }
 
 func dataPortRangeValidation(r string) error {
-	var err error
+	err := fmt.Errorf("Data port range config wrong. set default(random port)")
 	portRange := strings.Split(r, "-")
 
 	if len(portRange) != 2 {
-		err = fmt.Errorf("Data port range config wrong. set default(random port)")
+		return err
 	}
 
-	min, _ := strconv.Atoi(strings.TrimSpace(portRange[0]))
-	max, _ := strconv.Atoi(strings.TrimSpace(portRange[1]))
+	min, err := strconv.Atoi(strings.TrimSpace(portRange[0]))
+	if err != nil {
+		return err
+	}
+	max, err := strconv.Atoi(strings.TrimSpace(portRange[1]))
+	if err != nil {
+		return err
+	}
 
 	// check each configs
 	if min <= 0 || min > 65535 || max <= 0 || max > 65535 || min > max {
-		err = fmt.Errorf("Data port range config wrong. set default(random port)")
+		return err
 	}
 
-	return err
+	return nil
 }
