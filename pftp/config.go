@@ -28,6 +28,7 @@ type config struct {
 	KeepaliveTime   int         `toml:"keepalive_time"`
 	DataChanProxy   bool        `toml:"data_channel_proxy"`
 	DataPortRange   string      `toml:"data_port_range"`
+	MasqueradeIP    string      `toml:"masquerade_ip"`
 	TLS             *tlsPair    `toml:"tls"`
 	TLSConfig       *tls.Config `toml:"-"`
 }

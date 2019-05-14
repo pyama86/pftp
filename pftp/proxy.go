@@ -27,6 +27,7 @@ type proxyServer struct {
 	originWriter   *bufio.Writer
 	origin         net.Conn
 	localIP        string
+	masqueradeIP   string
 	passThrough    bool
 	mutex          *sync.Mutex
 	log            *logger
@@ -79,6 +80,11 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		isSwitched:   false,
 		established:  conf.established,
 		config:       conf.config,
+	}
+
+	// is masquerade IP not setted, set local IP of client connection
+	if len(p.config.MasqueradeIP) == 0 {
+		p.masqueradeIP = p.localIP
 	}
 
 	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
@@ -345,7 +351,7 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 					switch getCode(buff)[0] {
 					case "227": // when response is accept PASV command
 						// make new listener and store listener port
-						listenerIP, listenerPort, err := newDataHandler(buff, s.localIP, s.config, s.log, "PASV")
+						_, listenerPort, err := newDataHandler(buff, s.localIP, s.config, s.log, "PASV")
 						if err != nil {
 							// if failed to create data socket, make 421 response line
 							buff = fmt.Sprintf("421 cannot create data channel socket\r\n")
@@ -353,7 +359,7 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 							// make proxy response line
 							buff = fmt.Sprintf("%s(%s,%s,%s)\r\n",
 								strings.SplitN(strings.Trim(buff, "\r\n"), "(", 2)[0],
-								strings.ReplaceAll(listenerIP, ".", ","),
+								strings.ReplaceAll(s.masqueradeIP, ".", ","),
 								strconv.Itoa(listenerPort/256),
 								strconv.Itoa(listenerPort%256))
 						}
