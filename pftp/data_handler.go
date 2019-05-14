@@ -95,12 +95,15 @@ func newDataHandler(line string, receivedIP string, config *config, log *logger,
 	// reallocate listener port when selected port is busy until LISTEN_TIMEOUT
 	counter := 0
 	for {
-		lAddr, err = net.ResolveTCPAddr("tcp", net.JoinHostPort(d.receivedIP, d.getListenPort()))
+		counter++
+
+		lAddr, err = net.ResolveTCPAddr("tcp", "0.0.0.0:"+d.getListenPort())
 		if err != nil {
 			d.log.err("cannot resolve TCPAddr")
 			return "", -1, err
 		}
 
+		d.log.debug("open data channel port : %s", lAddr.String())
 		if d.listener, err = net.ListenTCP("tcp4", lAddr); err != nil {
 			if counter > LISTENER_TIMEOUT {
 				d.log.err("cannot make data port")
@@ -108,7 +111,7 @@ func newDataHandler(line string, receivedIP string, config *config, log *logger,
 				return "", -1, err
 			}
 
-			d.log.debug("cannot use choosen port. try to select another port after 1 second...")
+			d.log.debug("cannot use choosen port. try to select another port after 1 second... (%d/%d)", counter, LISTENER_TIMEOUT)
 
 			time.Sleep(time.Duration(1) * time.Second)
 			continue
