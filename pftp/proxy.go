@@ -232,7 +232,6 @@ func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []s
 func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProtocol uint16, previousTLSCommands []string) error {
 	s.log.info("switch origin to: %s", originAddr)
 	var err error
-	var conn net.Conn
 
 	s.isSwitched = true
 
@@ -251,12 +250,12 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	// if connection to new origin close immediatly, reconnect while proxy timeout
 	for {
 		// change connection and reset reader and writer buffer
-		conn, err = net.Dial("tcp", originAddr)
+		s.origin, err = net.Dial("tcp", originAddr)
 		if err != nil {
 			return err
 		}
-		s.originReader = bufio.NewReader(conn)
-		s.originWriter = bufio.NewWriter(conn)
+		s.originReader = bufio.NewReader(s.origin)
+		s.originWriter = bufio.NewWriter(s.origin)
 
 		// Send proxy protocol v1 header when set proxy protocol true
 		if s.config.ProxyProtocol {
@@ -288,7 +287,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	}
 
 	// set linger 0 and tcp keepalive setting between switched origin connection
-	tcpConn := conn.(*net.TCPConn)
+	tcpConn := s.origin.(*net.TCPConn)
 	tcpConn.SetKeepAlive(true)
 	tcpConn.SetKeepAlivePeriod(time.Duration(s.config.KeepaliveTime) * time.Second)
 	tcpConn.SetLinger(0)
