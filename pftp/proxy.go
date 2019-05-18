@@ -15,8 +15,10 @@ import (
 )
 
 const (
-	BUFFER_SIZE    = 4096
-	SECURE_COMMAND = "PASS"
+	BUFFER_SIZE               = 4096
+	DATA_TRANSFER_BUFFER_SIZE = 4096
+	CONNECTION_TIMEOUT        = 30
+	SECURE_COMMAND            = "PASS"
 )
 
 type proxyServer struct {
@@ -56,7 +58,9 @@ type proxyServerConfig struct {
 }
 
 func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
-	c, err := net.Dial("tcp", conf.originAddr)
+	c, err := net.DialTimeout("tcp",
+		conf.originAddr,
+		time.Duration(CONNECTION_TIMEOUT)*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +267,9 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	// if connection to new origin close immediatly, reconnect while proxy timeout
 	for {
 		// change connection and reset reader and writer buffer
-		s.origin, err = net.Dial("tcp", originAddr)
+		s.origin, err = net.DialTimeout("tcp",
+			originAddr,
+			time.Duration(CONNECTION_TIMEOUT)*time.Second)
 		if err != nil {
 			return err
 		}
@@ -368,8 +374,8 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 						go s.dataConnector.StartDataTransfer()
 
 						switch s.dataConnector.clientConn.mode {
-						case "PORT":
-							buff = "200 PORT command successful\r\n"
+						case "PORT", "EPRT":
+							buff = fmt.Sprintf("200 %s command successful\r\n", s.dataConnector.clientConn.mode)
 							break
 						case "PASV":
 							// prepare PASV response line to client
