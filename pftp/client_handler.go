@@ -152,6 +152,8 @@ func (c *clientHandler) handleCommands() error {
 		} else if err.(net.Error).Timeout() {
 			c.log.info("client disconnected by timeout")
 		}
+	} else {
+		c.log.info("client disconnected")
 	}
 
 	return err
@@ -172,7 +174,7 @@ func (c *clientHandler) getResponseFromOrigin() error {
 		err = c.proxy.responseProxy()
 		if err != nil {
 			if err == io.EOF {
-				c.log.debug("client disconnected")
+				c.log.debug("EOF from proxy connection")
 				err = nil
 			} else {
 				c.log.err("error from origin connection: %s", err.Error())
