@@ -26,6 +26,7 @@ func init() {
 	handlers["PBSZ"] = &handleFunc{(*clientHandler).handlePBSZ, true}
 	handlers["PROT"] = &handleFunc{(*clientHandler).handlePROT, true}
 	handlers["PORT"] = &handleFunc{(*clientHandler).handleDATA, true}
+	handlers["EPRT"] = &handleFunc{(*clientHandler).handleDATA, true}
 	handlers["PASV"] = &handleFunc{(*clientHandler).handleDATA, true}
 	handlers["EPSV"] = &handleFunc{(*clientHandler).handleDATA, true}
 	handlers["RETR"] = &handleFunc{(*clientHandler).handleTransfer, false}

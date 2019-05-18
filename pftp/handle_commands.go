@@ -222,6 +222,7 @@ func (c *clientHandler) handlePROXY() *result {
 	return nil
 }
 
+// handle PORT, EPRT, PASV, EPSV commands when set data channel proxy is true
 func (c *clientHandler) handleDATA() *result {
 	// if data channel proxy used
 	if c.config.DataChanProxy {
@@ -245,18 +246,39 @@ func (c *clientHandler) handleDATA() *result {
 
 		c.proxy.SetDataHandler(dataHandler)
 
-		if c.command == "PORT" {
+		switch c.command {
+		case "PORT":
 			if err := c.proxy.dataConnector.parsePORTcommand(c.line); err != nil {
 				return &result{
-					code: 530,
+					code: 501,
 					msg:  "cannot parse PORT command",
 					err:  err,
 					log:  c.log,
 				}
 			}
+			break
+		case "EPRT":
+			if err := c.proxy.dataConnector.parseEPRTcommand(c.line); err != nil {
+				if err.Error() == "unknown network protocol" {
+					return &result{
+						code: 522,
+						msg:  err.Error(),
+						err:  err,
+						log:  c.log,
+					}
+				}
+
+				return &result{
+					code: 501,
+					msg:  "cannot parse EPRT command",
+					err:  err,
+					log:  c.log,
+				}
+			}
+			break
 		}
 
-		// if origin connect mode is PORT
+		// if origin connect mode is PORT or CLIENT(with client use some kind of active mode)
 		if c.proxy.dataConnector.originConn.needsListen {
 			_, lPort, _ := net.SplitHostPort(c.proxy.dataConnector.originConn.listener.Addr().String())
 			listenPort, _ := strconv.Atoi(lPort)
@@ -264,6 +286,7 @@ func (c *clientHandler) handleDATA() *result {
 			listenIP := strings.Split(c.proxy.GetConn().LocalAddr().String(), ":")[0]
 
 			// prepare PORT command line to origin
+			// only use PORT command because connect to server support IPv4 now
 			toOriginMsg = fmt.Sprintf("PORT %s,%s,%s\r\n",
 				strings.ReplaceAll(listenIP, ".", ","),
 				strconv.Itoa(listenPort/256),
