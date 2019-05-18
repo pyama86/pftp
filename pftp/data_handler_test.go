@@ -107,6 +107,121 @@ func Test_dataHandler_parsePORTcommand(t *testing.T) {
 	}
 }
 
+func Test_dataHandler_parseEPRTcommand(t *testing.T) {
+	type fields struct {
+		line   string
+		mode   string
+		config *config
+	}
+
+	type want struct {
+		ip   string
+		port string
+		err  error
+	}
+
+	tests := []struct {
+		name    string
+		fields  fields
+		want    want
+		wantErr bool
+	}{
+		{
+			name: "eprt_mode_invalid_ip",
+			fields: fields{
+				line:   "EPRT |1|256.777.0.10|25610|\r\n",
+				mode:   "EPRT",
+				config: &config{},
+			},
+			want: want{
+				ip:   "",
+				port: "",
+				err:  fmt.Errorf("invalid data address"),
+			},
+			wantErr: true,
+		},
+		{
+			name: "eprt_mode_invalid_port",
+			fields: fields{
+				line:   "EPRT |1|10.10.10.10|73000|\r\n",
+				mode:   "EPRT",
+				config: &config{},
+			},
+			want: want{
+				ip:   "",
+				port: "",
+				err:  fmt.Errorf("invalid data address"),
+			},
+			wantErr: true,
+		},
+		{
+			name: "eprt_mode_invalid_protocol",
+			fields: fields{
+				line:   "EPRT |3|10.10.10.10|25610|\r\n",
+				mode:   "EPRT",
+				config: &config{},
+			},
+			want: want{
+				ip:   "",
+				port: "",
+				err:  fmt.Errorf("unknown network protocol"),
+			},
+			wantErr: true,
+		},
+		{
+			name: "eprt_mode_wrong_line",
+			fields: fields{
+				line:   "EPRT |1|10.10.10.10|25610||\r\n",
+				mode:   "EPRT",
+				config: &config{},
+			},
+			want: want{
+				ip:   "",
+				port: "",
+				err:  fmt.Errorf("invalid data address"),
+			},
+			wantErr: true,
+		},
+		{
+			name: "eprt_mode_parse_ok",
+			fields: fields{
+				line:   "EPRT |1|10.10.10.10|25610|\r\n",
+				mode:   "EPRT",
+				config: &config{},
+			},
+			want: want{
+				ip:   "10.10.10.10",
+				port: "25610",
+				err:  nil,
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := want{}
+			d, _ := newDataHandler(
+				tt.fields.config,
+				nil,
+				nil,
+				nil,
+				tt.fields.mode)
+			got.err = d.parseEPRTcommand(tt.fields.line)
+			if (got.err != nil) != tt.wantErr {
+				t.Errorf("dataHandler.parseEPRTcommand() error = %v, wantErr %v", got.err, tt.wantErr)
+				return
+			}
+
+			got.ip = d.clientConn.remoteIP
+			got.port = d.clientConn.remotePort
+			if tt.wantErr && !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("dataHandler.parseEPRTcommand() = %s, want %s", got.err.Error(), tt.want.err.Error())
+			}
+		})
+	}
+}
+
 func Test_dataHandler_parsePASVresponse(t *testing.T) {
 	type fields struct {
 		line   string
