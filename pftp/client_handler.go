@@ -192,6 +192,11 @@ func (c *clientHandler) readClientCommands() error {
 
 	// close client connection when close goroutine
 	defer func() {
+		// set readLock false before send EOF to proxy for avoid lock on channel write
+		c.readlockMutex.Lock()
+		c.readLock = false
+		c.readlockMutex.Unlock()
+
 		// send EOF to origin connection
 		sendEOF(c.proxy.GetConn())
 		c.conn.Close()
