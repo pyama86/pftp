@@ -9,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type handleFunc struct {
@@ -113,8 +115,7 @@ func (c *clientHandler) handleCommands() error {
 		return err
 	}
 
-	proxyError := make(chan error)
-	clientError := make(chan error)
+	eg := errgroup.Group{}
 
 	err := c.connectProxy()
 	if err != nil {
@@ -122,9 +123,6 @@ func (c *clientHandler) handleCommands() error {
 	}
 
 	defer func() {
-		close(proxyError)
-		close(clientError)
-
 		// decrease connection count
 		if c.isLoggedin {
 			atomic.AddInt32(c.currentConnection, -1)
@@ -141,39 +139,31 @@ func (c *clientHandler) handleCommands() error {
 	}()
 
 	// run response read routine
-	go c.getResponseFromOrigin(proxyError)
+	eg.Go(func() error { return c.getResponseFromOrigin() })
 
 	// run command read routine
-	go c.readClientCommands(clientError)
+	eg.Go(func() error { return c.readClientCommands() })
 
 	// wait until all goroutine has done
-	<-proxyError
-	cError := <-clientError
-
-	if c.command == "QUIT" {
-		c.log.info("client disconnected by QUIT")
-		return nil
+	if err = eg.Wait(); err != nil {
+		if c.command == "QUIT" || err == io.EOF {
+			c.log.info("client disconnected")
+			err = nil
+		} else if err.(net.Error).Timeout() {
+			c.log.info("client disconnected by timeout")
+		}
 	}
 
-	if cError == io.EOF {
-		c.log.info("client disconnected by EOF")
-		return nil
-	}
-
-	c.log.info("client disconnected by timeout")
-
-	return cError
+	return err
 }
 
-func (c *clientHandler) getResponseFromOrigin(proxyError chan error) {
+func (c *clientHandler) getResponseFromOrigin() error {
 	var err error
 
 	// close origin connection when close goroutine
 	defer func() {
 		// send EOF to client connection
 		sendEOF(c.conn)
-		safeSetChanel(proxyError, err)
-
 		c.proxy.Close()
 	}()
 
@@ -182,7 +172,8 @@ func (c *clientHandler) getResponseFromOrigin(proxyError chan error) {
 		err = c.proxy.responseProxy()
 		if err != nil {
 			if err == io.EOF {
-				c.log.debug("EOF from origin connection")
+				c.log.debug("client disconnected")
+				err = nil
 			} else {
 				c.log.err("error from origin connection: %s", err.Error())
 			}
@@ -190,17 +181,17 @@ func (c *clientHandler) getResponseFromOrigin(proxyError chan error) {
 			break
 		}
 	}
+
+	return err
 }
 
-func (c *clientHandler) readClientCommands(clientError chan error) {
+func (c *clientHandler) readClientCommands() error {
 	lastError := error(nil)
 
 	// close client connection when close goroutine
 	defer func() {
 		// send EOF to origin connection
 		sendEOF(c.proxy.GetConn())
-		safeSetChanel(clientError, lastError)
-
 		c.conn.Close()
 	}()
 
@@ -216,10 +207,9 @@ func (c *clientHandler) readClientCommands(clientError chan error) {
 			lastError = err
 			if err == io.EOF {
 				c.log.debug("EOF from client connection")
-
-				if c.command == "QUIT" {
-					lastError = nil
-				}
+				lastError = nil
+			} else if c.command == "QUIT" {
+				lastError = nil
 			} else {
 				switch err := err.(type) {
 				case net.Error:
@@ -251,6 +241,8 @@ func (c *clientHandler) readClientCommands(clientError chan error) {
 			}
 		}
 	}
+
+	return lastError
 }
 
 // LockClientRead wait until got response from origin after send command
