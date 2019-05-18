@@ -13,11 +13,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const (
-	DATA_TRANSFER_BUFFER_SIZE = 4096
-	DATA_CONNECTION_TIMEOUT   = 30
-)
-
 type dataHandler struct {
 	clientConn   connector
 	originConn   connector
@@ -82,7 +77,7 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 		return d, nil
 	}
 
-	if d.clientConn.mode != "PORT" {
+	if d.clientConn.mode != "PORT" && d.clientConn.mode != "EPRT" {
 		d.clientConn.listener, err = d.setNewListener()
 		if err != nil {
 			return nil, err
@@ -90,7 +85,8 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 		d.clientConn.needsListen = true
 	}
 
-	if d.originConn.mode == "PORT" || (d.originConn.mode == "CLIENT" && d.clientConn.mode == "PORT") {
+	if d.originConn.mode == "PORT" ||
+		(d.originConn.mode == "CLIENT" && (d.clientConn.mode == "PORT" || d.clientConn.mode == "EPRT")) {
 		d.originConn.listener, err = d.setNewListener()
 		if err != nil {
 			return nil, err
@@ -121,7 +117,7 @@ func getListenPort(dataPortRange string) string {
 	return strconv.Itoa(min + rand.Intn(max-min))
 }
 
-// parse PASV IP and Port from server response
+// parse IP and Port from line
 func parseLineToAddr(line string) (string, string, error) {
 	addr := strings.Split(line, ",")
 
@@ -150,6 +146,41 @@ func parseLineToAddr(line string) (string, string, error) {
 	return ip, strconv.Itoa(port), nil
 }
 
+// parse EPRT command from client
+func parseEPRTtoAddr(line string) (string, string, error) {
+	addr := strings.Split(line, "|")
+
+	if len(addr) != 5 {
+		return "", "", fmt.Errorf("invalid data address")
+	}
+
+	netProtocol := addr[1]
+	IP := addr[2]
+
+	// check port is valid
+	port := addr[3]
+	if integerPort, err := strconv.Atoi(port); err != nil {
+		return "", "", fmt.Errorf("invalid data address")
+	} else if integerPort <= 0 || integerPort > 65535 {
+		return "", "", fmt.Errorf("invalid data address")
+	}
+
+	switch netProtocol {
+	case "1", "2":
+		// use protocol 1 means IPv4. 2 means IPv6
+		// net.ParseIP for validate IP
+		if net.ParseIP(IP) == nil {
+			return "", "", fmt.Errorf("invalid data address")
+		}
+		break
+	default:
+		// wrong network protocol
+		return "", "", fmt.Errorf("unknown network protocol")
+	}
+
+	return IP, port, nil
+}
+
 func (d *dataHandler) setNewListener() (*net.TCPListener, error) {
 	var listener *net.TCPListener
 	var lAddr *net.TCPAddr
@@ -165,21 +196,22 @@ func (d *dataHandler) setNewListener() (*net.TCPListener, error) {
 			return nil, err
 		}
 
+		// only can support IPv4 between origin server connection
 		if listener, err = net.ListenTCP("tcp4", lAddr); err != nil {
-			if counter > DATA_CONNECTION_TIMEOUT {
+			if counter > CONNECTION_TIMEOUT {
 				d.log.err("cannot set listener")
 
 				return nil, err
 			}
 
-			d.log.debug("cannot use choosen port. try to select another port after 1 second... (%d/%d)", counter, DATA_CONNECTION_TIMEOUT)
+			d.log.debug("cannot use choosen port. try to select another port after 1 second... (%d/%d)", counter, CONNECTION_TIMEOUT)
 
 			time.Sleep(time.Duration(1) * time.Second)
 			continue
 
 		} else {
 			// set listener timeout
-			listener.SetDeadline(time.Now().Add(time.Duration(DATA_CONNECTION_TIMEOUT) * time.Second))
+			listener.SetDeadline(time.Now().Add(time.Duration(CONNECTION_TIMEOUT) * time.Second))
 
 			break
 		}
@@ -315,11 +347,30 @@ func (d *dataHandler) listenClient() error {
 }
 
 func (d *dataHandler) connectToOrigin() error {
-	conn, err := net.Dial(
-		"tcp",
-		net.JoinHostPort(d.originConn.remoteIP, d.originConn.remotePort))
+	var conn net.Conn
+	var err error
+
+	// try connect second times
+	// at first time, connecto by received IP
+	// if failed, try connect to communication channel connected IP
+	for i := 1; i <= 2; i++ {
+		conn, err = net.DialTimeout(
+			"tcp",
+			net.JoinHostPort(d.originConn.remoteIP, d.originConn.remotePort),
+			time.Duration(CONNECTION_TIMEOUT)*time.Second)
+		if err != nil || conn == nil {
+			d.log.debug("cannot connect to origin data address: %v, %s", conn, err.Error())
+
+			// if failed connect to origin by response IP, try to original connection IP again.
+			d.originConn.remoteIP = strings.Split(d.originConn.conn.RemoteAddr().String(), ":")[0]
+			d.log.debug("try to connect original IP: %s", d.originConn.remoteIP)
+		} else {
+			break
+		}
+	}
 	if err != nil || conn == nil {
-		d.log.err("connect to origin error: %v, %s", conn, err.Error())
+		d.log.debug("cannot connect to origin data address: %v, %s", conn, err.Error())
+
 		safeSetChanel(d.originConn.connDone, err)
 		return err
 	}
@@ -347,23 +398,41 @@ func (d *dataHandler) connectToClient() error {
 		return fmt.Errorf("origin connections is failed")
 	}
 
-	// when connect to client(use active mode), dial to client use port 20 only
-	lAddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort("", "20"))
-	if err != nil {
-		d.log.err("cannot resolve local address")
-		safeSetChanel(d.clientConn.connDone, err)
-		return err
-	}
-	// set port reuse and local address
-	netDialer := net.Dialer{
-		Control:   setReuseIPPort,
-		LocalAddr: lAddr,
-		Deadline:  time.Now().Add(time.Duration(DATA_CONNECTION_TIMEOUT) * time.Second),
-	}
+	var conn net.Conn
+	var err error
 
-	conn, err := netDialer.Dial("tcp", net.JoinHostPort(d.clientConn.remoteIP, d.clientConn.remotePort))
+	// try connect second times
+	// at first time, connecto by received IP
+	// if failed, try connect to communication channel connected IP
+	for i := 1; i <= 2; i++ {
+		// when connect to client(use active mode), dial to client use port 20 only
+		lAddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort("", "20"))
+		if err != nil {
+			d.log.err("cannot resolve local address")
+			safeSetChanel(d.clientConn.connDone, err)
+			return err
+		}
+		// set port reuse and local address
+		netDialer := net.Dialer{
+			Control:   setReuseIPPort,
+			LocalAddr: lAddr,
+			Deadline:  time.Now().Add(time.Duration(CONNECTION_TIMEOUT) * time.Second),
+		}
+
+		conn, err = netDialer.Dial("tcp", net.JoinHostPort(d.clientConn.remoteIP, d.clientConn.remotePort))
+		if err != nil || conn == nil {
+			d.log.err("cannot connect to client data address: %v, %s", conn, err.Error())
+
+			// if failed connect to origin by response IP, try to original connection IP again.
+			d.clientConn.remoteIP = strings.Split(d.clientConn.conn.RemoteAddr().String(), ":")[0]
+			d.log.debug("try to connect original IP: %s", d.clientConn.remoteIP)
+		} else {
+			break
+		}
+	}
 	if err != nil || conn == nil {
-		d.log.err("connect to client error: %v, %s", conn, err.Error())
+		d.log.err("cannot connect to client data address: %v, %s", conn, err.Error())
+
 		safeSetChanel(d.clientConn.connDone, err)
 		return err
 	}
@@ -402,6 +471,17 @@ func (d *dataHandler) parsePORTcommand(line string) error {
 	var err error
 
 	d.clientConn.remoteIP, d.clientConn.remotePort, err = parseLineToAddr(strings.Split(strings.Trim(line, "\r\n"), " ")[1])
+
+	return err
+}
+
+func (d *dataHandler) parseEPRTcommand(line string) error {
+	// EPRT command format
+	// - IPv4 : "EPRT |1|h1.h2.h3.h4|port|\r\n"
+	// - IPv6 : "EPRT |2|h1::h2:h3:h4:h5|port|\r\n"
+	var err error
+
+	d.clientConn.remoteIP, d.clientConn.remotePort, err = parseEPRTtoAddr(strings.Split(strings.Trim(line, "\r\n"), " ")[1])
 
 	return err
 }
