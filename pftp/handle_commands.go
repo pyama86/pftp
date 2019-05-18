@@ -13,6 +13,16 @@ import (
 )
 
 func (c *clientHandler) handleUSER() *result {
+	// make fail when try to login after logged in
+	if c.isLoggedin {
+		return &result{
+			code: 500,
+			msg:  "Already logged in",
+			err:  fmt.Errorf("Already logged in"),
+			log:  c.log,
+		}
+	}
+
 	if err := c.connectProxy(); err != nil {
 		return &result{
 			code: 530,
