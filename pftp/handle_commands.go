@@ -108,6 +108,7 @@ func (c *clientHandler) handlePBSZ() *result {
 					log:  c.log,
 				}
 			}
+
 			c.previousTLSCommands = append(c.previousTLSCommands, c.line)
 		} else {
 			if err := c.proxy.sendToOrigin(c.line); err != nil {
@@ -158,7 +159,9 @@ func (c *clientHandler) handlePROT() *result {
 					log:  c.log,
 				}
 			}
+
 			c.previousTLSCommands = append(c.previousTLSCommands, c.line)
+
 		} else {
 			if err := c.proxy.sendToOrigin(c.line); err != nil {
 				return &result{
@@ -192,7 +195,11 @@ func (c *clientHandler) handleTransfer() *result {
 	return nil
 }
 
-func (c *clientHandler) handleProxyHeader() *result {
+func (c *clientHandler) handlePROXY() *result {
+	c.readlockMutex.Lock()
+	c.readLock = true
+	c.readlockMutex.Unlock()
+
 	params := strings.SplitN(strings.Trim(c.line, "\r\n"), " ", 6)
 	if len(params) != 6 {
 		return &result{
@@ -215,31 +222,67 @@ func (c *clientHandler) handleProxyHeader() *result {
 	return nil
 }
 
-func (c *clientHandler) handlePORT() *result {
-	// is data channel proxy used
+func (c *clientHandler) handleDATA() *result {
+	// if data channel proxy used
 	if c.config.DataChanProxy {
-		localIP := strings.Split(c.proxy.GetConn().LocalAddr().String(), ":")[0]
+		var toOriginMsg string
 
 		// make new listener and store listener port
-		listenerIP, listenerPort, err := newDataHandler(c.line, localIP, c.config, c.log, "PORT")
+		dataHandler, err := newDataHandler(
+			c.config,
+			c.log,
+			c.conn,
+			c.proxy.GetConn(),
+			c.command)
 		if err != nil {
 			return &result{
 				code: 421,
 				msg:  "cannot create data channel socket",
+				err:  err,
+				log:  c.log,
 			}
 		}
 
-		// prepare PORT command line
-		line := fmt.Sprintf("PORT %s,%s,%s\r\n",
-			strings.ReplaceAll(listenerIP, ".", ","),
-			strconv.Itoa(listenerPort/256),
-			strconv.Itoa(listenerPort%256))
+		c.proxy.SetDataHandler(dataHandler)
 
-		// send PORT command to origin
-		if err := c.proxy.sendToOrigin(line); err != nil {
+		if c.command == "PORT" {
+			if err := c.proxy.dataConnector.parsePORTcommand(c.line); err != nil {
+				return &result{
+					code: 530,
+					msg:  "cannot parse PORT command",
+					err:  err,
+					log:  c.log,
+				}
+			}
+		}
+
+		// if origin connect mode is PORT
+		if c.proxy.dataConnector.originConn.needsListen {
+			_, lPort, _ := net.SplitHostPort(c.proxy.dataConnector.originConn.listener.Addr().String())
+			listenPort, _ := strconv.Atoi(lPort)
+
+			listenIP := strings.Split(c.proxy.GetConn().LocalAddr().String(), ":")[0]
+
+			// prepare PORT command line to origin
+			toOriginMsg = fmt.Sprintf("PORT %s,%s,%s\r\n",
+				strings.ReplaceAll(listenIP, ".", ","),
+				strconv.Itoa(listenPort/256),
+				strconv.Itoa(listenPort%256))
+		} else {
+			if c.config.TransferMode == "CLIENT" {
+				toOriginMsg = c.command + "\r\n"
+			} else {
+				toOriginMsg = c.config.TransferMode + "\r\n"
+			}
+		}
+
+		// send command to origin
+		if err := c.proxy.sendToOrigin(toOriginMsg); err != nil {
 			return &result{
 				code: 500,
 				msg:  fmt.Sprintf("Internal error: %s", err),
+				err:  err,
+				log:  c.log,
 			}
 		}
 	} else {

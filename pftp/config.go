@@ -3,6 +3,7 @@ package pftp
 import (
 	"crypto/tls"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 
@@ -23,12 +24,13 @@ type config struct {
 	ProxyTimeout    int         `toml:"proxy_timeout"`
 	TransferTimeout int         `toml:"transfer_timeout"`
 	MaxConnections  int32       `toml:"max_connections"`
-	ProxyProtocol   bool        `toml:"proxy_protocol"`
+	ProxyProtocol   bool        `toml:"send_proxy_protocol"`
 	WelcomeMsg      string      `toml:"welcome_message"`
 	KeepaliveTime   int         `toml:"keepalive_time"`
 	DataChanProxy   bool        `toml:"data_channel_proxy"`
-	DataPortRange   string      `toml:"data_port_range"`
+	DataPortRange   string      `toml:"data_listen_port_range"`
 	MasqueradeIP    string      `toml:"masquerade_ip"`
+	TransferMode    string      `toml:"transfer_mode"`
 	TLS             *tlsPair    `toml:"tls"`
 	TLSConfig       *tls.Config `toml:"-"`
 }
@@ -79,13 +81,37 @@ func loadConfig(path string) (*config, error) {
 				MaxVersion:   getTLSProtocol(c.TLS.MaxProtocol),
 			}
 		} else {
-			return nil, err
+			return nil, fmt.Errorf("configuration error: %s", err.Error())
 		}
 	}
 
+	// validate Data listen port randg
 	if err := dataPortRangeValidation(c.DataPortRange); err != nil {
 		logrus.Debug(err)
 		c.DataPortRange = ""
+	}
+
+	// validate Masquerade IP
+	if (len(c.MasqueradeIP) > 0) && (net.ParseIP(c.MasqueradeIP)) == nil {
+		return nil, fmt.Errorf("configuration error: Masquerade IP is wrong")
+	}
+
+	// validate Transfer mode config
+	c.TransferMode = strings.ToUpper(c.TransferMode)
+	switch c.TransferMode {
+	case "PORT", "ACTIVE":
+		c.TransferMode = "PORT"
+		break
+	case "PASV", "PASSIVE":
+		c.TransferMode = "PASV"
+		break
+	case "EPSV":
+		c.TransferMode = "EPSV"
+		break
+	case "CLIENT":
+		break
+	default:
+		return nil, fmt.Errorf("configuration error: Transfer mode config is wrong")
 	}
 
 	return &c, nil
@@ -101,28 +127,33 @@ func defaultConfig(config *config) {
 	config.DataChanProxy = false
 	config.DataPortRange = ""
 	config.WelcomeMsg = "FTP proxy ready"
+	config.TransferMode = "CLIENT"
 }
 
 func dataPortRangeValidation(r string) error {
-	err := fmt.Errorf("Data port range config wrong. set default(random port)")
+	if len(r) == 0 {
+		return nil
+	}
+
+	lastErr := fmt.Errorf("Data port range config wrong. set default(random port)")
 	portRange := strings.Split(r, "-")
 
 	if len(portRange) != 2 {
-		return err
+		return lastErr
 	}
 
 	min, err := strconv.Atoi(strings.TrimSpace(portRange[0]))
 	if err != nil {
-		return err
+		return lastErr
 	}
 	max, err := strconv.Atoi(strings.TrimSpace(portRange[1]))
 	if err != nil {
-		return err
+		return lastErr
 	}
 
 	// check each configs
 	if min <= 0 || min > 65535 || max <= 0 || max > 65535 || min > max {
-		return err
+		return lastErr
 	}
 
 	return nil

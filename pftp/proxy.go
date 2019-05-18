@@ -26,30 +26,33 @@ type proxyServer struct {
 	originReader   *bufio.Reader
 	originWriter   *bufio.Writer
 	origin         net.Conn
-	localIP        string
 	masqueradeIP   string
 	passThrough    bool
 	mutex          *sync.Mutex
+	readlockMutex  *sync.Mutex
 	log            *logger
 	stopChan       chan struct{}
 	stopChanDone   chan struct{}
-	established    chan struct{}
 	stop           bool
 	secureCommands []string
 	isSwitched     bool
 	welcomeMsg     string
 	config         *config
+	dataConnector  *dataHandler
+	readLock       *bool
+	nowGotResponse chan struct{}
 }
 
 type proxyServerConfig struct {
-	clientReader *bufio.Reader
-	clientWriter *bufio.Writer
-	localIP      string
-	originAddr   string
-	mutex        *sync.Mutex
-	log          *logger
-	established  chan struct{}
-	config       *config
+	clientReader   *bufio.Reader
+	clientWriter   *bufio.Writer
+	originAddr     string
+	mutex          *sync.Mutex
+	readlockMutex  *sync.Mutex
+	log            *logger
+	config         *config
+	readLock       *bool
+	nowGotResponse chan struct{}
 }
 
 func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
@@ -65,26 +68,22 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 	tcpConn.SetLinger(0)
 
 	p := &proxyServer{
-		clientReader: conf.clientReader,
-		clientWriter: conf.clientWriter,
-		originWriter: bufio.NewWriter(c),
-		originReader: bufio.NewReader(c),
-		localIP:      conf.localIP,
-		origin:       tcpConn,
-		passThrough:  true,
-		mutex:        conf.mutex,
-		log:          conf.log,
-		stopChan:     make(chan struct{}),
-		stopChanDone: make(chan struct{}),
-		welcomeMsg:   "220 " + conf.config.WelcomeMsg + "\r\n",
-		isSwitched:   false,
-		established:  conf.established,
-		config:       conf.config,
-	}
-
-	// is masquerade IP not setted, set local IP of client connection
-	if len(p.config.MasqueradeIP) == 0 {
-		p.masqueradeIP = p.localIP
+		clientReader:   conf.clientReader,
+		clientWriter:   conf.clientWriter,
+		originWriter:   bufio.NewWriter(c),
+		originReader:   bufio.NewReader(c),
+		origin:         tcpConn,
+		passThrough:    true,
+		mutex:          conf.mutex,
+		readlockMutex:  conf.readlockMutex,
+		log:            conf.log,
+		stopChan:       make(chan struct{}),
+		stopChanDone:   make(chan struct{}),
+		welcomeMsg:     "220 " + conf.config.WelcomeMsg + "\r\n",
+		isSwitched:     false,
+		config:         conf.config,
+		readLock:       conf.readLock,
+		nowGotResponse: conf.nowGotResponse,
 	}
 
 	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
@@ -93,14 +92,14 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 }
 
 // check command line validation
-func (s *proxyServer) commandLineCheck(line string) string {
+func (s *proxyServer) commandLineCheck(line string) (string, error) {
 	// if first byte of command line is not alphabet, delete it until start with alphabet for avoid errors
 	// FTP commands always start with alphabet.
 	// ex) "\xff\xf4\xffABOR\r\n" -> "ABOR\r\n"
 	for {
 		// if line is empty, abort check
 		if len(line) == 0 {
-			return line
+			return "", fmt.Errorf("aborted : wrong command line")
 		}
 		b := line[0]
 		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') {
@@ -121,12 +120,17 @@ func (s *proxyServer) commandLineCheck(line string) string {
 		line += "\r\n"
 	}
 
-	return line
+	return line, nil
 }
 
 func (s *proxyServer) sendToOrigin(line string) error {
+	var err error
+
 	// check command line and fix
-	line = s.commandLineCheck(line)
+	line, err = s.commandLineCheck(line)
+	if err != nil {
+		return err
+	}
 
 	s.commandLog(line)
 
@@ -162,6 +166,10 @@ func (s *proxyServer) Close() error {
 
 func (s *proxyServer) GetConn() net.Conn {
 	return s.origin
+}
+
+func (s *proxyServer) SetDataHandler(handler *dataHandler) {
+	s.dataConnector = handler
 }
 
 func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) error {
@@ -249,7 +257,6 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	// disconnect old origin and close response listener
 	s.stopChan <- struct{}{}
 	<-s.stopChanDone
-
 	cnt := 0
 	lastError := error(nil)
 
@@ -339,43 +346,45 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 				// response user setted welcome message
 				if strings.Compare(getCode(buff)[0], "220") == 0 && !s.isSwitched {
 					buff = s.welcomeMsg
-
-					// send first response complate signal
-					if s.established != nil {
-						s.established <- struct{}{}
-					}
 				}
 
 				// is data channel proxy used
 				if s.config.DataChanProxy && s.isSwitched {
-					switch getCode(buff)[0] {
-					case "227": // when response is accept PASV command
-						// make new listener and store listener port
-						_, listenerPort, err := newDataHandler(buff, s.localIP, s.config, s.log, "PASV")
-						if err != nil {
-							// if failed to create data socket, make 421 response line
-							buff = fmt.Sprintf("421 cannot create data channel socket\r\n")
-						} else {
-							// make proxy response line
-							buff = fmt.Sprintf("%s(%s,%s,%s)\r\n",
-								strings.SplitN(strings.Trim(buff, "\r\n"), "(", 2)[0],
-								strings.ReplaceAll(s.masqueradeIP, ".", ","),
-								strconv.Itoa(listenerPort/256),
-								strconv.Itoa(listenerPort%256))
-						}
-					case "229": // when response is accept EPSV command
-						remoteIP := strings.Split(s.origin.RemoteAddr().String(), ":")[0]
+					resCode := 0
+					if strings.HasPrefix(buff, "227 ") {
+						resCode = 227
+						s.dataConnector.parsePASVresponse(buff)
+					}
+					if strings.HasPrefix(buff, "229 ") {
+						resCode = 229
+						s.dataConnector.parseEPSVresponse(buff)
+					}
+					if strings.HasPrefix(buff, "200 PORT command successful") {
+						resCode = 200
+					}
 
-						// make new listener and store listener port
-						_, listenerPort, err := newDataHandler(buff, remoteIP, s.config, s.log, "EPSV")
-						if err != nil {
-							// if failed to create data socket, make 421 response line
-							buff = fmt.Sprintf("421 cannot create data channel socket\r\n")
-						} else {
-							// make proxy response line
-							buff = fmt.Sprintf("%s(|||%s|)\r\n",
-								strings.SplitN(strings.Trim(buff, "\r\n"), "(", 2)[0],
-								strconv.Itoa(listenerPort))
+					if resCode != 0 {
+						// start data transfer
+						go s.dataConnector.StartDataTransfer()
+
+						switch s.dataConnector.clientConn.mode {
+						case "PORT":
+							buff = "200 PORT command successful\r\n"
+							break
+						case "PASV":
+							// prepare PASV response line to client
+							_, lPort, _ := net.SplitHostPort(s.dataConnector.clientConn.listener.Addr().String())
+							listenPort, _ := strconv.Atoi(lPort)
+							buff = fmt.Sprintf("227 Entering Passive Mode (%s,%s,%s).\r\n",
+								strings.ReplaceAll(s.config.MasqueradeIP, ".", ","),
+								strconv.Itoa(listenPort/256),
+								strconv.Itoa(listenPort%256))
+							break
+						case "EPSV":
+							// prepare EPSV response line to client
+							_, listenPort, _ := net.SplitHostPort(s.dataConnector.clientConn.listener.Addr().String())
+							buff = fmt.Sprintf("229 Entering Extended Passive Mode (|||%s|).\r\n", listenPort)
+							break
 						}
 					}
 				}
@@ -419,9 +428,11 @@ loop:
 		select {
 		case b := <-read:
 			s.mutex.Lock()
+			s.log.debug("response to client: %s", b)
 			if _, err := to.WriteString(b); err != nil {
 				s.mutex.Unlock()
 				lastError = err
+				s.UnlockClientRead()
 				s.Close()
 				send <- struct{}{}
 
@@ -431,21 +442,23 @@ loop:
 			if err := to.Flush(); err != nil {
 				s.mutex.Unlock()
 				lastError = err
+				s.UnlockClientRead()
 				s.Close()
 				send <- struct{}{}
 
 				break loop
 			}
 			s.mutex.Unlock()
+			s.UnlockClientRead()
 			send <- struct{}{}
 		case err := <-errchan:
 			lastError = err
+			s.UnlockClientRead()
 			s.Close()
 
 			break loop
 		case <-s.stopChan:
 			s.stop = true
-
 			// close read groutine
 			s.Close()
 
@@ -470,4 +483,17 @@ func (s *proxyServer) commandLog(line string) {
 // split response line
 func getCode(line string) []string {
 	return strings.SplitN(strings.Trim(line, "\r\n"), string(line[3]), 2)
+}
+
+// UnlockClientRead unlock client read channel after send response to client
+func (s *proxyServer) UnlockClientRead() {
+	s.readlockMutex.Lock()
+
+	if *s.readLock {
+		*s.readLock = false
+		s.readlockMutex.Unlock()
+		s.nowGotResponse <- struct{}{}
+	} else {
+		s.readlockMutex.Unlock()
+	}
 }
