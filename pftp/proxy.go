@@ -43,6 +43,7 @@ type proxyServer struct {
 	dataConnector  *dataHandler
 	readLock       *bool
 	nowGotResponse chan struct{}
+	waitSwitching  chan bool
 }
 
 type proxyServerConfig struct {
@@ -88,6 +89,7 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		config:         conf.config,
 		readLock:       conf.readLock,
 		nowGotResponse: conf.nowGotResponse,
+		waitSwitching:  make(chan bool),
 	}
 
 	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
@@ -261,6 +263,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	// disconnect old origin and close response listener
 	s.stopChan <- struct{}{}
 	<-s.stopChanDone
+
 	cnt := 0
 	lastError := error(nil)
 
@@ -271,6 +274,9 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 			originAddr,
 			time.Duration(CONNECTION_TIMEOUT)*time.Second)
 		if err != nil {
+			// send switching failed signal
+			s.waitSwitching <- false
+
 			return err
 		}
 		s.originReader = bufio.NewReader(s.origin)
@@ -279,6 +285,9 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 		// Send proxy protocol v1 header when set proxy protocol true
 		if s.config.ProxyProtocol {
 			if err := s.sendProxyHeader(clientAddr, originAddr); err != nil {
+				// send switching failed signal
+				s.waitSwitching <- false
+
 				return err
 			}
 		}
@@ -287,6 +296,9 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 		res, err := s.originReader.ReadString('\n')
 		if err != nil {
 			if cnt > s.config.ProxyTimeout {
+				// send switching failed signal
+				s.waitSwitching <- false
+
 				return errors.New("cannot connect to new origin server")
 			}
 
@@ -319,6 +331,10 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	}
 
 	s.stop = false
+
+	// send switching complate signal
+	s.waitSwitching <- true
+
 	return lastError
 }
 
@@ -465,6 +481,7 @@ loop:
 			break loop
 		case <-s.stopChan:
 			s.stop = true
+
 			// close read groutine
 			s.Close()
 

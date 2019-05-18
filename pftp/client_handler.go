@@ -182,6 +182,16 @@ func (c *clientHandler) getResponseFromOrigin() error {
 
 			break
 		}
+
+		// wait until origin switching complate
+		if c.proxy.stop {
+			if !<-c.proxy.waitSwitching {
+				err = fmt.Errorf("switch origin to %s is failed", c.context.RemoteAddr)
+				c.log.err(err.Error())
+
+				break
+			}
+		}
 	}
 
 	return err
