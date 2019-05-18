@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -19,13 +18,11 @@ type middlewareFunc func(*Context, string) error
 type middleware map[string]middlewareFunc
 
 type FtpServer struct {
-	listener       net.Listener
-	clientCounter  int
-	config         *config
-	middleware     middleware
-	shutdown       bool
-	handlerMutex   *sync.Mutex
-	chkEstablished chan struct{}
+	listener      net.Listener
+	clientCounter int
+	config        *config
+	middleware    middleware
+	shutdown      bool
 }
 
 func NewFtpServer(confFile string) (*FtpServer, error) {
@@ -35,10 +32,8 @@ func NewFtpServer(confFile string) (*FtpServer, error) {
 	}
 	m := middleware{}
 	return &FtpServer{
-		config:         c,
-		middleware:     m,
-		handlerMutex:   &sync.Mutex{},
-		chkEstablished: make(chan struct{}),
+		config:     c,
+		middleware: m,
 	}, nil
 }
 
@@ -99,7 +94,7 @@ func (server *FtpServer) serve() error {
 
 		server.clientCounter++
 
-		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection, server.handlerMutex, server.chkEstablished)
+		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection)
 		eg.Go(func() error {
 			err := c.handleCommands()
 			if err != nil {
@@ -107,9 +102,6 @@ func (server *FtpServer) serve() error {
 			}
 			return err
 		})
-
-		// wait until establish connection (welcome msg received from server)
-		<-server.chkEstablished
 	}
 
 	return eg.Wait()
