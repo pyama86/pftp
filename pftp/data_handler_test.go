@@ -6,15 +6,16 @@ import (
 	"testing"
 )
 
-func Test_dataHandler_parsePORT(t *testing.T) {
+func Test_dataHandler_parsePORTcommand(t *testing.T) {
 	type fields struct {
-		line string
-		mode string
+		line   string
+		mode   string
+		config *config
 	}
 
 	type want struct {
 		ip   string
-		port int
+		port string
 		err  error
 	}
 
@@ -27,12 +28,13 @@ func Test_dataHandler_parsePORT(t *testing.T) {
 		{
 			name: "active_mode_invalid_ip",
 			fields: fields{
-				line: "PORT 256,777,0,10,235,64\r\n",
-				mode: "PORT",
+				line:   "PORT 256,777,0,10,235,64\r\n",
+				mode:   "PORT",
+				config: &config{},
 			},
 			want: want{
 				ip:   "",
-				port: -1,
+				port: "",
 				err:  fmt.Errorf("invalid data address"),
 			},
 			wantErr: true,
@@ -40,12 +42,13 @@ func Test_dataHandler_parsePORT(t *testing.T) {
 		{
 			name: "active_mode_invalid_port",
 			fields: fields{
-				line: "PORT 10,10,10,10,530,64\r\n",
-				mode: "PORT",
+				line:   "PORT 10,10,10,10,530,64\r\n",
+				mode:   "PORT",
+				config: &config{},
 			},
 			want: want{
 				ip:   "",
-				port: -1,
+				port: "",
 				err:  fmt.Errorf("invalid data address"),
 			},
 			wantErr: true,
@@ -53,12 +56,13 @@ func Test_dataHandler_parsePORT(t *testing.T) {
 		{
 			name: "active_mode_wrong_line",
 			fields: fields{
-				line: "PORT (10,10,10,10,100,10(\r\n",
-				mode: "PORT",
+				line:   "PORT (10,10,10,10,100,10(\r\n",
+				mode:   "PORT",
+				config: &config{},
 			},
 			want: want{
 				ip:   "",
-				port: -1,
+				port: "",
 				err:  fmt.Errorf("invalid data address"),
 			},
 			wantErr: true,
@@ -66,12 +70,13 @@ func Test_dataHandler_parsePORT(t *testing.T) {
 		{
 			name: "active_mode_parse_ok",
 			fields: fields{
-				line: "PORT 10,10,10,10,100,10\r\n",
-				mode: "PORT",
+				line:   "PORT 10,10,10,10,100,10\r\n",
+				mode:   "PORT",
+				config: &config{},
 			},
 			want: want{
 				ip:   "10.10.10.10",
-				port: 25610,
+				port: "25610",
 				err:  nil,
 			},
 			wantErr: false,
@@ -81,33 +86,37 @@ func Test_dataHandler_parsePORT(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := want{}
-			got.ip, got.port, got.err = newDataHandler(
-				tt.fields.line,
-				"",
+			d, _ := newDataHandler(
+				tt.fields.config,
+				nil,
 				nil,
 				nil,
 				tt.fields.mode)
+			got.err = d.parsePORTcommand(tt.fields.line)
 			if (got.err != nil) != tt.wantErr {
-				t.Errorf("dataHandler.newDataListener() error = %v, wantErr %v", got.err, tt.wantErr)
+				t.Errorf("dataHandler.parsePORTcommand() error = %v, wantErr %v", got.err, tt.wantErr)
 				return
 			}
 
+			got.ip = d.clientConn.remoteIP
+			got.port = d.clientConn.remotePort
 			if tt.wantErr && !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("dataHandler.newDataListener() = %s, want %s", got.err.Error(), tt.want.err.Error())
+				t.Errorf("dataHandler.parsePORTcommand() = %s, want %s", got.err.Error(), tt.want.err.Error())
 			}
 		})
 	}
 }
 
-func Test_dataHandler_parsePASV(t *testing.T) {
+func Test_dataHandler_parsePASVresponse(t *testing.T) {
 	type fields struct {
-		line string
-		mode string
+		line   string
+		mode   string
+		config *config
 	}
 
 	type want struct {
 		ip   string
-		port int
+		port string
 		err  error
 	}
 
@@ -120,12 +129,13 @@ func Test_dataHandler_parsePASV(t *testing.T) {
 		{
 			name: "passive_mode_invalid_ip",
 			fields: fields{
-				line: "227 Entering Passive Mode (256,777,0,10,235,64).\r\n",
-				mode: "PASV",
+				line:   "227 Entering Passive Mode (256,777,0,10,235,64).\r\n",
+				mode:   "PASV",
+				config: &config{},
 			},
 			want: want{
 				ip:   "",
-				port: -1,
+				port: "",
 				err:  fmt.Errorf("invalid data address"),
 			},
 			wantErr: true,
@@ -133,12 +143,13 @@ func Test_dataHandler_parsePASV(t *testing.T) {
 		{
 			name: "passive_mode_invalid_port",
 			fields: fields{
-				line: "227 Entering Passive Mode (10,10,10,10,530,64).\r\n",
-				mode: "PASV",
+				line:   "227 Entering Passive Mode (10,10,10,10,530,64).\r\n",
+				mode:   "PASV",
+				config: &config{},
 			},
 			want: want{
 				ip:   "",
-				port: -1,
+				port: "",
 				err:  fmt.Errorf("invalid data address"),
 			},
 			wantErr: true,
@@ -146,12 +157,13 @@ func Test_dataHandler_parsePASV(t *testing.T) {
 		{
 			name: "passive_mode_wrong_line",
 			fields: fields{
-				line: "227 Entering Passive Mode 10,10,10,10,100,10\r\n",
-				mode: "PASV",
+				line:   "227 Entering Passive Mode 10,10,10,10,100,10\r\n",
+				mode:   "PASV",
+				config: &config{},
 			},
 			want: want{
 				ip:   "",
-				port: -1,
+				port: "",
 				err:  fmt.Errorf("invalid data address"),
 			},
 			wantErr: true,
@@ -159,12 +171,13 @@ func Test_dataHandler_parsePASV(t *testing.T) {
 		{
 			name: "passive_mode_parse_ok",
 			fields: fields{
-				line: "227 Entering Passive Mode (10,19,10,10,100,10).\r\n",
-				mode: "PASV",
+				line:   "227 Entering Passive Mode (10,19,10,10,100,10).\r\n",
+				mode:   "PASV",
+				config: &config{},
 			},
 			want: want{
 				ip:   "10.10.10.10",
-				port: 25610,
+				port: "25610",
 				err:  nil,
 			},
 			wantErr: false,
@@ -174,19 +187,22 @@ func Test_dataHandler_parsePASV(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := want{}
-			got.ip, got.port, got.err = newDataHandler(
-				tt.fields.line,
-				"",
+			d, _ := newDataHandler(
+				tt.fields.config,
+				nil,
 				nil,
 				nil,
 				tt.fields.mode)
+			got.err = d.parsePASVresponse(tt.fields.line)
 			if (got.err != nil) != tt.wantErr {
-				t.Errorf("dataHandler.newDataListener() error = %v, wantErr %v", got.err, tt.wantErr)
+				t.Errorf("dataHandler.parsePASVresponse() error = %v, wantErr %v", got.err, tt.wantErr)
 				return
 			}
 
+			got.ip = d.originConn.remoteIP
+			got.port = d.originConn.remotePort
 			if tt.wantErr && !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("dataHandler.newDataListener() = %s, want %s", got.err.Error(), tt.want.err.Error())
+				t.Errorf("dataHandler.parsePASVresponse() = %s, want %s", got.err.Error(), tt.want.err.Error())
 			}
 		})
 	}
@@ -194,13 +210,14 @@ func Test_dataHandler_parsePASV(t *testing.T) {
 
 func Test_dataHandler_parseEPSV(t *testing.T) {
 	type fields struct {
-		line string
-		mode string
+		line   string
+		mode   string
+		config *config
 	}
 
 	type want struct {
 		ip   string
-		port int
+		port string
 		err  error
 	}
 
@@ -213,12 +230,13 @@ func Test_dataHandler_parseEPSV(t *testing.T) {
 		{
 			name: "epsv_mode_invalid_port",
 			fields: fields{
-				line: "229 Entering Extended Passive Mode (|||70000|)\r\n",
-				mode: "EPSV",
+				line:   "229 Entering Extended Passive Mode (|||70000|)\r\n",
+				mode:   "EPSV",
+				config: &config{},
 			},
 			want: want{
 				ip:   "",
-				port: -1,
+				port: "",
 				err:  fmt.Errorf("invalid data address"),
 			},
 			wantErr: true,
@@ -226,12 +244,13 @@ func Test_dataHandler_parseEPSV(t *testing.T) {
 		{
 			name: "epsv_mode_wrong_line",
 			fields: fields{
-				line: "229 Entering Extended Passive Mode (|||70000|\r\n",
-				mode: "EPSV",
+				line:   "229 Entering Extended Passive Mode (|||70000|\r\n",
+				mode:   "EPSV",
+				config: &config{},
 			},
 			want: want{
 				ip:   "",
-				port: -1,
+				port: "",
 				err:  fmt.Errorf("invalid data address"),
 			},
 			wantErr: true,
@@ -239,12 +258,13 @@ func Test_dataHandler_parseEPSV(t *testing.T) {
 		{
 			name: "epsve_mode_parse_ok",
 			fields: fields{
-				line: "229 Entering Extended Passive Mode (|||25610|)\r\n",
-				mode: "EPSV",
+				line:   "229 Entering Extended Passive Mode (|||25610|)\r\n",
+				mode:   "EPSV",
+				config: &config{},
 			},
 			want: want{
 				ip:   "",
-				port: 25610,
+				port: "25610",
 				err:  nil,
 			},
 			wantErr: false,
@@ -254,19 +274,22 @@ func Test_dataHandler_parseEPSV(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := want{}
-			got.ip, got.port, got.err = newDataHandler(
-				tt.fields.line,
-				"",
+			d, _ := newDataHandler(
+				tt.fields.config,
+				nil,
 				nil,
 				nil,
 				tt.fields.mode)
+			got.err = d.parseEPSVresponse(tt.fields.line)
 			if (got.err != nil) != tt.wantErr {
-				t.Errorf("dataHandler.newDataListener() error = %v, wantErr %v", got.err, tt.wantErr)
+				t.Errorf("dataHandler.parseEPSVresponse() error = %v, wantErr %v", got.err, tt.wantErr)
 				return
 			}
 
+			got.ip = d.originConn.remoteIP
+			got.port = d.originConn.remotePort
 			if tt.wantErr && !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("dataHandler.newDataListener() = %s, want %s", got.err.Error(), tt.want.err.Error())
+				t.Errorf("dataHandler.parseEPSVresponse() = %s, want %s", got.err.Error(), tt.want.err.Error())
 			}
 		})
 	}
