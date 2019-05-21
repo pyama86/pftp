@@ -44,6 +44,7 @@ type proxyServer struct {
 	readLock       *bool
 	nowGotResponse chan struct{}
 	waitSwitching  chan bool
+	isDone         *bool
 }
 
 type proxyServerConfig struct {
@@ -56,6 +57,7 @@ type proxyServerConfig struct {
 	config         *config
 	readLock       *bool
 	nowGotResponse chan struct{}
+	isDone         *bool
 }
 
 func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
@@ -90,6 +92,7 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		readLock:       conf.readLock,
 		nowGotResponse: conf.nowGotResponse,
 		waitSwitching:  make(chan bool),
+		isDone:         conf.isDone,
 	}
 
 	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
@@ -491,6 +494,8 @@ loop:
 	}
 	<-done
 
+	*s.isDone = true
+
 	return lastError
 }
 
@@ -509,14 +514,17 @@ func getCode(line string) []string {
 }
 
 // UnlockClientRead unlock client read channel after send response to client
+// if proxy or client read handler is done, does not set channel to wait
 func (s *proxyServer) UnlockClientRead() {
-	s.readlockMutex.Lock()
+	if !*s.isDone {
+		s.readlockMutex.Lock()
 
-	if *s.readLock {
-		*s.readLock = false
-		s.readlockMutex.Unlock()
-		s.nowGotResponse <- struct{}{}
-	} else {
-		s.readlockMutex.Unlock()
+		if *s.readLock {
+			*s.readLock = false
+			s.readlockMutex.Unlock()
+			s.nowGotResponse <- struct{}{}
+		} else {
+			s.readlockMutex.Unlock()
+		}
 	}
 }

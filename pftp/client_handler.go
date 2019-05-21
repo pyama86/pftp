@@ -58,6 +58,7 @@ type clientHandler struct {
 	previousTLSCommands []string
 	readLock            bool
 	gotResponse         chan struct{}
+	isDone              bool
 }
 
 func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32) *clientHandler {
@@ -78,6 +79,7 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		isLoggedin:        false,
 		readLock:          false,
 		gotResponse:       make(chan struct{}),
+		isDone:            false,
 	}
 
 	// is masquerade IP not setted, set local IP of client connection
@@ -145,15 +147,11 @@ func (c *clientHandler) handleCommands() error {
 	eg.Go(func() error { return c.readClientCommands() })
 
 	// wait until all goroutine has done
-	if err = eg.Wait(); err != nil {
-		if c.command == "QUIT" || err == io.EOF {
-			c.log.info("client disconnected")
-			err = nil
-		} else if err.(net.Error).Timeout() {
-			c.log.info("client disconnected by timeout")
-		}
+	if err = eg.Wait(); err != nil && err == io.EOF {
+		c.log.info("client disconnected by error")
 	} else {
 		c.log.info("client disconnected")
+		err = nil
 	}
 
 	return err
@@ -177,7 +175,7 @@ func (c *clientHandler) getResponseFromOrigin() error {
 				c.log.debug("EOF from proxy connection")
 				err = nil
 			} else {
-				c.log.err("error from origin connection: %s", err.Error())
+				c.log.debug("error from origin connection: %s", err.Error())
 			}
 
 			break
@@ -193,6 +191,8 @@ func (c *clientHandler) getResponseFromOrigin() error {
 			}
 		}
 	}
+
+	c.isDone = true
 
 	return err
 }
@@ -227,23 +227,24 @@ func (c *clientHandler) readClientCommands() error {
 				lastError = nil
 			} else if c.command == "QUIT" {
 				lastError = nil
-			} else {
-				switch err := err.(type) {
-				case net.Error:
-					if err.Timeout() {
-						c.conn.SetDeadline(time.Now().Add(time.Minute))
-						r := result{
-							code: 421,
-							msg:  "command timeout : closing control connection",
-							err:  err,
-							log:  c.log,
-						}
-						if err := r.Response(c); err != nil {
-							lastError = fmt.Errorf("response to client error: %v", err)
-						}
-					}
+			} else if err.(net.Error).Timeout() {
+				c.conn.SetDeadline(time.Now().Add(time.Minute))
+				r := result{
+					code: 421,
+					msg:  "command timeout : closing control connection",
+					err:  err,
+					log:  c.log,
+				}
+				if err := r.Response(c); err != nil {
+					lastError = fmt.Errorf("response to client error: %v", err)
+
+					break
 				}
 
+				// if timeout, send EOF to client(not close forcibly) for graceful disconnect
+				sendEOF(c.conn)
+				continue
+			} else {
 				c.log.debug("error from client connection: %s", err.Error())
 			}
 
@@ -259,20 +260,25 @@ func (c *clientHandler) readClientCommands() error {
 		}
 	}
 
+	c.isDone = true
+
 	return lastError
 }
 
 // LockClientRead wait until got response from origin after send command
+// if proxy or client read handler is done, does not set channel to wait
 func (c *clientHandler) LockClientRead() {
-	c.readlockMutex.Lock()
+	if !c.isDone {
+		c.readlockMutex.Lock()
 
-	if c.readLock {
-		c.readLock = false
-		c.readlockMutex.Unlock()
-	} else {
-		c.readLock = true
-		c.readlockMutex.Unlock()
-		<-c.gotResponse
+		if c.readLock {
+			c.readLock = false
+			c.readlockMutex.Unlock()
+		} else {
+			c.readLock = true
+			c.readlockMutex.Unlock()
+			<-c.gotResponse
+		}
 	}
 }
 
@@ -365,6 +371,7 @@ func (c *clientHandler) connectProxy() error {
 				config:         c.config,
 				readLock:       &c.readLock,
 				nowGotResponse: c.gotResponse,
+				isDone:         &c.isDone,
 			})
 
 		if err != nil {
