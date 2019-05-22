@@ -222,29 +222,48 @@ func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []s
 			return err
 		}
 
-		// Read response from new origin server
-		str, err := s.originReader.ReadString('\n')
-		if err != nil {
-			return fmt.Errorf("failed to make TLS connection")
-		}
+		for {
+			// Read response from new origin server
+			str, err := s.originReader.ReadString('\n')
+			if err != nil {
+				return fmt.Errorf("failed to make TLS connection")
+			}
 
-		if strings.Compare(strings.ToUpper(getCommand(cmd)[0]), "AUTH") == 0 {
-			code := getCode(str)[0]
-			if code != "234" {
-				lastError = fmt.Errorf("%s origin server has not support TLS connection", code)
-				break
-			} else {
-				config := tls.Config{
-					InsecureSkipVerify: true,
-					MinVersion:         tlsProtocol,
-					MaxVersion:         tlsProtocol,
+			s.log.debug("response from origin: %s", str)
+
+			if strings.Compare(strings.ToUpper(getCommand(cmd)[0]), "AUTH") == 0 {
+				code := getCode(str)[0]
+				if code != "234" {
+					// when got 500 PROXY not understood, ignore it
+					// this ignore setting for complex origins.
+					// if some origins needs proxy protocol and some else is not,
+					// pftp cannot support both in same time. So, pftp ignore the
+					// 500 PROXY not understood then client can connect any servers.
+					if s.config.ProxyProtocol && strings.Contains(str, "500 PROXY") {
+						continue
+					} else {
+						lastError = fmt.Errorf("%s origin server has not support TLS connection", code)
+
+						break
+					}
+				} else {
+					config := tls.Config{
+						InsecureSkipVerify: true,
+						MinVersion:         tlsProtocol,
+						MaxVersion:         tlsProtocol,
+					}
+
+					// SSL/TLS wrapping on connection
+					s.origin = tls.Client(s.origin, &config)
+					s.originReader = bufio.NewReader(s.origin)
+					s.originWriter = bufio.NewWriter(s.origin)
+
+					s.log.debug("TLS connection established")
+
+					break
 				}
-
-				s.log.debug("set TLS connection")
-				// SSL/TLS wrapping on connection
-				s.origin = tls.Client(s.origin, &config)
-				s.originReader = bufio.NewReader(s.origin)
-				s.originWriter = bufio.NewWriter(s.origin)
+			} else {
+				break
 			}
 		}
 	}
@@ -287,8 +306,9 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 
 		// Send proxy protocol v1 header when set proxy protocol true
 		if s.config.ProxyProtocol {
+			s.log.debug("send proxy protocol to origin")
 			if err := s.sendProxyHeader(clientAddr, originAddr); err != nil {
-				// send switching failed signal
+				// send switch failed signal
 				s.waitSwitching <- false
 
 				return err
@@ -330,7 +350,10 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 
 	// If client connect with TLS connection, make TLS connection to origin ftp server too.
 	if err := s.sendTLSCommand(tlsProtocol, previousTLSCommands); err != nil {
-		lastError = err
+		// send switch failed signal and return to connection end
+		s.waitSwitching <- false
+
+		return err
 	}
 
 	s.stop = false
@@ -371,6 +394,15 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 				// response user setted welcome message
 				if strings.Compare(getCode(buff)[0], "220") == 0 && !s.isSwitched {
 					buff = s.welcomeMsg
+				}
+
+				// when got 500 PROXY not understood, ignore it
+				// this ignore setting for complex origins.
+				// if some origins needs proxy protocol and some else is not,
+				// pftp cannot support both in same time. So, pftp ignore the
+				// 500 PROXY not understood then client can connect any servers.
+				if s.config.ProxyProtocol && strings.Contains(buff, "500 PROXY") {
+					continue
 				}
 
 				// is data channel proxy used
