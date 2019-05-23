@@ -134,16 +134,15 @@ func (c *clientHandler) handleCommands() error {
 		if c.conn != nil {
 			c.conn.Close()
 		}
-
 		if c.proxy != nil {
 			c.proxy.Close()
 		}
 	}()
 
-	// run response read routine
+	// run origin response read routine
 	eg.Go(func() error { return c.getResponseFromOrigin() })
 
-	// run command read routine
+	// run client command read routine
 	eg.Go(func() error { return c.readClientCommands() })
 
 	// wait until all goroutine has done
@@ -162,8 +161,12 @@ func (c *clientHandler) getResponseFromOrigin() error {
 
 	// close origin connection when close goroutine
 	defer func() {
-		// send EOF to client connection
-		sendEOF(c.conn)
+		// send EOF to client connection. if fail, close immediatly
+		if err := sendEOF(c.conn); err != nil {
+			c.conn.Close()
+		}
+
+		// close current proxy connection
 		c.proxy.Close()
 	}()
 
@@ -181,7 +184,7 @@ func (c *clientHandler) getResponseFromOrigin() error {
 			break
 		}
 
-		// wait until origin switching complate
+		// wait until switching origin server complate
 		if c.proxy.stop {
 			if !<-c.proxy.waitSwitching {
 				err = fmt.Errorf("switch origin to %s is failed", c.context.RemoteAddr)
@@ -207,8 +210,12 @@ func (c *clientHandler) readClientCommands() error {
 		c.readLock = false
 		c.readlockMutex.Unlock()
 
-		// send EOF to origin connection
-		sendEOF(c.proxy.GetConn())
+		// send EOF to origin connection. if fail, close immediatly
+		if err := sendEOF(c.proxy.GetConn()); err != nil {
+			c.proxy.GetConn().Close()
+		}
+
+		// close current client connection
 		c.conn.Close()
 	}()
 
@@ -241,8 +248,12 @@ func (c *clientHandler) readClientCommands() error {
 					break
 				}
 
-				// if timeout, send EOF to client(not close forcibly) for graceful disconnect
-				sendEOF(c.conn)
+				// if timeout, send EOF to client connection for graceful disconnect
+				// if send EOF failed, close immediatly
+				if err := sendEOF(c.conn); err != nil {
+					c.conn.Close()
+				}
+
 				continue
 			} else {
 				c.log.debug("error from client connection: %s", err.Error())

@@ -8,11 +8,15 @@ import (
 )
 
 // send EOF to write
-func sendEOF(conn net.Conn) {
+func sendEOF(conn net.Conn) error {
 	// anonymous interface. Could explicitly use TCP instead.
 	if v, ok := conn.(interface{ CloseWrite() error }); ok {
-		v.CloseWrite()
+		if err := v.CloseWrite(); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
 // set reuse IP & Port for sharing port 20 (just set active mode)
