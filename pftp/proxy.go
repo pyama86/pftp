@@ -272,6 +272,11 @@ func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []s
 }
 
 func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProtocol uint16, previousTLSCommands []string) error {
+	// return error when user not found
+	if len(originAddr) == 0 {
+		return fmt.Errorf("user id not found")
+	}
+
 	s.log.info("switch origin to: %s", originAddr)
 	var err error
 

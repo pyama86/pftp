@@ -37,7 +37,8 @@ func main() {
 func User(c *pftp.Context, param string) error {
 	res, err := webapi.GetDomainFromWebAPI(confFile, param)
 	if err != nil {
-		logrus.Debug(fmt.Sprintf("cannot get domain from webapi server:%v", err))
+		logrus.Debug(fmt.Sprintf("cannot get origin host from webapi server:%v", err))
+		c.RemoteAddr = ""
 	} else {
 		c.RemoteAddr = *res
 	}

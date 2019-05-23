@@ -24,6 +24,16 @@ func (c *clientHandler) handleUSER() *result {
 	}
 
 	if err := c.connectProxy(); err != nil {
+		// user not found
+		if err.Error() == "user id not found" {
+			return &result{
+				code: 530,
+				msg:  err.Error(),
+				err:  err,
+				log:  c.log,
+			}
+		}
+
 		return &result{
 			code: 530,
 			msg:  "I can't deal with you (proxy error)",
