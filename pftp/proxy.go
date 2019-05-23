@@ -485,11 +485,12 @@ loop:
 		select {
 		case b := <-read:
 			s.mutex.Lock()
-			s.log.debug("response to client: %s", b)
 			if _, err := to.WriteString(b); err != nil {
 				s.mutex.Unlock()
+				s.log.err("error on write response to client: %s", b)
 				lastError = err
 				s.UnlockClientRead()
+				close(errchan)
 				s.Close()
 				send <- struct{}{}
 
@@ -498,14 +499,17 @@ loop:
 
 			if err := to.Flush(); err != nil {
 				s.mutex.Unlock()
+				s.log.err("error on flush client writer: %s", b)
 				lastError = err
 				s.UnlockClientRead()
+				close(errchan)
 				s.Close()
 				send <- struct{}{}
 
 				break loop
 			}
 			s.mutex.Unlock()
+			s.log.debug("response to client: %s", b)
 			s.UnlockClientRead()
 			send <- struct{}{}
 		case err := <-errchan:
