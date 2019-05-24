@@ -90,6 +90,15 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 	return p
 }
 
+func (c *clientHandler) Close() error {
+	if c.conn != nil {
+		err := c.conn.Close()
+		return err
+	}
+
+	return nil
+}
+
 func (c *clientHandler) setClientDeadLine(t int) {
 	d := time.Now().Add(time.Duration(t) * time.Second)
 	if c.deadline.Unix() < d.Unix() {
@@ -112,7 +121,7 @@ func (c *clientHandler) handleCommands() error {
 			c.log.err("cannot send response to client")
 		}
 
-		c.conn.Close()
+		c.Close()
 
 		return err
 	}
@@ -131,12 +140,8 @@ func (c *clientHandler) handleCommands() error {
 		}
 
 		// close each connection again
-		if c.conn != nil {
-			c.conn.Close()
-		}
-		if c.proxy != nil {
-			c.proxy.Close()
-		}
+		c.Close()
+		c.proxy.Close()
 	}()
 
 	// run origin response read routine
@@ -163,7 +168,7 @@ func (c *clientHandler) getResponseFromOrigin() error {
 	defer func() {
 		// send EOF to client connection. if fail, close immediatly
 		if err := sendEOF(c.conn); err != nil {
-			c.conn.Close()
+			c.Close()
 		}
 
 		// close current proxy connection
@@ -212,11 +217,11 @@ func (c *clientHandler) readClientCommands() error {
 
 		// send EOF to origin connection. if fail, close immediatly
 		if err := sendEOF(c.proxy.GetConn()); err != nil {
-			c.proxy.GetConn().Close()
+			c.proxy.Close()
 		}
 
 		// close current client connection
-		c.conn.Close()
+		c.Close()
 	}()
 
 	for {
@@ -251,7 +256,7 @@ func (c *clientHandler) readClientCommands() error {
 				// if timeout, send EOF to client connection for graceful disconnect
 				// if send EOF failed, close immediatly
 				if err := sendEOF(c.conn); err != nil {
-					c.conn.Close()
+					c.Close()
 				}
 
 				continue

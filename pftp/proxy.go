@@ -169,8 +169,12 @@ func (s *proxyServer) unsuspend() {
 }
 
 func (s *proxyServer) Close() error {
-	err := s.origin.Close()
-	return err
+	if s.origin != nil {
+		err := s.origin.Close()
+		return err
+	}
+
+	return nil
 }
 
 func (s *proxyServer) GetConn() net.Conn {
