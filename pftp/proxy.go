@@ -281,6 +281,11 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 		return fmt.Errorf("user id not found")
 	}
 
+	// if client switched before, return error
+	if s.isSwitched {
+		return fmt.Errorf("origin already switched")
+	}
+
 	s.log.info("switch origin to: %s", originAddr)
 	var err error
 
@@ -295,59 +300,41 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	s.stopChan <- struct{}{}
 	<-s.stopChanDone
 
-	cnt := 0
 	lastError := error(nil)
+	switchResult := false
 
-	// if connection to new origin close immediatly, reconnect while proxy timeout
-	for {
-		// change connection and reset reader and writer buffer
-		s.origin, err = net.DialTimeout("tcp",
-			originAddr,
-			time.Duration(CONNECTION_TIMEOUT)*time.Second)
-		if err != nil {
-			// send switching failed signal
-			s.waitSwitching <- false
+	defer func() {
+		s.stop = false
 
+		// send switching complate signal
+		s.waitSwitching <- switchResult
+	}()
+
+	// change connection and reset reader and writer buffer
+	s.origin, err = net.DialTimeout("tcp",
+		originAddr,
+		time.Duration(CONNECTION_TIMEOUT)*time.Second)
+	if err != nil {
+		return err
+	}
+	s.originReader = bufio.NewReader(s.origin)
+	s.originWriter = bufio.NewWriter(s.origin)
+
+	// Send proxy protocol v1 header when set proxy protocol true
+	if s.config.ProxyProtocol {
+		s.log.debug("send proxy protocol to origin")
+		if err := s.sendProxyHeader(clientAddr, originAddr); err != nil {
 			return err
 		}
-		s.originReader = bufio.NewReader(s.origin)
-		s.originWriter = bufio.NewWriter(s.origin)
-
-		// Send proxy protocol v1 header when set proxy protocol true
-		if s.config.ProxyProtocol {
-			s.log.debug("send proxy protocol to origin")
-			if err := s.sendProxyHeader(clientAddr, originAddr); err != nil {
-				// send switch failed signal
-				s.waitSwitching <- false
-
-				return err
-			}
-		}
-
-		// Read welcome message from ftp connection
-		res, err := s.originReader.ReadString('\n')
-		if err != nil {
-			if cnt > s.config.ProxyTimeout {
-				// send switching failed signal
-				s.waitSwitching <- false
-
-				return errors.New("cannot connect to new origin server")
-			}
-
-			s.log.err("err from new origin: %s", err.Error())
-			s.log.debug("reconnect to origin")
-			cnt++
-
-			s.Close()
-
-			// reconnect interval
-			time.Sleep(1 * time.Second)
-			continue
-		} else {
-			s.log.debug("response from new origin: %s", res)
-			break
-		}
 	}
+
+	// Read welcome message from ftp connection
+	res, err := s.originReader.ReadString('\n')
+	if err != nil {
+		return errors.New("cannot connect to new origin server")
+	}
+
+	s.log.debug("response from new origin: %s", res)
 
 	// set linger 0 and tcp keepalive setting between switched origin connection
 	tcpConn := s.origin.(*net.TCPConn)
@@ -359,16 +346,11 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 
 	// If client connect with TLS connection, make TLS connection to origin ftp server too.
 	if err := s.sendTLSCommand(tlsProtocol, previousTLSCommands); err != nil {
-		// send switch failed signal and return to connection end
-		s.waitSwitching <- false
-
 		return err
 	}
 
-	s.stop = false
-
-	// send switching complate signal
-	s.waitSwitching <- true
+	// set switch process complate
+	switchResult = true
 
 	return lastError
 }
