@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	// PORT_RANGE_LENGTH is const parameter for port range configuration check
+	// PortRangeLength is const parameter for port range configuration check
 	// port range must set like 100-110 so it might split 2 strings by '-'
-	PORT_RANGE_LENGTH = 2
+	PortRangeLength = 2
 )
 
 type portRange struct {
@@ -144,7 +144,7 @@ func dataPortRangeValidation(r string) error {
 	lastErr := fmt.Errorf("Data port range config wrong. set default(random port)")
 	portRange := strings.Split(r, "-")
 
-	if len(portRange) != PORT_RANGE_LENGTH {
+	if len(portRange) != PortRangeLength {
 		return lastErr
 	}
 
