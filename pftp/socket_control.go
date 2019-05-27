@@ -30,7 +30,10 @@ func sendEOF(conn net.Conn) error {
 func connectionCloser(c closer, log *logger) {
 	if err := c.Close(); err != nil {
 		if !strings.Contains(err.Error(), AlreadyClosedMsg) {
-			log.err(err.Error())
+			// log is nil when unit test
+			if log != nil {
+				log.err(err.Error())
+			}
 		}
 	}
 }

@@ -118,7 +118,9 @@ func (c *clientHandler) handleCommands() error {
 
 		// close each connection again
 		connectionCloser(c, c.log)
-		connectionCloser(c.proxy, c.log)
+		if c.proxy != nil {
+			connectionCloser(c.proxy, c.log)
+		}
 	}()
 
 	// Check max client. If exceeded, send 530 error to client and disconnect
