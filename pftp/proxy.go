@@ -168,13 +168,18 @@ func (s *proxyServer) unsuspend() {
 	s.passThrough = true
 }
 
-func (s *proxyServer) Close() error {
+func (s *proxyServer) Close() {
 	if s.origin != nil {
-		err := s.origin.Close()
-		return err
+		if err := s.origin.Close(); err != nil {
+			if err := s.origin.Close(); err != nil {
+				if !strings.Contains(err.Error(), "use of closed") {
+					s.log.err("origin connection close error: %s", err.Error())
+				}
+			} else {
+				s.log.debug("origin connection close successed.")
+			}
+		}
 	}
-
-	return nil
 }
 
 func (s *proxyServer) GetConn() net.Conn {

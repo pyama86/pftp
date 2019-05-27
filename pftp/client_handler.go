@@ -90,13 +90,17 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 	return p
 }
 
-func (c *clientHandler) Close() error {
+// Close client connection and check return
+func (c *clientHandler) Close() {
 	if c.conn != nil {
-		err := c.conn.Close()
-		return err
+		if err := c.conn.Close(); err != nil {
+			if !strings.Contains(err.Error(), "use of closed") {
+				c.log.err("client connection close error: %s", err.Error())
+			}
+		} else {
+			c.log.debug("client connection close successed.")
+		}
 	}
-
-	return nil
 }
 
 func (c *clientHandler) setClientDeadLine(t int) {
@@ -168,6 +172,7 @@ func (c *clientHandler) getResponseFromOrigin() error {
 	defer func() {
 		// send EOF to client connection. if fail, close immediatly
 		if err := sendEOF(c.conn); err != nil {
+			c.log.debug("send EOF to client failed. try to close connection.")
 			c.Close()
 		}
 
@@ -183,7 +188,11 @@ func (c *clientHandler) getResponseFromOrigin() error {
 				c.log.debug("EOF from proxy connection")
 				err = nil
 			} else {
-				c.log.debug("error from origin connection: %s", err.Error())
+				if strings.Contains(err.Error(), "use of closed") {
+					c.log.err("origin connection closed")
+				} else {
+					c.log.debug("error from origin connection: %s", err.Error())
+				}
 			}
 
 			break
@@ -217,6 +226,7 @@ func (c *clientHandler) readClientCommands() error {
 
 		// send EOF to origin connection. if fail, close immediatly
 		if err := sendEOF(c.proxy.GetConn()); err != nil {
+			c.log.debug("send EOF to origin failed. try to close connection.")
 			c.proxy.Close()
 		}
 
@@ -256,6 +266,7 @@ func (c *clientHandler) readClientCommands() error {
 				// if timeout, send EOF to client connection for graceful disconnect
 				// if send EOF failed, close immediatly
 				if err := sendEOF(c.conn); err != nil {
+					c.log.debug("send EOF to client failed. try to close connection.")
 					c.Close()
 				}
 
