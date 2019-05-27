@@ -2,21 +2,37 @@ package pftp
 
 import (
 	"net"
+	"strings"
 	"syscall"
 
 	"golang.org/x/sys/unix"
 )
+
+type closer interface {
+	Close() error
+}
 
 // send EOF to write
 func sendEOF(conn net.Conn) error {
 	// anonymous interface. Could explicitly use TCP instead.
 	if v, ok := conn.(interface{ CloseWrite() error }); ok {
 		if err := v.CloseWrite(); err != nil {
-			return err
+			if !strings.Contains(err.Error(), AlreadyClosedMsg) {
+				return err
+			}
 		}
 	}
 
 	return nil
+}
+
+// close connection
+func connectionCloser(c closer, log *logger) {
+	if err := c.Close(); err != nil {
+		if !strings.Contains(err.Error(), AlreadyClosedMsg) {
+			log.err(err.Error())
+		}
+	}
 }
 
 // set reuse IP & Port for sharing port 20 (just set active mode)

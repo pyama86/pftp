@@ -91,16 +91,14 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 }
 
 // Close client connection and check return
-func (c *clientHandler) Close() {
+func (c *clientHandler) Close() error {
 	if c.conn != nil {
 		if err := c.conn.Close(); err != nil {
-			if !strings.Contains(err.Error(), "use of closed") {
-				c.log.err("client connection close error: %s", err.Error())
-			}
-		} else {
-			c.log.debug("client connection close successed.")
+			return err
 		}
 	}
+
+	return nil
 }
 
 func (c *clientHandler) setClientDeadLine(t int) {
@@ -112,6 +110,17 @@ func (c *clientHandler) setClientDeadLine(t int) {
 }
 
 func (c *clientHandler) handleCommands() error {
+	defer func() {
+		// decrease connection count
+		if c.isLoggedin {
+			atomic.AddInt32(c.currentConnection, -1)
+		}
+
+		// close each connection again
+		connectionCloser(c, c.log)
+		connectionCloser(c.proxy, c.log)
+	}()
+
 	// Check max client. If exceeded, send 530 error to client and disconnect
 	if atomic.LoadInt32(c.currentConnection) >= c.config.MaxConnections {
 		err := fmt.Errorf("exceeded client connection limit")
@@ -125,8 +134,6 @@ func (c *clientHandler) handleCommands() error {
 			c.log.err("cannot send response to client")
 		}
 
-		c.Close()
-
 		return err
 	}
 
@@ -136,17 +143,6 @@ func (c *clientHandler) handleCommands() error {
 	if err != nil {
 		return err
 	}
-
-	defer func() {
-		// decrease connection count
-		if c.isLoggedin {
-			atomic.AddInt32(c.currentConnection, -1)
-		}
-
-		// close each connection again
-		c.Close()
-		c.proxy.Close()
-	}()
 
 	// run origin response read routine
 	eg.Go(func() error { return c.getResponseFromOrigin() })
@@ -173,11 +169,11 @@ func (c *clientHandler) getResponseFromOrigin() error {
 		// send EOF to client connection. if fail, close immediatly
 		if err := sendEOF(c.conn); err != nil {
 			c.log.debug("send EOF to client failed. try to close connection.")
-			c.Close()
+			connectionCloser(c, c.log)
 		}
 
 		// close current proxy connection
-		c.proxy.Close()
+		connectionCloser(c.proxy, c.log)
 	}()
 
 	// サーバからのレスポンスはSuspendしない限り自動で返却される
@@ -188,9 +184,7 @@ func (c *clientHandler) getResponseFromOrigin() error {
 				c.log.debug("EOF from proxy connection")
 				err = nil
 			} else {
-				if strings.Contains(err.Error(), "use of closed") {
-					c.log.err("origin connection closed")
-				} else {
+				if !strings.Contains(err.Error(), AlreadyClosedMsg) {
 					c.log.debug("error from origin connection: %s", err.Error())
 				}
 			}
@@ -227,11 +221,11 @@ func (c *clientHandler) readClientCommands() error {
 		// send EOF to origin connection. if fail, close immediatly
 		if err := sendEOF(c.proxy.GetConn()); err != nil {
 			c.log.debug("send EOF to origin failed. try to close connection.")
-			c.proxy.Close()
+			connectionCloser(c.proxy, c.log)
 		}
 
 		// close current client connection
-		c.Close()
+		connectionCloser(c, c.log)
 	}()
 
 	for {
@@ -267,7 +261,7 @@ func (c *clientHandler) readClientCommands() error {
 				// if send EOF failed, close immediatly
 				if err := sendEOF(c.conn); err != nil {
 					c.log.debug("send EOF to client failed. try to close connection.")
-					c.Close()
+					connectionCloser(c, c.log)
 				}
 
 				continue
@@ -426,8 +420,8 @@ func (c *clientHandler) parseLine(line string) {
 
 // Hide parameters from log
 func (c *clientHandler) commandLog(line string) {
-	if strings.Compare(strings.ToUpper(getCommand(line)[0]), SECURE_COMMAND) == 0 {
-		c.log.info("read from client: %s ********\r\n", SECURE_COMMAND)
+	if strings.Compare(strings.ToUpper(getCommand(line)[0]), SecureCommand) == 0 {
+		c.log.info("read from client: %s ********\r\n", SecureCommand)
 	} else {
 		c.log.info("read from client: %s", line)
 	}

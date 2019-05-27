@@ -15,10 +15,11 @@ import (
 )
 
 const (
-	BUFFER_SIZE               = 4096
-	DATA_TRANSFER_BUFFER_SIZE = 4096
-	CONNECTION_TIMEOUT        = 30
-	SECURE_COMMAND            = "PASS"
+	BufferSize             = 4096
+	DataTransferBufferSize = 4096
+	ConnectionTimeout      = 30
+	SecureCommand          = "PASS"
+	AlreadyClosedMsg       = "use of closed"
 )
 
 type proxyServer struct {
@@ -63,7 +64,7 @@ type proxyServerConfig struct {
 func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 	c, err := net.DialTimeout("tcp",
 		conf.originAddr,
-		time.Duration(CONNECTION_TIMEOUT)*time.Second)
+		time.Duration(ConnectionTimeout)*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -168,18 +169,15 @@ func (s *proxyServer) unsuspend() {
 	s.passThrough = true
 }
 
-func (s *proxyServer) Close() {
+// Close origin connection and check return
+func (s *proxyServer) Close() error {
 	if s.origin != nil {
 		if err := s.origin.Close(); err != nil {
-			if err := s.origin.Close(); err != nil {
-				if !strings.Contains(err.Error(), "use of closed") {
-					s.log.err("origin connection close error: %s", err.Error())
-				}
-			} else {
-				s.log.debug("origin connection close successed.")
-			}
+			return err
 		}
 	}
+
+	return nil
 }
 
 func (s *proxyServer) GetConn() net.Conn {
@@ -318,7 +316,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	// change connection and reset reader and writer buffer
 	s.origin, err = net.DialTimeout("tcp",
 		originAddr,
-		time.Duration(CONNECTION_TIMEOUT)*time.Second)
+		time.Duration(ConnectionTimeout)*time.Second)
 	if err != nil {
 		return err
 	}
@@ -483,24 +481,30 @@ loop:
 			s.mutex.Lock()
 			if _, err := to.WriteString(b); err != nil {
 				s.mutex.Unlock()
-				s.log.err("error on write response to client: %s", b)
 				lastError = err
 				s.UnlockClientRead()
 				close(errchan)
-				s.Close()
+				connectionCloser(s, s.log)
 				send <- struct{}{}
+
+				if !strings.Contains(err.Error(), AlreadyClosedMsg) {
+					s.log.err("error on write response to client: %s, err: %s", b, err.Error())
+				}
 
 				break loop
 			}
 
 			if err := to.Flush(); err != nil {
 				s.mutex.Unlock()
-				s.log.err("error on flush client writer: %s", b)
 				lastError = err
 				s.UnlockClientRead()
 				close(errchan)
-				s.Close()
+				connectionCloser(s, s.log)
 				send <- struct{}{}
+
+				if !strings.Contains(err.Error(), AlreadyClosedMsg) {
+					s.log.err("error on flush client writer: %s, err: %s", b, err.Error())
+				}
 
 				break loop
 			}
@@ -511,14 +515,14 @@ loop:
 		case err := <-errchan:
 			lastError = err
 			s.UnlockClientRead()
-			s.Close()
+			connectionCloser(s, s.log)
 
 			break loop
 		case <-s.stopChan:
 			s.stop = true
 
 			// close read groutine
-			s.Close()
+			connectionCloser(s, s.log)
 
 			s.stopChanDone <- struct{}{}
 			break loop
@@ -533,8 +537,8 @@ loop:
 
 // Hide parameters from log
 func (s *proxyServer) commandLog(line string) {
-	if strings.Compare(strings.ToUpper(getCommand(line)[0]), SECURE_COMMAND) == 0 {
-		s.log.debug("send to origin: %s ********\r\n", SECURE_COMMAND)
+	if strings.Compare(strings.ToUpper(getCommand(line)[0]), SecureCommand) == 0 {
+		s.log.debug("send to origin: %s ********\r\n", SecureCommand)
 	} else {
 		s.log.debug("send to origin: %s", line)
 	}
