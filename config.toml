@@ -3,13 +3,41 @@ idle_timeout = 120
 transfer_timeout = 600
 keepalive_time = 600
 remote_addr = "127.0.0.1:21"
-proxy_protocol = false
+
+# Configure about proxy features
+## Can set welcome message when first connect to pftp
+## If not set, pftp will send remote_addr server's welcome message
 welcome_message = "sample pftp server ready"
 
+## Send proxy protocol to origin server when user login process
+send_proxy_protocol = false # If true, pftp will send PROXY command to origin ftp server (default : false)
+
+## Use data channel proxy
+## Default value is false
+data_channel_proxy = true
+
+## Set listen port range for data connection.
+## Comment out this parameter means full range.
+## If set min > max of illegal numbers, pftp will set full range too.
+data_listen_port_range = "65000-65100" # "min-max"(default : random)
+
+## This configure set data connect mode between pftp and origin ftp server.
+## If set passive/pasv, pftp always use passive mode for connect to origin.
+## Set client(the default setup), use client's connected mode.
+transfer_mode = "pasv"  # PASV / Passive / PORT / Active / client (default : client)
+
+## Masquerade pftp's ip to setted IP(may be LB's IP).
+## It might nessacery if pftp server is at behind the LB.
+masquerade_ip = "127.0.0.1"
+
 [tls]
+## Set SSL certification and secret key file's path
 cert = "./tls/server.crt"
 key = "./tls/server.key"
-# make sure TLS protocol range allowed in origin ftp server (if only one protocol support, set min and max to same)
+
+## Make sure TLS protocol range allowed in origin ftp server
+## If only one protocol support, set min and max to same
+## Can set TLSv1 TLSv1.1 TLSv1.2
 min_protocol = "TLSv1"
 max_protocol = "TLSv1"
 

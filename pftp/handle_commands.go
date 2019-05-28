@@ -7,12 +7,33 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 )
 
 func (c *clientHandler) handleUSER() *result {
+	// make fail when try to login after logged in
+	if c.isLoggedin {
+		return &result{
+			code: 500,
+			msg:  "Already logged in",
+			err:  fmt.Errorf("Already logged in"),
+			log:  c.log,
+		}
+	}
+
 	if err := c.connectProxy(); err != nil {
+		// user not found
+		if err.Error() == "user id not found" {
+			return &result{
+				code: 530,
+				msg:  err.Error(),
+				err:  err,
+				log:  c.log,
+			}
+		}
+
 		return &result{
 			code: 530,
 			msg:  "I can't deal with you (proxy error)",
@@ -107,6 +128,7 @@ func (c *clientHandler) handlePBSZ() *result {
 					log:  c.log,
 				}
 			}
+
 			c.previousTLSCommands = append(c.previousTLSCommands, c.line)
 		} else {
 			if err := c.proxy.sendToOrigin(c.line); err != nil {
@@ -157,7 +179,9 @@ func (c *clientHandler) handlePROT() *result {
 					log:  c.log,
 				}
 			}
+
 			c.previousTLSCommands = append(c.previousTLSCommands, c.line)
+
 		} else {
 			if err := c.proxy.sendToOrigin(c.line); err != nil {
 				return &result{
@@ -191,7 +215,11 @@ func (c *clientHandler) handleTransfer() *result {
 	return nil
 }
 
-func (c *clientHandler) handleProxyHeader() *result {
+func (c *clientHandler) handlePROXY() *result {
+	c.readlockMutex.Lock()
+	c.readLock = true
+	c.readlockMutex.Unlock()
+
 	params := strings.SplitN(strings.Trim(c.line, "\r\n"), " ", 6)
 	if len(params) != 6 {
 		return &result{
@@ -210,6 +238,106 @@ func (c *clientHandler) handleProxyHeader() *result {
 	}
 
 	c.srcIP = params[2] + ":" + params[4]
+
+	return nil
+}
+
+// handle PORT, EPRT, PASV, EPSV commands when set data channel proxy is true
+func (c *clientHandler) handleDATA() *result {
+	// if data channel proxy used
+	if c.config.DataChanProxy {
+		var toOriginMsg string
+
+		// make new listener and store listener port
+		dataHandler, err := newDataHandler(
+			c.config,
+			c.log,
+			c.conn,
+			c.proxy.GetConn(),
+			c.command)
+		if err != nil {
+			return &result{
+				code: 421,
+				msg:  "cannot create data channel socket",
+				err:  err,
+				log:  c.log,
+			}
+		}
+
+		c.proxy.SetDataHandler(dataHandler)
+
+		switch c.command {
+		case "PORT":
+			if err := c.proxy.dataConnector.parsePORTcommand(c.line); err != nil {
+				return &result{
+					code: 501,
+					msg:  "cannot parse PORT command",
+					err:  err,
+					log:  c.log,
+				}
+			}
+			break
+		case "EPRT":
+			if err := c.proxy.dataConnector.parseEPRTcommand(c.line); err != nil {
+				if err.Error() == "unknown network protocol" {
+					return &result{
+						code: 522,
+						msg:  err.Error(),
+						err:  err,
+						log:  c.log,
+					}
+				}
+
+				return &result{
+					code: 501,
+					msg:  "cannot parse EPRT command",
+					err:  err,
+					log:  c.log,
+				}
+			}
+			break
+		}
+
+		// if origin connect mode is PORT or CLIENT(with client use some kind of active mode)
+		if c.proxy.dataConnector.originConn.needsListen {
+			_, lPort, _ := net.SplitHostPort(c.proxy.dataConnector.originConn.listener.Addr().String())
+			listenPort, _ := strconv.Atoi(lPort)
+
+			listenIP := strings.Split(c.proxy.GetConn().LocalAddr().String(), ":")[0]
+
+			// prepare PORT command line to origin
+			// only use PORT command because connect to server support IPv4 now
+			toOriginMsg = fmt.Sprintf("PORT %s,%s,%s\r\n",
+				strings.ReplaceAll(listenIP, ".", ","),
+				strconv.Itoa(listenPort/256),
+				strconv.Itoa(listenPort%256))
+		} else {
+			if c.config.TransferMode == "CLIENT" {
+				toOriginMsg = c.command + "\r\n"
+			} else {
+				toOriginMsg = c.config.TransferMode + "\r\n"
+			}
+		}
+
+		// send command to origin
+		if err := c.proxy.sendToOrigin(toOriginMsg); err != nil {
+			return &result{
+				code: 500,
+				msg:  fmt.Sprintf("Internal error: %s", err),
+				err:  err,
+				log:  c.log,
+			}
+		}
+	} else {
+		if err := c.proxy.sendToOrigin(c.line); err != nil {
+			return &result{
+				code: 530,
+				msg:  "I can't deal with you (proxy error)",
+				err:  err,
+				log:  c.log,
+			}
+		}
+	}
 
 	return nil
 }
