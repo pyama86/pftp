@@ -278,6 +278,8 @@ func (c *clientHandler) readClientCommands() error {
 					c.log.debug("error from client connection: %s", err.Error())
 				}
 			}
+
+			break
 		} else {
 			commandResponse := c.handleCommand(line)
 			if commandResponse != nil {
