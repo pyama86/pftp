@@ -18,11 +18,6 @@ const (
 	PortRangeLength = 2
 )
 
-type portRange struct {
-	Start int
-	End   int
-}
-
 type config struct {
 	ListenAddr      string      `toml:"listen_addr"`
 	RemoteAddr      string      `toml:"remote_addr"`
