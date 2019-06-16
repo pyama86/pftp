@@ -245,33 +245,39 @@ func (c *clientHandler) readClientCommands() error {
 				lastError = nil
 			} else if c.command == "QUIT" {
 				lastError = nil
-			} else if err.(net.Error).Timeout() {
-				c.conn.SetDeadline(time.Now().Add(time.Minute))
-				r := result{
-					code: 421,
-					msg:  "command timeout : closing control connection",
-					err:  err,
-					log:  c.log,
-				}
-				if err := r.Response(c); err != nil {
-					lastError = fmt.Errorf("response to client error: %v", err)
-
-					break
-				}
-
-				// if timeout, send EOF to client connection for graceful disconnect
-				// if send EOF failed, close immediatly
-				if err := sendEOF(c.conn); err != nil {
-					c.log.debug("send EOF to client failed. try to close connection.")
-					connectionCloser(c, c.log)
-				}
-
-				continue
 			} else {
-				c.log.debug("error from client connection: %s", err.Error())
-			}
+				switch err.(type) {
+				case net.Error:
+					if err.(net.Error).Timeout() {
+						c.conn.SetDeadline(time.Now().Add(time.Minute))
+						r := result{
+							code: 421,
+							msg:  "command timeout : closing control connection",
+							err:  err,
+							log:  c.log,
+						}
+						if err := r.Response(c); err != nil {
+							lastError = fmt.Errorf("response to client error: %v", err)
 
-			break
+							break
+						}
+
+						// if timeout, send EOF to client connection for graceful disconnect
+						// if send EOF failed, close immediatly
+						if err := sendEOF(c.conn); err != nil {
+							c.log.debug("send EOF to client failed. try to close connection.")
+							connectionCloser(c, c.log)
+						}
+
+						continue
+					} else {
+						c.log.debug("error from client connection: %s", err.Error())
+					}
+
+				default:
+					c.log.debug("error from client connection: %s", err.Error())
+				}
+			}
 		} else {
 			commandResponse := c.handleCommand(line)
 			if commandResponse != nil {
@@ -295,12 +301,10 @@ func (c *clientHandler) LockClientRead() {
 		c.readlockMutex.Lock()
 
 		if c.readLock {
-			c.readLock = false
-			c.readlockMutex.Unlock()
-		} else {
-			c.readLock = true
 			c.readlockMutex.Unlock()
 			<-c.gotResponse
+		} else {
+			c.readlockMutex.Unlock()
 		}
 	}
 }
@@ -318,10 +322,6 @@ func (c *clientHandler) writeLine(line string) error {
 	if err := c.writer.Flush(); err != nil {
 		return err
 	}
-
-	c.readlockMutex.Lock()
-	c.readLock = true
-	c.readlockMutex.Unlock()
 
 	c.log.debug("send to client: %s", line)
 	return nil
@@ -365,12 +365,17 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 			return res
 		}
 	} else {
+		c.readlockMutex.Lock()
+		c.readLock = true
 		if err := c.proxy.sendToOrigin(line); err != nil {
+			c.readLock = false
+			c.readlockMutex.Unlock()
 			return &result{
 				code: 500,
 				msg:  fmt.Sprintf("Internal error: %s", err),
 			}
 		}
+		c.readlockMutex.Unlock()
 	}
 
 	return nil
