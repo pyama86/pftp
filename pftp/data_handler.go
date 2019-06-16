@@ -22,15 +22,16 @@ type dataHandler struct {
 }
 
 type connector struct {
-	listener    *net.TCPListener
-	conn        net.Conn
-	remoteIP    string
-	remotePort  string
-	localIP     string
-	localPort   string
-	needsListen bool
-	isClient    bool
-	mode        string
+	listener         *net.TCPListener
+	conn             net.Conn
+	originalRemoteIP string
+	remoteIP         string
+	remotePort       string
+	localIP          string
+	localPort        string
+	needsListen      bool
+	isClient         bool
+	mode             string
 }
 
 // Make listener for data connection
@@ -58,12 +59,12 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 	}
 
 	if originConn != nil {
-		d.originConn.remoteIP, _, _ = net.SplitHostPort(originConn.RemoteAddr().String())
+		d.originConn.originalRemoteIP, _, _ = net.SplitHostPort(originConn.RemoteAddr().String())
 		d.originConn.localIP, d.originConn.localPort, _ = net.SplitHostPort(originConn.LocalAddr().String())
 	}
 
 	if clientConn != nil {
-		d.clientConn.remoteIP, _, _ = net.SplitHostPort(clientConn.RemoteAddr().String())
+		d.clientConn.originalRemoteIP, _, _ = net.SplitHostPort(clientConn.RemoteAddr().String())
 		d.clientConn.localIP, d.clientConn.localPort, _ = net.SplitHostPort(clientConn.LocalAddr().String())
 	}
 
@@ -183,28 +184,36 @@ func (d *dataHandler) Close() error {
 	// close net.Conn
 	if d.clientConn.conn != nil {
 		if err := d.clientConn.conn.Close(); err != nil {
-			d.log.err("origin data connection close error: %s", err.Error())
-			lastErr = err
+			if !strings.Contains(err.Error(), AlreadyClosedMsg) {
+				d.log.err("origin data connection close error: %s", err.Error())
+				lastErr = err
+			}
 		}
 	}
 	if d.originConn.conn != nil {
 		if err := d.originConn.conn.Close(); err != nil {
-			d.log.err("origin data connection close error: %s", err.Error())
-			lastErr = err
+			if !strings.Contains(err.Error(), AlreadyClosedMsg) {
+				d.log.err("origin data connection close error: %s", err.Error())
+				lastErr = err
+			}
 		}
 	}
 
 	// close listener
 	if d.clientConn.listener != nil {
 		if err := d.clientConn.listener.Close(); err != nil {
-			d.log.err("client data listener close error: %s", err.Error())
-			lastErr = err
+			if !strings.Contains(err.Error(), AlreadyClosedMsg) {
+				d.log.err("client data listener close error: %s", err.Error())
+				lastErr = err
+			}
 		}
 	}
 	if d.originConn.listener != nil {
 		if err := d.originConn.conn.Close(); err != nil {
-			d.log.err("origin data listener close error: %s", err.Error())
-			lastErr = err
+			if !strings.Contains(err.Error(), AlreadyClosedMsg) {
+				d.log.err("origin data listener close error: %s", err.Error())
+				lastErr = err
+			}
 		}
 	}
 
@@ -282,34 +291,21 @@ func (d *dataHandler) clientListenOrDial() error {
 		var conn net.Conn
 		var err error
 
-		// try connect second times
-		// at first time, connecto by received IP
-		// if failed, try connect to communication channel connected IP
-		for i := 1; i <= 2; i++ {
-			// when connect to client(use active mode), dial to client use port 20 only
-			lAddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort("", "20"))
-			if err != nil {
-				d.log.err("cannot resolve local address")
-				return err
-			}
-			// set port reuse and local address
-			netDialer := net.Dialer{
-				Control:   setReuseIPPort,
-				LocalAddr: lAddr,
-				Deadline:  time.Now().Add(time.Duration(ConnectionTimeout) * time.Second),
-			}
-
-			conn, err = netDialer.Dial("tcp", net.JoinHostPort(d.clientConn.remoteIP, d.clientConn.remotePort))
-			if err != nil || conn == nil {
-				d.log.err("cannot connect to client data address: %v, %s", conn, err.Error())
-
-				// if failed connect to origin by response IP, try to original connection IP again.
-				d.clientConn.remoteIP = strings.Split(d.clientConn.conn.RemoteAddr().String(), ":")[0]
-				d.log.debug("try to connect original IP: %s", d.clientConn.remoteIP)
-			} else {
-				break
-			}
+		// when connect to client(use active mode), dial to client use port 20 only
+		lAddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort("", "20"))
+		if err != nil {
+			d.log.err("cannot resolve local address")
+			return err
 		}
+		// set port reuse and local address
+		netDialer := net.Dialer{
+			Control:   setReuseIPPort,
+			LocalAddr: lAddr,
+			Deadline:  time.Now().Add(time.Duration(ConnectionTimeout) * time.Second),
+		}
+
+		conn, err = netDialer.Dial("tcp", net.JoinHostPort(d.clientConn.remoteIP, d.clientConn.remotePort))
+
 		if err != nil || conn == nil {
 			d.log.err("cannot connect to client data address: %v, %s", conn, err.Error())
 			return err
@@ -360,24 +356,11 @@ func (d *dataHandler) originListenOrDial() error {
 		var conn net.Conn
 		var err error
 
-		// try connect second times
-		// at first time, connecto by received IP
-		// if failed, try connect to communication channel connected IP
-		for i := 1; i <= 2; i++ {
-			conn, err = net.DialTimeout(
-				"tcp",
-				net.JoinHostPort(d.originConn.remoteIP, d.originConn.remotePort),
-				time.Duration(ConnectionTimeout)*time.Second)
-			if err != nil || conn == nil {
-				d.log.debug("cannot connect to origin data address: %v, %s", conn, err.Error())
+		conn, err = net.DialTimeout(
+			"tcp",
+			net.JoinHostPort(d.originConn.remoteIP, d.originConn.remotePort),
+			time.Duration(ConnectionTimeout)*time.Second)
 
-				// if failed connect to origin by response IP, try to original connection IP again.
-				d.originConn.remoteIP = strings.Split(d.originConn.conn.RemoteAddr().String(), ":")[0]
-				d.log.debug("try to connect original IP: %s", d.originConn.remoteIP)
-			} else {
-				break
-			}
-		}
 		if err != nil || conn == nil {
 			d.log.debug("cannot connect to origin data address: %v, %s", conn, err.Error())
 
@@ -427,6 +410,11 @@ func (d *dataHandler) parsePORTcommand(line string) error {
 
 	d.clientConn.remoteIP, d.clientConn.remotePort, err = parseLineToAddr(strings.Split(strings.Trim(line, "\r\n"), " ")[1])
 
+	// if received ip is not public IP, ignore it
+	if !isPublicIP(net.ParseIP(d.clientConn.remoteIP)) {
+		d.clientConn.remoteIP = d.clientConn.originalRemoteIP
+	}
+
 	return err
 }
 
@@ -438,6 +426,11 @@ func (d *dataHandler) parseEPRTcommand(line string) error {
 	var err error
 
 	d.clientConn.remoteIP, d.clientConn.remotePort, err = parseEPRTtoAddr(strings.Split(strings.Trim(line, "\r\n"), " ")[1])
+
+	// if received ip is not public IP, ignore it
+	if !isPublicIP(net.ParseIP(d.clientConn.remoteIP)) {
+		d.clientConn.remoteIP = d.clientConn.originalRemoteIP
+	}
 
 	return err
 }
@@ -455,6 +448,11 @@ func (d *dataHandler) parsePASVresponse(line string) error {
 	}
 
 	d.originConn.remoteIP, d.originConn.remotePort, err = parseLineToAddr(line[startIndex+1 : endIndex])
+
+	// if received ip is not public IP, ignore it
+	if !isPublicIP(net.ParseIP(d.originConn.remoteIP)) {
+		d.originConn.remoteIP = d.originConn.originalRemoteIP
+	}
 
 	return err
 }
@@ -543,4 +541,31 @@ func parseEPRTtoAddr(line string) (string, string, error) {
 	}
 
 	return IP, port, nil
+}
+
+// check IP is public
+// ** private IP range **
+// Class       Starting IPAddress     Ending IP Address    # Host counts
+// A           10.0.0.0               10.255.255.255       16,777,216
+// B           172.16.0.0             172.31.255.255       1,048,576
+// C           192.168.0.0            192.168.255.255      65,536
+// Link-local  169.254.0.0            169.254.255.255      65,536
+// Local       127.0.0.0              127.255.255.255      16777216
+func isPublicIP(IP net.IP) bool {
+	if IP.IsLoopback() || IP.IsLinkLocalMulticast() || IP.IsLinkLocalUnicast() {
+		return false
+	}
+	if ip4 := IP.To4(); ip4 != nil {
+		switch {
+		case ip4[0] == 10:
+			return false
+		case ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31:
+			return false
+		case ip4[0] == 192 && ip4[1] == 168:
+			return false
+		default:
+			return true
+		}
+	}
+	return false
 }
