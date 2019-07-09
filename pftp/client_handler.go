@@ -63,7 +63,7 @@ type clientHandler struct {
 	inDataTransfer      bool
 }
 
-func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnections *int32) *clientHandler {
+func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32) *clientHandler {
 	p := &clientHandler{
 		id:                id,
 		conn:              connection,
@@ -72,7 +72,7 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		writer:            bufio.NewWriter(connection),
 		reader:            bufio.NewReader(connection),
 		context:           newContext(c),
-		currentConnection: currentConnections,
+		currentConnection: currentConnection,
 		mutex:             &sync.Mutex{},
 		readlockMutex:     &sync.Mutex{},
 		log:               &logger{fromip: connection.RemoteAddr().String(), id: id},
