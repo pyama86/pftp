@@ -83,6 +83,8 @@ func Test_dataHandler_parsePORTcommand(t *testing.T) {
 		},
 	}
 
+	inDataTransfer := false
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := want{}
@@ -91,7 +93,9 @@ func Test_dataHandler_parsePORTcommand(t *testing.T) {
 				nil,
 				nil,
 				nil,
-				tt.fields.mode)
+				tt.fields.mode,
+				&inDataTransfer,
+			)
 			got.err = d.parsePORTcommand(tt.fields.line)
 			if (got.err != nil) != tt.wantErr {
 				t.Errorf("dataHandler.parsePORTcommand() error = %v, wantErr %v", got.err, tt.wantErr)
@@ -198,6 +202,8 @@ func Test_dataHandler_parseEPRTcommand(t *testing.T) {
 		},
 	}
 
+	inDataTransfer := false
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := want{}
@@ -206,7 +212,9 @@ func Test_dataHandler_parseEPRTcommand(t *testing.T) {
 				nil,
 				nil,
 				nil,
-				tt.fields.mode)
+				tt.fields.mode,
+				&inDataTransfer,
+			)
 			got.err = d.parseEPRTcommand(tt.fields.line)
 			if (got.err != nil) != tt.wantErr {
 				t.Errorf("dataHandler.parseEPRTcommand() error = %v, wantErr %v", got.err, tt.wantErr)
@@ -299,6 +307,8 @@ func Test_dataHandler_parsePASVresponse(t *testing.T) {
 		},
 	}
 
+	inDataTransfer := false
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := want{}
@@ -307,7 +317,9 @@ func Test_dataHandler_parsePASVresponse(t *testing.T) {
 				nil,
 				nil,
 				nil,
-				tt.fields.mode)
+				tt.fields.mode,
+				&inDataTransfer,
+			)
 			got.err = d.parsePASVresponse(tt.fields.line)
 			if (got.err != nil) != tt.wantErr {
 				t.Errorf("dataHandler.parsePASVresponse() error = %v, wantErr %v", got.err, tt.wantErr)
@@ -386,6 +398,8 @@ func Test_dataHandler_parseEPSV(t *testing.T) {
 		},
 	}
 
+	inDataTransfer := false
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := want{}
@@ -394,7 +408,9 @@ func Test_dataHandler_parseEPSV(t *testing.T) {
 				nil,
 				nil,
 				nil,
-				tt.fields.mode)
+				tt.fields.mode,
+				&inDataTransfer,
+			)
 			got.err = d.parseEPSVresponse(tt.fields.line)
 			if (got.err != nil) != tt.wantErr {
 				t.Errorf("dataHandler.parseEPSVresponse() error = %v, wantErr %v", got.err, tt.wantErr)
