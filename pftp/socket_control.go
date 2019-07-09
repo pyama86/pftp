@@ -17,7 +17,7 @@ func sendEOF(conn net.Conn) error {
 	// anonymous interface. Could explicitly use TCP instead.
 	if v, ok := conn.(interface{ CloseWrite() error }); ok {
 		if err := v.CloseWrite(); err != nil {
-			if !strings.Contains(err.Error(), AlreadyClosedMsg) {
+			if !strings.Contains(err.Error(), alreadyClosedMsg) {
 				return err
 			}
 		}
@@ -29,7 +29,7 @@ func sendEOF(conn net.Conn) error {
 // close connection
 func connectionCloser(c closer, log *logger) {
 	if err := c.Close(); err != nil {
-		if !strings.Contains(err.Error(), AlreadyClosedMsg) {
+		if !strings.Contains(err.Error(), alreadyClosedMsg) {
 			// log is nil when unit test
 			if log != nil {
 				log.err(err.Error())
