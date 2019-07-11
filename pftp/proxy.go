@@ -545,16 +545,10 @@ func getCode(line string) []string {
 // if proxy or client read handler is done, does not set channel to wait
 func (s *proxyServer) UnlockClientRead() {
 	if !*s.isDone {
-		s.readlockMutex.Lock()
-		lockState := *s.readLock
-		s.readlockMutex.Unlock()
-
-		if lockState {
+		if getReadLockStatus(s.readlockMutex, s.readLock) {
 			s.nowGotResponse <- struct{}{}
 		}
 
-		s.readlockMutex.Lock()
-		*s.readLock = false
-		s.readlockMutex.Unlock()
+		setReadLockStatus(s.readlockMutex, s.readLock, false)
 	}
 }

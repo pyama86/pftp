@@ -179,9 +179,7 @@ func (c *clientHandler) getResponseFromOrigin() error {
 	// close origin connection when close goroutine
 	defer func() {
 		// set readLock false before send EOF to proxy for avoid lock on channel write
-		c.readlockMutex.Lock()
-		c.readLock = false
-		c.readlockMutex.Unlock()
+		setReadLockStatus(c.readlockMutex, &c.readLock, false)
 
 		// send EOF to client connection. if fail, close immediatly
 		if err := sendEOF(c.conn); err != nil {
@@ -231,9 +229,7 @@ func (c *clientHandler) readClientCommands() error {
 	// close client connection when close goroutine
 	defer func() {
 		// set readLock false before send EOF to proxy for avoid lock on channel write
-		c.readlockMutex.Lock()
-		c.readLock = false
-		c.readlockMutex.Unlock()
+		setReadLockStatus(c.readlockMutex, &c.readLock, false)
 
 		// send EOF to origin connection. if fail, close immediatly
 		if err := sendEOF(c.proxy.GetConn()); err != nil {
@@ -315,11 +311,8 @@ func (c *clientHandler) readClientCommands() error {
 // if proxy or client read handler is done, does not set channel to wait
 func (c *clientHandler) LockClientRead() {
 	if !c.isDone {
-		c.readlockMutex.Lock()
-		lockState := c.readLock
-		c.readlockMutex.Unlock()
 
-		if lockState {
+		if getReadLockStatus(c.readlockMutex, &c.readLock) {
 			<-c.gotResponse
 		}
 	}
@@ -381,17 +374,15 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 			return res
 		}
 	} else {
-		c.readlockMutex.Lock()
-		c.readLock = true
 		if err := c.proxy.sendToOrigin(line); err != nil {
-			c.readLock = false
-			c.readlockMutex.Unlock()
+			setReadLockStatus(c.readlockMutex, &c.readLock, false)
 			return &result{
 				code: 500,
 				msg:  fmt.Sprintf("Internal error: %s", err),
 			}
 		}
-		c.readlockMutex.Unlock()
+
+		setReadLockStatus(c.readlockMutex, &c.readLock, true)
 	}
 
 	return nil
@@ -449,4 +440,20 @@ func (c *clientHandler) commandLog(line string) {
 	} else {
 		c.log.info("read from client: %s", line)
 	}
+}
+
+// set readLock false before send EOF to proxy for avoid lock on channel write
+func setReadLockStatus(readlockMutex *sync.Mutex, readLock *bool, status bool) {
+	readlockMutex.Lock()
+	*readLock = status
+	readlockMutex.Unlock()
+}
+
+// set readLock false before send EOF to proxy for avoid lock on channel write
+func getReadLockStatus(readlockMutex *sync.Mutex, readLock *bool) bool {
+	readlockMutex.Lock()
+	lockStatus := *readLock
+	readlockMutex.Unlock()
+
+	return lockStatus
 }
