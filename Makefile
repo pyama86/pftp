@@ -89,7 +89,7 @@ integration:
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Integration Testing$(RESET)"
 	./misc/server stop || true
 	./misc/server start
-	$(GO) test $(VERBOSE) -integration $(TEST) $(TEST_OPTIONS)
+	$(GO) test $(VERBOSE) -timeout=300s -integration $(TEST) $(TEST_OPTIONS)
 	./misc/server stop
 
 .PHONY: default dist test
