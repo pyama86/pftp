@@ -10,11 +10,11 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-type Config struct {
-	Apiserver ServerConfig `toml:"webapiserver"`
+type config struct {
+	Apiserver serverConfig `toml:"webapiserver"`
 }
 
-type ServerConfig struct {
+type serverConfig struct {
 	URI string `toml:"uri"`
 }
 
@@ -57,7 +57,7 @@ func RequestToServer(requestURI string, param string) (*Response, error) {
 // GetDomainFromWebAPI will return destination url by string.
 // Make request URL from config file and has request to server with username parameter.
 func GetDomainFromWebAPI(path string, param string) (*string, error) {
-	var conf Config
+	var conf config
 	_, err := toml.DecodeFile(path, &conf)
 	if err != nil {
 		return nil, err

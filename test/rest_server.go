@@ -12,48 +12,48 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
-type Response struct {
+type response struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    string `json:"data"`
 }
 
-type Resource interface {
-	Uri() string
-	Get(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) Response
-	Post(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) Response
-	Put(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) Response
-	Delete(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) Response
+type resource interface {
+	URI() string
+	Get(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) response
+	Post(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) response
+	Put(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) response
+	Delete(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) response
 }
 
 type (
-	GetNotSupported    struct{}
-	PostNotSupported   struct{}
-	PutNotSupported    struct{}
-	DeleteNotSupported struct{}
+	getNotSupported    struct{}
+	postNotSupported   struct{}
+	putNotSupported    struct{}
+	deleteNotSupported struct{}
 )
 
-func (GetNotSupported) Get(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) Response {
-	return Response{405, "", ""}
+func (getNotSupported) Get(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) response {
+	return response{405, "", ""}
 }
 
-func (PostNotSupported) Post(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) Response {
-	return Response{405, "", ""}
+func (postNotSupported) Post(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) response {
+	return response{405, "", ""}
 }
 
-func (PutNotSupported) Put(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) Response {
-	return Response{405, "", ""}
+func (putNotSupported) Put(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) response {
+	return response{405, "", ""}
 }
 
-func (DeleteNotSupported) Delete(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) Response {
-	return Response{405, "", ""}
+func (deleteNotSupported) Delete(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) response {
+	return response{405, "", ""}
 }
 
 func abort(rw http.ResponseWriter, statusCode int) {
 	rw.WriteHeader(statusCode)
 }
 
-func HttpResponse(rw http.ResponseWriter, req *http.Request, res Response) {
+func httpResponse(rw http.ResponseWriter, req *http.Request, res response) {
 	content, err := json.Marshal(res)
 
 	if err != nil {
@@ -64,22 +64,22 @@ func HttpResponse(rw http.ResponseWriter, req *http.Request, res Response) {
 	rw.Write(content)
 }
 
-func AddResource(router *httprouter.Router, resource Resource) {
-	router.GET(resource.Uri(), func(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+func addResource(router *httprouter.Router, resource resource) {
+	router.GET(resource.URI(), func(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		res := resource.Get(rw, r, ps)
-		HttpResponse(rw, r, res)
+		httpResponse(rw, r, res)
 	})
-	router.POST(resource.Uri(), func(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	router.POST(resource.URI(), func(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		res := resource.Post(rw, r, ps)
-		HttpResponse(rw, r, res)
+		httpResponse(rw, r, res)
 	})
-	router.PUT(resource.Uri(), func(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	router.PUT(resource.URI(), func(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		res := resource.Put(rw, r, ps)
-		HttpResponse(rw, r, res)
+		httpResponse(rw, r, res)
 	})
-	router.DELETE(resource.Uri(), func(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	router.DELETE(resource.URI(), func(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		res := resource.Delete(rw, r, ps)
-		HttpResponse(rw, r, res)
+		httpResponse(rw, r, res)
 	})
 }
 
@@ -89,33 +89,34 @@ var domains = []string{
 	"127.0.0.1:20021", // for prouser
 }
 
-type GetUserDomain struct {
-	PostNotSupported
-	PutNotSupported
-	DeleteNotSupported
+type getUserDomain struct {
+	postNotSupported
+	putNotSupported
+	deleteNotSupported
 }
 
-func (GetUserDomain) Uri() string {
+func (getUserDomain) URI() string {
 	return "/getDomain"
 }
 
-func (GetUserDomain) Get(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) Response {
+func (getUserDomain) Get(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) response {
 	user := r.FormValue("username")
 
 	if user == "vsuser" {
-		return Response{200, "Username found", domains[0]}
+		return response{200, "Username found", domains[0]}
 	}
 
 	if user == "prouser" {
-		return Response{200, "Username found", domains[1]}
+		return response{200, "Username found", domains[1]}
 	}
 
-	return Response{400, "Username not found", ""}
+	return response{400, "Username not found", ""}
 }
 
+// LaunchTestRestServer Launch test server
 func LaunchTestRestServer() (*http.Server, error) {
 	router := httprouter.New()
-	AddResource(router, new(GetUserDomain))
+	addResource(router, new(getUserDomain))
 
 	srv := &http.Server{Addr: "127.0.0.1:8080", Handler: router}
 
@@ -128,9 +129,10 @@ func LaunchTestRestServer() (*http.Server, error) {
 	return srv, nil
 }
 
+// LaunchUnitTestRestServer Launch test server for unit test
 func LaunchUnitTestRestServer(t *testing.T) *httptest.Server {
 	router := httprouter.New()
-	AddResource(router, new(GetUserDomain))
+	addResource(router, new(getUserDomain))
 
 	srv := httptest.NewServer(router)
 
