@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/jlaffaye/ftp"
@@ -334,6 +335,8 @@ func TestGoroutineLeak(t *testing.T) {
 	}
 	eg := errgroup.Group{}
 
+	beforeLoadTest := runtime.NumGoroutine()
+
 	for i := 0; i < leaktestCount; i++ {
 		eg.Go(func() error {
 			client, err := ftp.Dial("localhost:2121")
@@ -346,7 +349,11 @@ func TestGoroutineLeak(t *testing.T) {
 		})
 	}
 
-	if err := eg.Wait(); err != nil {
-		t.Fatal(err)
+	eg.Wait()
+
+	afterLoadTest := runtime.NumGoroutine()
+
+	if beforeLoadTest < afterLoadTest {
+		t.Fatal(fmt.Errorf("goroutine count increased! before test = %d, after test = %d", beforeLoadTest, afterLoadTest))
 	}
 }
