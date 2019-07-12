@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"sync/atomic"
 )
 
 func (c *clientHandler) handleUSER() *result {
@@ -51,10 +50,6 @@ func (c *clientHandler) handleUSER() *result {
 		}
 	}
 	c.isLoggedin = true
-
-	// increase current connection after send USER command for real login
-	atomic.AddInt32(c.currentConnection, 1)
-	c.log.debug("current connection count: %d", atomic.LoadInt32(c.currentConnection))
 
 	return nil
 }
@@ -254,7 +249,9 @@ func (c *clientHandler) handleDATA() *result {
 			c.log,
 			c.conn,
 			c.proxy.GetConn(),
-			c.command)
+			c.command,
+			&c.inDataTransfer,
+		)
 		if err != nil {
 			return &result{
 				code: 421,

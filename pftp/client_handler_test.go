@@ -1,6 +1,7 @@
 package pftp
 
 import (
+	"crypto/tls"
 	"errors"
 	"net"
 	"testing"
@@ -205,6 +206,125 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 		})
 	}
 
+	server.Close()
+	<-done
+}
+
+func Test_clientHandler_TLS_error_type_bug(t *testing.T) {
+	var server net.Listener
+	serverready := make(chan struct{})
+	conn := make(chan net.Conn)
+	done := make(chan struct{})
+	handlerDone := make(chan error)
+
+	go test.LaunchTestServer(&server, conn, done, serverready, t)
+
+	type fields struct {
+		config *config
+	}
+
+	tests := []struct {
+		name    string
+		fields  fields
+		command string
+		hook    func()
+		wantErr bool
+	}{
+		{
+			name: "err_type_check",
+			fields: fields{
+				config: &config{
+					IdleTimeout:    1,
+					MaxConnections: 5,
+					RemoteAddr:     "127.0.0.1:21",
+					WelcomeMsg:     "TLS test server",
+					TLS: &tlsPair{
+						Cert: "../tls/server.crt",
+						Key:  "../tls/server.key",
+					},
+				},
+			},
+			hook:    func() { time.Sleep(2 * time.Second) },
+			wantErr: false,
+		},
+	}
+	<-serverready
+
+	var cn int32
+
+	for _, tt := range tests {
+		if cert, err := tls.LoadX509KeyPair(tt.fields.config.TLS.Cert, tt.fields.config.TLS.Key); err == nil {
+			tt.fields.config.TLSConfig = &tls.Config{
+				NextProtos:   []string{"ftp"},
+				Certificates: []tls.Certificate{cert},
+			}
+		} else {
+			t.Errorf("clientHandler.TLS_error_type_bug() can not set tls config: %v", err)
+			return
+		}
+
+		t.Run(tt.name, func(t *testing.T) {
+			go func() {
+				clientHandler := newClientHandler(
+					<-conn,
+					tt.fields.config,
+					nil,
+					1,
+					&cn,
+				)
+
+				err := clientHandler.handleCommands()
+				handlerDone <- err
+
+				return
+			}()
+
+			buff := make([]byte, 4096)
+
+			// connect to test server
+			c, err := net.Dial("tcp", server.Addr().String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+
+			// read welcome message
+			_, err = c.Read(buff)
+			if err != nil {
+				t.Errorf("clientHandler.TLS_error_type_bug() can not read welcome message from origin: %v", err)
+			}
+
+			// send AUTH command to server
+			c.Write([]byte("AUTH TLS\r\n"))
+			_, err = c.Read(buff)
+			if err != nil {
+				t.Errorf("clientHandler.TLS_error_type_bug() can not read response from origin: %v", err)
+			}
+
+			// make tls handshake for full tls connection
+			tlsConn := tls.Client(c, &tls.Config{InsecureSkipVerify: true})
+			tlsConn.Handshake()
+
+			// comment out tls wrapping client connection
+			// c = net.Conn(tlsConn)
+
+			// send some command using by non wrapped conn
+			// if fail this test, goroutine got panic and terminate server
+			// so error response is ok (if err is nil, it means fail on test too).
+			c.Write([]byte("NOOP\r\n"))
+			_, err = c.Read(buff)
+			if err != nil {
+				t.Errorf("clientHandler.TLS_error_type_bug() can not read response from origin: %v", err)
+			}
+
+			// wait until client Handler end
+			serverErr := <-handlerDone
+
+			if (serverErr != nil) != tt.wantErr {
+				t.Errorf("clientHandler.TLS_error_type_bug() error = %v, wantErr %v\n", serverErr, tt.wantErr)
+			}
+		})
+	}
 	server.Close()
 	<-done
 }

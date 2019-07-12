@@ -48,6 +48,7 @@ type clientHandler struct {
 	proxy               *proxyServer
 	context             *Context
 	currentConnection   *int32
+	connCounts          int32
 	mutex               *sync.Mutex
 	readlockMutex       *sync.Mutex
 	log                 *logger
@@ -59,6 +60,7 @@ type clientHandler struct {
 	readLock            bool
 	gotResponse         chan struct{}
 	isDone              bool
+	inDataTransfer      bool
 }
 
 func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32) *clientHandler {
@@ -80,7 +82,12 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		readLock:          false,
 		gotResponse:       make(chan struct{}),
 		isDone:            false,
+		inDataTransfer:    false,
 	}
+
+	// increase current connection count
+	p.connCounts = atomic.AddInt32(p.currentConnection, 1)
+	p.log.info("FTP Client connected. clientIP: %s. current connection count: %d", p.conn.RemoteAddr(), p.connCounts)
 
 	// is masquerade IP not setted, set local IP of client connection
 	if len(p.config.MasqueradeIP) == 0 {
@@ -102,19 +109,22 @@ func (c *clientHandler) Close() error {
 }
 
 func (c *clientHandler) setClientDeadLine(t int) {
-	d := time.Now().Add(time.Duration(t) * time.Second)
-	if c.deadline.Unix() < d.Unix() {
-		c.deadline = d
-		c.conn.SetDeadline(d)
+	// do not time out during transfer data
+	if c.inDataTransfer {
+		c.conn.SetDeadline(time.Time{})
+	} else {
+		d := time.Now().Add(time.Duration(t) * time.Second)
+		if c.deadline.Unix() < d.Unix() {
+			c.deadline = d
+			c.conn.SetDeadline(d)
+		}
 	}
 }
 
 func (c *clientHandler) handleCommands() error {
 	defer func() {
-		// decrease connection count
-		if c.isLoggedin {
-			atomic.AddInt32(c.currentConnection, -1)
-		}
+		// decrease current connection count
+		c.log.info("FTP Client disconnect. clientIP: %s. current connection count: %d", c.conn.RemoteAddr(), atomic.AddInt32(c.currentConnection, -1))
 
 		// close each connection again
 		connectionCloser(c, c.log)
@@ -124,7 +134,7 @@ func (c *clientHandler) handleCommands() error {
 	}()
 
 	// Check max client. If exceeded, send 530 error to client and disconnect
-	if atomic.LoadInt32(c.currentConnection) >= c.config.MaxConnections {
+	if c.connCounts > c.config.MaxConnections {
 		err := fmt.Errorf("exceeded client connection limit")
 		r := result{
 			code: 530,
@@ -168,9 +178,12 @@ func (c *clientHandler) getResponseFromOrigin() error {
 
 	// close origin connection when close goroutine
 	defer func() {
+		// set readLock false before send EOF to proxy for avoid lock on channel write
+		setReadLockStatus(c.readlockMutex, &c.readLock, false)
+
 		// send EOF to client connection. if fail, close immediatly
 		if err := sendEOF(c.conn); err != nil {
-			c.log.debug("send EOF to client failed. try to close connection.")
+			c.log.debug("send EOF to client failed. close connection.")
 			connectionCloser(c, c.log)
 		}
 
@@ -186,7 +199,7 @@ func (c *clientHandler) getResponseFromOrigin() error {
 				c.log.debug("EOF from proxy connection")
 				err = nil
 			} else {
-				if !strings.Contains(err.Error(), AlreadyClosedMsg) {
+				if !strings.Contains(err.Error(), alreadyClosedMsg) {
 					c.log.debug("error from origin connection: %s", err.Error())
 				}
 			}
@@ -216,13 +229,11 @@ func (c *clientHandler) readClientCommands() error {
 	// close client connection when close goroutine
 	defer func() {
 		// set readLock false before send EOF to proxy for avoid lock on channel write
-		c.readlockMutex.Lock()
-		c.readLock = false
-		c.readlockMutex.Unlock()
+		setReadLockStatus(c.readlockMutex, &c.readLock, false)
 
 		// send EOF to origin connection. if fail, close immediatly
 		if err := sendEOF(c.proxy.GetConn()); err != nil {
-			c.log.debug("send EOF to origin failed. try to close connection.")
+			c.log.debug("send EOF to origin failed. close connection.")
 			connectionCloser(c.proxy, c.log)
 		}
 
@@ -245,30 +256,38 @@ func (c *clientHandler) readClientCommands() error {
 				lastError = nil
 			} else if c.command == "QUIT" {
 				lastError = nil
-			} else if err.(net.Error).Timeout() {
-				c.conn.SetDeadline(time.Now().Add(time.Minute))
-				r := result{
-					code: 421,
-					msg:  "command timeout : closing control connection",
-					err:  err,
-					log:  c.log,
-				}
-				if err := r.Response(c); err != nil {
-					lastError = fmt.Errorf("response to client error: %v", err)
-
-					break
-				}
-
-				// if timeout, send EOF to client connection for graceful disconnect
-				// if send EOF failed, close immediatly
-				if err := sendEOF(c.conn); err != nil {
-					c.log.debug("send EOF to client failed. try to close connection.")
-					connectionCloser(c, c.log)
-				}
-
-				continue
 			} else {
-				c.log.debug("error from client connection: %s", err.Error())
+				switch err.(type) {
+				case net.Error:
+					if err.(net.Error).Timeout() {
+						c.conn.SetDeadline(time.Now().Add(time.Minute))
+						r := result{
+							code: 421,
+							msg:  "command timeout : closing control connection",
+							err:  err,
+							log:  c.log,
+						}
+						if err := r.Response(c); err != nil {
+							lastError = fmt.Errorf("response to client error: %v", err)
+
+							break
+						}
+
+						// if timeout, send EOF to client connection for graceful disconnect
+						// if send EOF failed, close immediatly
+						if err := sendEOF(c.conn); err != nil {
+							c.log.debug("send EOF to client failed. try to close connection.")
+							connectionCloser(c, c.log)
+						}
+
+						continue
+					} else {
+						c.log.debug("error from client connection: %s", err.Error())
+					}
+
+				default:
+					c.log.debug("error from client connection: %s", err.Error())
+				}
 			}
 
 			break
@@ -292,14 +311,8 @@ func (c *clientHandler) readClientCommands() error {
 // if proxy or client read handler is done, does not set channel to wait
 func (c *clientHandler) LockClientRead() {
 	if !c.isDone {
-		c.readlockMutex.Lock()
 
-		if c.readLock {
-			c.readLock = false
-			c.readlockMutex.Unlock()
-		} else {
-			c.readLock = true
-			c.readlockMutex.Unlock()
+		if getReadLockStatus(c.readlockMutex, &c.readLock) {
 			<-c.gotResponse
 		}
 	}
@@ -318,10 +331,6 @@ func (c *clientHandler) writeLine(line string) error {
 	if err := c.writer.Flush(); err != nil {
 		return err
 	}
-
-	c.readlockMutex.Lock()
-	c.readLock = true
-	c.readlockMutex.Unlock()
 
 	c.log.debug("send to client: %s", line)
 	return nil
@@ -366,11 +375,14 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 		}
 	} else {
 		if err := c.proxy.sendToOrigin(line); err != nil {
+			setReadLockStatus(c.readlockMutex, &c.readLock, false)
 			return &result{
 				code: 500,
 				msg:  fmt.Sprintf("Internal error: %s", err),
 			}
 		}
+
+		setReadLockStatus(c.readlockMutex, &c.readLock, true)
 	}
 
 	return nil
@@ -395,6 +407,7 @@ func (c *clientHandler) connectProxy() error {
 				readLock:       &c.readLock,
 				nowGotResponse: c.gotResponse,
 				isDone:         &c.isDone,
+				inDataTransfer: &c.inDataTransfer,
 			})
 
 		if err != nil {
@@ -422,9 +435,25 @@ func (c *clientHandler) parseLine(line string) {
 
 // Hide parameters from log
 func (c *clientHandler) commandLog(line string) {
-	if strings.Compare(strings.ToUpper(getCommand(line)[0]), SecureCommand) == 0 {
-		c.log.info("read from client: %s ********\r\n", SecureCommand)
+	if strings.Compare(strings.ToUpper(getCommand(line)[0]), secureCommand) == 0 {
+		c.log.info("read from client: %s ********\r\n", secureCommand)
 	} else {
 		c.log.info("read from client: %s", line)
 	}
+}
+
+// set readLock false before send EOF to proxy for avoid lock on channel write
+func setReadLockStatus(readlockMutex *sync.Mutex, readLock *bool, status bool) {
+	readlockMutex.Lock()
+	*readLock = status
+	readlockMutex.Unlock()
+}
+
+// set readLock false before send EOF to proxy for avoid lock on channel write
+func getReadLockStatus(readlockMutex *sync.Mutex, readLock *bool) bool {
+	readlockMutex.Lock()
+	lockStatus := *readLock
+	readlockMutex.Unlock()
+
+	return lockStatus
 }

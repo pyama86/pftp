@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/jlaffaye/ftp"
@@ -41,6 +42,12 @@ var testset = []testSet{
 }
 
 const dataPath = "misc/test/data"
+
+// goroutine leak test count
+const leaktestCount = 400
+
+// test set for leak test (use proftpd user)
+var leaktestset = testset[0]
 
 func localConnect(port int, t *testing.T) *ftp.ServerConn {
 	client, err := ftp.Dial(fmt.Sprintf("localhost:%d", port))
@@ -318,5 +325,35 @@ func TestDownload(t *testing.T) {
 
 	if err := eg.Wait(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestGoroutineLeak(t *testing.T) {
+	// check goroutine leak when get a lot of connection
+	if !*integration {
+		t.Skip()
+	}
+	eg := errgroup.Group{}
+
+	beforeLoadTest := runtime.NumGoroutine()
+
+	for i := 0; i < leaktestCount; i++ {
+		eg.Go(func() error {
+			client, err := ftp.Dial("localhost:2121")
+			if err != nil {
+				return nil
+			}
+			defer client.Quit()
+
+			return nil
+		})
+	}
+
+	eg.Wait()
+
+	afterLoadTest := runtime.NumGoroutine()
+
+	if beforeLoadTest < afterLoadTest {
+		t.Fatal(fmt.Errorf("goroutine count increased! before test = %d, after test = %d", beforeLoadTest, afterLoadTest))
 	}
 }

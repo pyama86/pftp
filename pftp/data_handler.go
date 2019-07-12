@@ -14,56 +14,60 @@ import (
 )
 
 type dataHandler struct {
-	clientConn      connector
-	originConn      connector
-	config          *config
-	log             *logger
-	originConnected chan bool
+	clientConn     connector
+	originConn     connector
+	config         *config
+	log            *logger
+	inDataTransfer *bool
 }
 
 type connector struct {
-	listener    *net.TCPListener
-	conn        net.Conn
-	remoteIP    string
-	remotePort  string
-	localIP     string
-	localPort   string
-	needsListen bool
-	isClient    bool
-	mode        string
+	listener         *net.TCPListener
+	communicaionConn net.Conn
+	dataConn         net.Conn
+	originalRemoteIP string
+	remoteIP         string
+	remotePort       string
+	localIP          string
+	localPort        string
+	needsListen      bool
+	isClient         bool
+	mode             string
 }
 
 // Make listener for data connection
-func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn net.Conn, mode string) (*dataHandler, error) {
+func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn net.Conn, mode string, inDataTransfer *bool) (*dataHandler, error) {
 	var err error
 
 	d := &dataHandler{
 		originConn: connector{
-			listener:    nil,
-			conn:        nil,
-			needsListen: false,
-			isClient:    false,
-			mode:        config.TransferMode,
+			listener:         nil,
+			communicaionConn: originConn,
+			dataConn:         nil,
+			needsListen:      false,
+			isClient:         false,
+			mode:             config.TransferMode,
 		},
 		clientConn: connector{
-			listener:    nil,
-			conn:        nil,
-			needsListen: false,
-			isClient:    true,
-			mode:        mode,
+			listener:         nil,
+			communicaionConn: clientConn,
+			dataConn:         nil,
+			needsListen:      false,
+			isClient:         true,
+			mode:             mode,
 		},
-		config:          config,
-		log:             log,
-		originConnected: make(chan bool),
+		config:         config,
+		log:            log,
+		inDataTransfer: inDataTransfer,
 	}
 
-	if originConn != nil {
-		d.originConn.remoteIP, _, _ = net.SplitHostPort(originConn.RemoteAddr().String())
+	if d.originConn.communicaionConn != nil {
+		d.originConn.originalRemoteIP, _, _ = net.SplitHostPort(originConn.RemoteAddr().String())
 		d.originConn.localIP, d.originConn.localPort, _ = net.SplitHostPort(originConn.LocalAddr().String())
 	}
 
-	if clientConn != nil {
-		d.clientConn.remoteIP, _, _ = net.SplitHostPort(clientConn.RemoteAddr().String())
+	if d.clientConn.communicaionConn != nil {
+		d.clientConn.originalRemoteIP, _, _ = net.SplitHostPort(clientConn.RemoteAddr().String())
 		d.clientConn.localIP, d.clientConn.localPort, _ = net.SplitHostPort(clientConn.LocalAddr().String())
 	}
 
@@ -154,20 +158,20 @@ func (d *dataHandler) setNewListener() (*net.TCPListener, error) {
 
 		// only can support IPv4 between origin server connection
 		if listener, err = net.ListenTCP("tcp4", lAddr); err != nil {
-			if counter > ConnectionTimeout {
+			if counter > connectionTimeout {
 				d.log.err("cannot set listener")
 
 				return nil, err
 			}
 
-			d.log.debug("cannot use choosen port. try to select another port after 1 second... (%d/%d)", counter, ConnectionTimeout)
+			d.log.debug("cannot use choosen port. try to select another port after 1 second... (%d/%d)", counter, connectionTimeout)
 
 			time.Sleep(time.Duration(1) * time.Second)
 			continue
 
 		} else {
 			// set listener timeout
-			listener.SetDeadline(time.Now().Add(time.Duration(ConnectionTimeout) * time.Second))
+			listener.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
 
 			break
 		}
@@ -181,30 +185,38 @@ func (d *dataHandler) Close() error {
 	lastErr := error(nil)
 
 	// close net.Conn
-	if d.clientConn.conn != nil {
-		if err := d.clientConn.conn.Close(); err != nil {
-			d.log.err("origin data connection close error: %s", err.Error())
-			lastErr = err
+	if d.clientConn.dataConn != nil {
+		if err := d.clientConn.dataConn.Close(); err != nil {
+			if !strings.Contains(err.Error(), alreadyClosedMsg) {
+				d.log.err("origin data connection close error: %s", err.Error())
+				lastErr = err
+			}
 		}
 	}
-	if d.originConn.conn != nil {
-		if err := d.originConn.conn.Close(); err != nil {
-			d.log.err("origin data connection close error: %s", err.Error())
-			lastErr = err
+	if d.originConn.dataConn != nil {
+		if err := d.originConn.dataConn.Close(); err != nil {
+			if !strings.Contains(err.Error(), alreadyClosedMsg) {
+				d.log.err("origin data connection close error: %s", err.Error())
+				lastErr = err
+			}
 		}
 	}
 
 	// close listener
 	if d.clientConn.listener != nil {
 		if err := d.clientConn.listener.Close(); err != nil {
-			d.log.err("client data listener close error: %s", err.Error())
-			lastErr = err
+			if !strings.Contains(err.Error(), alreadyClosedMsg) {
+				d.log.err("client data listener close error: %s", err.Error())
+				lastErr = err
+			}
 		}
 	}
 	if d.originConn.listener != nil {
-		if err := d.originConn.conn.Close(); err != nil {
-			d.log.err("origin data listener close error: %s", err.Error())
-			lastErr = err
+		if err := d.originConn.dataConn.Close(); err != nil {
+			if !strings.Contains(err.Error(), alreadyClosedMsg) {
+				d.log.err("origin data listener close error: %s", err.Error())
+				lastErr = err
+			}
 		}
 	}
 
@@ -223,40 +235,44 @@ func (d *dataHandler) StartDataTransfer() error {
 
 	defer connectionCloser(d, d.log)
 
-	// make data connection
-	eg.Go(func() error { return d.clientListenOrDial() })
-	eg.Go(func() error { return d.originListenOrDial() })
+	// make data connection (origin first)
+	if err := d.originListenOrDial(); err != nil {
+		d.log.debug("data channel with origin creation failed")
 
-	// wait until data connection done
-	if err = eg.Wait(); err != nil {
-		d.log.err(err.Error())
+		return err
+	}
+	if err := d.clientListenOrDial(); err != nil {
+		d.log.debug("data channel with client creation failed")
 
-		d.log.debug("data channel creation failed")
 		return err
 	}
 
+	// do not timeout communication connection during data transfer
+	*d.inDataTransfer = true
+	d.clientConn.communicaionConn.SetDeadline(time.Time{})
+	d.originConn.communicaionConn.SetDeadline(time.Time{})
+
 	// client to origin
-	eg.Go(func() error { return d.dataTransfer(d.clientConn.conn, d.originConn.conn) })
+	eg.Go(func() error { return d.dataTransfer(d.clientConn.dataConn, d.originConn.dataConn) })
 
 	// origin to client
-	eg.Go(func() error { return d.dataTransfer(d.originConn.conn, d.clientConn.conn) })
+	eg.Go(func() error { return d.dataTransfer(d.originConn.dataConn, d.clientConn.dataConn) })
 
 	// wait until data transfer goroutine end
 	if err = eg.Wait(); err != nil {
 		d.log.err(err.Error())
 	}
 
-	return nil
+	// set timeout to each connection
+	*d.inDataTransfer = false
+	d.clientConn.communicaionConn.SetDeadline(time.Now().Add(time.Duration(d.config.IdleTimeout) * time.Second))
+	d.originConn.communicaionConn.SetDeadline(time.Now().Add(time.Duration(d.config.ProxyTimeout) * time.Second))
+
+	return err
 }
 
 // make client connection
 func (d *dataHandler) clientListenOrDial() error {
-	// wait until pftp to origin connected
-	if !<-d.originConnected {
-		d.log.err("origin connections is failed")
-		return fmt.Errorf("origin connections is failed")
-	}
-
 	// if client connect needs listen, open listener
 	if d.clientConn.needsListen {
 		conn, err := d.clientConn.listener.AcceptTCP()
@@ -277,39 +293,26 @@ func (d *dataHandler) clientListenOrDial() error {
 			conn.SetLinger(0)
 		}
 
-		d.clientConn.conn = conn
+		d.clientConn.dataConn = conn
 	} else {
 		var conn net.Conn
 		var err error
 
-		// try connect second times
-		// at first time, connecto by received IP
-		// if failed, try connect to communication channel connected IP
-		for i := 1; i <= 2; i++ {
-			// when connect to client(use active mode), dial to client use port 20 only
-			lAddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort("", "20"))
-			if err != nil {
-				d.log.err("cannot resolve local address")
-				return err
-			}
-			// set port reuse and local address
-			netDialer := net.Dialer{
-				Control:   setReuseIPPort,
-				LocalAddr: lAddr,
-				Deadline:  time.Now().Add(time.Duration(ConnectionTimeout) * time.Second),
-			}
-
-			conn, err = netDialer.Dial("tcp", net.JoinHostPort(d.clientConn.remoteIP, d.clientConn.remotePort))
-			if err != nil || conn == nil {
-				d.log.err("cannot connect to client data address: %v, %s", conn, err.Error())
-
-				// if failed connect to origin by response IP, try to original connection IP again.
-				d.clientConn.remoteIP = strings.Split(d.clientConn.conn.RemoteAddr().String(), ":")[0]
-				d.log.debug("try to connect original IP: %s", d.clientConn.remoteIP)
-			} else {
-				break
-			}
+		// when connect to client(use active mode), dial to client use port 20 only
+		lAddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort("", "20"))
+		if err != nil {
+			d.log.err("cannot resolve local address")
+			return err
 		}
+		// set port reuse and local address
+		netDialer := net.Dialer{
+			Control:   setReuseIPPort,
+			LocalAddr: lAddr,
+			Deadline:  time.Now().Add(time.Duration(connectionTimeout) * time.Second),
+		}
+
+		conn, err = netDialer.Dial("tcp", net.JoinHostPort(d.clientConn.remoteIP, d.clientConn.remotePort))
+
 		if err != nil || conn == nil {
 			d.log.err("cannot connect to client data address: %v, %s", conn, err.Error())
 			return err
@@ -323,7 +326,7 @@ func (d *dataHandler) clientListenOrDial() error {
 		tcpConn.SetKeepAlivePeriod(time.Duration(d.config.KeepaliveTime) * time.Second)
 		tcpConn.SetLinger(0)
 
-		d.clientConn.conn = tcpConn
+		d.clientConn.dataConn = tcpConn
 	}
 
 	return nil
@@ -336,8 +339,6 @@ func (d *dataHandler) originListenOrDial() error {
 		conn, err := d.originConn.listener.AcceptTCP()
 		if err != nil || conn == nil {
 			d.log.err("error on origin connection listen: %v, %s", conn, err.Error())
-
-			d.originConnected <- false
 
 			return err
 		}
@@ -354,34 +355,19 @@ func (d *dataHandler) originListenOrDial() error {
 			conn.SetLinger(0)
 		}
 
-		d.originConn.conn = conn
+		d.originConn.dataConn = conn
 
 	} else {
 		var conn net.Conn
 		var err error
 
-		// try connect second times
-		// at first time, connecto by received IP
-		// if failed, try connect to communication channel connected IP
-		for i := 1; i <= 2; i++ {
-			conn, err = net.DialTimeout(
-				"tcp",
-				net.JoinHostPort(d.originConn.remoteIP, d.originConn.remotePort),
-				time.Duration(ConnectionTimeout)*time.Second)
-			if err != nil || conn == nil {
-				d.log.debug("cannot connect to origin data address: %v, %s", conn, err.Error())
+		conn, err = net.DialTimeout(
+			"tcp",
+			net.JoinHostPort(d.originConn.remoteIP, d.originConn.remotePort),
+			time.Duration(connectionTimeout)*time.Second)
 
-				// if failed connect to origin by response IP, try to original connection IP again.
-				d.originConn.remoteIP = strings.Split(d.originConn.conn.RemoteAddr().String(), ":")[0]
-				d.log.debug("try to connect original IP: %s", d.originConn.remoteIP)
-			} else {
-				break
-			}
-		}
 		if err != nil || conn == nil {
 			d.log.debug("cannot connect to origin data address: %v, %s", conn, err.Error())
-
-			d.originConnected <- false
 
 			return err
 		}
@@ -394,11 +380,8 @@ func (d *dataHandler) originListenOrDial() error {
 		tcpConn.SetKeepAlivePeriod(time.Duration(d.config.KeepaliveTime) * time.Second)
 		tcpConn.SetLinger(0)
 
-		// d.originConn.conn = tcpConn
-		d.originConn.conn = conn
+		d.originConn.dataConn = tcpConn
 	}
-
-	d.originConnected <- true
 
 	return nil
 }
@@ -407,7 +390,7 @@ func (d *dataHandler) originListenOrDial() error {
 func (d *dataHandler) dataTransfer(reader net.Conn, writer net.Conn) error {
 	var err error
 
-	buffer := make([]byte, DataTransferBufferSize)
+	buffer := make([]byte, dataTransferBufferSize)
 	if _, err := io.CopyBuffer(writer, reader, buffer); err != nil {
 		err = fmt.Errorf("got error on data transfer: %s", err.Error())
 	}
@@ -427,6 +410,11 @@ func (d *dataHandler) parsePORTcommand(line string) error {
 
 	d.clientConn.remoteIP, d.clientConn.remotePort, err = parseLineToAddr(strings.Split(strings.Trim(line, "\r\n"), " ")[1])
 
+	// if received ip is not public IP, ignore it
+	if !isPublicIP(net.ParseIP(d.clientConn.remoteIP)) {
+		d.clientConn.remoteIP = d.clientConn.originalRemoteIP
+	}
+
 	return err
 }
 
@@ -438,6 +426,11 @@ func (d *dataHandler) parseEPRTcommand(line string) error {
 	var err error
 
 	d.clientConn.remoteIP, d.clientConn.remotePort, err = parseEPRTtoAddr(strings.Split(strings.Trim(line, "\r\n"), " ")[1])
+
+	// if received ip is not public IP, ignore it
+	if !isPublicIP(net.ParseIP(d.clientConn.remoteIP)) {
+		d.clientConn.remoteIP = d.clientConn.originalRemoteIP
+	}
 
 	return err
 }
@@ -455,6 +448,11 @@ func (d *dataHandler) parsePASVresponse(line string) error {
 	}
 
 	d.originConn.remoteIP, d.originConn.remotePort, err = parseLineToAddr(line[startIndex+1 : endIndex])
+
+	// if received ip is not public IP, ignore it
+	if !isPublicIP(net.ParseIP(d.originConn.remoteIP)) {
+		d.originConn.remoteIP = d.originConn.originalRemoteIP
+	}
 
 	return err
 }
@@ -543,4 +541,31 @@ func parseEPRTtoAddr(line string) (string, string, error) {
 	}
 
 	return IP, port, nil
+}
+
+// check IP is public
+// ** private IP range **
+// Class       Starting IPAddress     Ending IP Address    # Host counts
+// A           10.0.0.0               10.255.255.255       16,777,216
+// B           172.16.0.0             172.31.255.255       1,048,576
+// C           192.168.0.0            192.168.255.255      65,536
+// Link-local  169.254.0.0            169.254.255.255      65,536
+// Local       127.0.0.0              127.255.255.255      16777216
+func isPublicIP(IP net.IP) bool {
+	if IP.IsLoopback() || IP.IsLinkLocalMulticast() || IP.IsLinkLocalUnicast() {
+		return false
+	}
+	if ip4 := IP.To4(); ip4 != nil {
+		switch {
+		case ip4[0] == 10:
+			return false
+		case ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31:
+			return false
+		case ip4[0] == 192 && ip4[1] == 168:
+			return false
+		default:
+			return true
+		}
+	}
+	return false
 }

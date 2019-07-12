@@ -15,20 +15,21 @@ import (
 )
 
 const (
-	BufferSize             = 4096
-	DataTransferBufferSize = 4096
-	ConnectionTimeout      = 30
-	SecureCommand          = "PASS"
-	AlreadyClosedMsg       = "use of closed"
+	bufferSize             = 4096
+	dataTransferBufferSize = 4096
+	connectionTimeout      = 30
+	secureCommand          = "PASS"
+	alreadyClosedMsg       = "use of closed"
 )
 
 type proxyServer struct {
 	id             int
+	client         net.Conn
 	clientReader   *bufio.Reader
 	clientWriter   *bufio.Writer
+	origin         net.Conn
 	originReader   *bufio.Reader
 	originWriter   *bufio.Writer
-	origin         net.Conn
 	masqueradeIP   string
 	passThrough    bool
 	mutex          *sync.Mutex
@@ -46,6 +47,7 @@ type proxyServer struct {
 	nowGotResponse chan struct{}
 	waitSwitching  chan bool
 	isDone         *bool
+	inDataTransfer *bool
 }
 
 type proxyServerConfig struct {
@@ -59,12 +61,13 @@ type proxyServerConfig struct {
 	readLock       *bool
 	nowGotResponse chan struct{}
 	isDone         *bool
+	inDataTransfer *bool
 }
 
 func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 	c, err := net.DialTimeout("tcp",
 		conf.originAddr,
-		time.Duration(ConnectionTimeout)*time.Second)
+		time.Duration(connectionTimeout)*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +97,7 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		nowGotResponse: conf.nowGotResponse,
 		waitSwitching:  make(chan bool),
 		isDone:         conf.isDone,
+		inDataTransfer: conf.inDataTransfer,
 	}
 
 	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
@@ -316,7 +320,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	// change connection and reset reader and writer buffer
 	s.origin, err = net.DialTimeout("tcp",
 		originAddr,
-		time.Duration(ConnectionTimeout)*time.Second)
+		time.Duration(connectionTimeout)*time.Second)
 	if err != nil {
 		return err
 	}
@@ -369,9 +373,11 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 	send := make(chan struct{})
 	errchan := make(chan error)
 	lastError := error(nil)
+	var needStartTransfer bool
 
 	go func() {
 		for {
+			needStartTransfer = false
 			buff, err := from.ReadString('\n')
 			if err != nil {
 				if !s.stop {
@@ -380,7 +386,12 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 				break
 			} else {
 				if s.config.ProxyTimeout > 0 {
-					s.origin.SetReadDeadline(time.Now().Add(time.Duration(time.Second.Nanoseconds() * int64(s.config.ProxyTimeout))))
+					// do not time out during transfer data
+					if *s.inDataTransfer {
+						s.origin.SetDeadline(time.Time{})
+					} else {
+						s.origin.SetDeadline(time.Now().Add(time.Duration(s.config.ProxyTimeout) * time.Second))
+					}
 				}
 
 				s.log.debug("response from origin: %s", buff)
@@ -401,20 +412,19 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 
 				// is data channel proxy used
 				if s.config.DataChanProxy && s.isSwitched {
-					resCode := 0
 					if strings.HasPrefix(buff, "227 ") {
-						resCode = 227
+						needStartTransfer = true
 						s.dataConnector.parsePASVresponse(buff)
 					}
 					if strings.HasPrefix(buff, "229 ") {
-						resCode = 229
+						needStartTransfer = true
 						s.dataConnector.parseEPSVresponse(buff)
 					}
 					if strings.HasPrefix(buff, "200 PORT command successful") {
-						resCode = 200
+						needStartTransfer = true
 					}
 
-					if resCode != 0 {
+					if needStartTransfer {
 						// start data transfer
 						go s.dataConnector.StartDataTransfer()
 
@@ -480,33 +490,15 @@ loop:
 		case b := <-read:
 			s.mutex.Lock()
 			if _, err := to.WriteString(b); err != nil {
-				s.mutex.Unlock()
-				lastError = err
-				s.UnlockClientRead()
-				close(errchan)
-				connectionCloser(s, s.log)
-				send <- struct{}{}
-
-				if !strings.Contains(err.Error(), AlreadyClosedMsg) {
+				if !strings.Contains(err.Error(), alreadyClosedMsg) {
 					s.log.err("error on write response to client: %s, err: %s", b, err.Error())
 				}
-
-				break loop
 			}
 
 			if err := to.Flush(); err != nil {
-				s.mutex.Unlock()
-				lastError = err
-				s.UnlockClientRead()
-				close(errchan)
-				connectionCloser(s, s.log)
-				send <- struct{}{}
-
-				if !strings.Contains(err.Error(), AlreadyClosedMsg) {
+				if !strings.Contains(err.Error(), alreadyClosedMsg) {
 					s.log.err("error on flush client writer: %s, err: %s", b, err.Error())
 				}
-
-				break loop
 			}
 			s.mutex.Unlock()
 			s.log.debug("response to client: %s", b)
@@ -537,8 +529,8 @@ loop:
 
 // Hide parameters from log
 func (s *proxyServer) commandLog(line string) {
-	if strings.Compare(strings.ToUpper(getCommand(line)[0]), SecureCommand) == 0 {
-		s.log.debug("send to origin: %s ********\r\n", SecureCommand)
+	if strings.Compare(strings.ToUpper(getCommand(line)[0]), secureCommand) == 0 {
+		s.log.debug("send to origin: %s ********\r\n", secureCommand)
 	} else {
 		s.log.debug("send to origin: %s", line)
 	}
@@ -553,14 +545,10 @@ func getCode(line string) []string {
 // if proxy or client read handler is done, does not set channel to wait
 func (s *proxyServer) UnlockClientRead() {
 	if !*s.isDone {
-		s.readlockMutex.Lock()
-
-		if *s.readLock {
-			*s.readLock = false
-			s.readlockMutex.Unlock()
+		if getReadLockStatus(s.readlockMutex, s.readLock) {
 			s.nowGotResponse <- struct{}{}
-		} else {
-			s.readlockMutex.Unlock()
 		}
+
+		setReadLockStatus(s.readlockMutex, s.readLock, false)
 	}
 }

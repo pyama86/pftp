@@ -4,19 +4,20 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/lestrrat/go-server-starter/listener"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 )
 
 type middlewareFunc func(*Context, string) error
 type middleware map[string]middlewareFunc
 
+// FtpServer struct type
 type FtpServer struct {
 	listener      net.Listener
 	clientCounter int
@@ -25,6 +26,7 @@ type FtpServer struct {
 	shutdown      bool
 }
 
+// NewFtpServer load config and create new ftp server struct
 func NewFtpServer(confFile string) (*FtpServer, error) {
 	c, err := loadConfig(confFile)
 	if err != nil {
@@ -37,6 +39,7 @@ func NewFtpServer(confFile string) (*FtpServer, error) {
 	}, nil
 }
 
+// Use set middleware function
 func (server *FtpServer) Use(command string, m middlewareFunc) {
 	server.middleware[strings.ToUpper(command)] = m
 }
@@ -86,8 +89,6 @@ func (server *FtpServer) serve() error {
 		conn.SetKeepAlivePeriod(time.Duration(server.config.KeepaliveTime) * time.Second)
 		conn.SetLinger(0)
 
-		logrus.Info("FTP Client connected ", "clientIp ", conn.RemoteAddr())
-
 		if server.config.IdleTimeout > 0 {
 			conn.SetDeadline(time.Now().Add(time.Duration(server.config.IdleTimeout) * time.Second))
 		}
@@ -97,6 +98,7 @@ func (server *FtpServer) serve() error {
 		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection)
 		eg.Go(func() error {
 			err := c.handleCommands()
+			logrus.Info("handle command end runtime goroutine count: ", runtime.NumGoroutine())
 			if err != nil {
 				logrus.Error(err.Error())
 			}
@@ -107,6 +109,7 @@ func (server *FtpServer) serve() error {
 	return eg.Wait()
 }
 
+// Start start pFTP server
 func (server *FtpServer) Start() error {
 	var lastError error
 	done := make(chan struct{})

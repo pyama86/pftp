@@ -1,5 +1,6 @@
 package pftp
 
+// Context struct got remote server address
 type Context struct {
 	RemoteAddr string
 }
