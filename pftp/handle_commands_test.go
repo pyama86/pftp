@@ -10,17 +10,25 @@ func Test_clientHandler_handleAUTH(t *testing.T) {
 	type fields struct {
 		config *config
 	}
+
+	type res struct {
+		code int
+		msg  string
+		err  string
+		log  *logger
+	}
+
 	tests := []struct {
 		name   string
 		fields fields
-		want   *result
+		want   *res
 	}{
 		{
 			name: "undefined",
 			fields: fields{
 				config: &config{},
 			},
-			want: &result{
+			want: &res{
 				code: 550,
 				msg:  "Cannot get a TLS config",
 			},
@@ -31,7 +39,19 @@ func Test_clientHandler_handleAUTH(t *testing.T) {
 			c := &clientHandler{
 				config: tt.fields.config,
 			}
-			if got := c.handleAUTH(); !reflect.DeepEqual(got, tt.want) {
+			r := c.handleAUTH()
+			got := &res{
+				code: r.code,
+				msg:  r.msg,
+				log:  r.log,
+			}
+			if r.err == nil {
+				got.err = ""
+			} else {
+				got.err = r.err.Error()
+			}
+
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("clientHandler.handleAUTH() = %v, want %v", got, tt.want)
 			}
 		})
@@ -42,17 +62,25 @@ func Test_clientHandler_handlePBSZ(t *testing.T) {
 	type fields struct {
 		config *config
 	}
+
+	type res struct {
+		code int
+		msg  string
+		err  string
+		log  *logger
+	}
+
 	tests := []struct {
 		name   string
 		fields fields
-		want   *result
+		want   *res
 	}{
 		{
 			name: "none_tls",
 			fields: fields{
 				config: &config{},
 			},
-			want: &result{
+			want: &res{
 				code: 503,
 				msg:  "Not using TLS connection",
 			},
@@ -63,7 +91,18 @@ func Test_clientHandler_handlePBSZ(t *testing.T) {
 			c := &clientHandler{
 				config: tt.fields.config,
 			}
-			if got := c.handlePBSZ(); !reflect.DeepEqual(got, tt.want) {
+			r := c.handlePBSZ()
+			got := &res{
+				code: r.code,
+				msg:  r.msg,
+				log:  r.log,
+			}
+			if r.err == nil {
+				got.err = ""
+			} else {
+				got.err = r.err.Error()
+			}
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("clientHandler.handlePBSZ() = %v, want %v", got, tt.want)
 			}
 		})
@@ -74,17 +113,25 @@ func Test_clientHandler_handlePROT(t *testing.T) {
 	type fields struct {
 		config *config
 	}
+
+	type res struct {
+		code int
+		msg  string
+		err  string
+		log  *logger
+	}
+
 	tests := []struct {
 		name   string
 		fields fields
-		want   *result
+		want   *res
 	}{
 		{
 			name: "none_tls",
 			fields: fields{
 				config: &config{},
 			},
-			want: &result{
+			want: &res{
 				code: 503,
 				msg:  "Not using TLS connection",
 			},
@@ -95,7 +142,18 @@ func Test_clientHandler_handlePROT(t *testing.T) {
 			c := &clientHandler{
 				config: tt.fields.config,
 			}
-			if got := c.handlePROT(); !reflect.DeepEqual(got, tt.want) {
+			r := c.handlePBSZ()
+			got := &res{
+				code: r.code,
+				msg:  r.msg,
+				log:  r.log,
+			}
+			if r.err == nil {
+				got.err = ""
+			} else {
+				got.err = r.err.Error()
+			}
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("clientHandler.handlePROT() = %v, want %v", got, tt.want)
 			}
 		})
