@@ -27,10 +27,10 @@ func init() {
 	handlers["AUTH"] = &handleFunc{(*clientHandler).handleAUTH, true}
 	handlers["PBSZ"] = &handleFunc{(*clientHandler).handlePBSZ, true}
 	handlers["PROT"] = &handleFunc{(*clientHandler).handlePROT, true}
-	handlers["PORT"] = &handleFunc{(*clientHandler).handleDATA, true}
-	handlers["EPRT"] = &handleFunc{(*clientHandler).handleDATA, true}
-	handlers["PASV"] = &handleFunc{(*clientHandler).handleDATA, true}
-	handlers["EPSV"] = &handleFunc{(*clientHandler).handleDATA, true}
+	handlers["PORT"] = &handleFunc{(*clientHandler).handleDATA, false}
+	handlers["EPRT"] = &handleFunc{(*clientHandler).handleDATA, false}
+	handlers["PASV"] = &handleFunc{(*clientHandler).handleDATA, false}
+	handlers["EPSV"] = &handleFunc{(*clientHandler).handleDATA, false}
 	handlers["RETR"] = &handleFunc{(*clientHandler).handleTransfer, false}
 	handlers["STOR"] = &handleFunc{(*clientHandler).handleTransfer, false}
 }
@@ -50,15 +50,12 @@ type clientHandler struct {
 	currentConnection   *int32
 	connCounts          int32
 	mutex               *sync.Mutex
-	readlockMutex       *sync.Mutex
 	log                 *logger
 	deadline            time.Time
 	srcIP               string
 	tlsProtocol         uint16
 	isLoggedin          bool
 	previousTLSCommands []string
-	readLock            bool
-	gotResponse         chan struct{}
 	isDone              bool
 	inDataTransfer      bool
 }
@@ -74,13 +71,10 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		context:           newContext(c),
 		currentConnection: currentConnection,
 		mutex:             &sync.Mutex{},
-		readlockMutex:     &sync.Mutex{},
 		log:               &logger{fromip: connection.RemoteAddr().String(), id: id},
 		srcIP:             connection.RemoteAddr().String(),
 		tlsProtocol:       0,
 		isLoggedin:        false,
-		readLock:          false,
-		gotResponse:       make(chan struct{}),
 		isDone:            false,
 		inDataTransfer:    false,
 	}
@@ -178,10 +172,11 @@ func (c *clientHandler) getResponseFromOrigin() error {
 
 	// close origin connection when close goroutine
 	defer func() {
-		// set readLock false before send EOF to proxy for avoid lock on channel write
-		setReadLockStatus(c.readlockMutex, &c.readLock, false)
+		c.isDone = true
 
 		// send EOF to client connection. if fail, close immediatly
+		c.log.debug("send EOF to client")
+
 		if err := sendEOF(c.conn); err != nil {
 			c.log.debug("send EOF to client failed. close connection.")
 			connectionCloser(c, c.log)
@@ -218,8 +213,6 @@ func (c *clientHandler) getResponseFromOrigin() error {
 		}
 	}
 
-	c.isDone = true
-
 	return err
 }
 
@@ -228,10 +221,11 @@ func (c *clientHandler) readClientCommands() error {
 
 	// close client connection when close goroutine
 	defer func() {
-		// set readLock false before send EOF to proxy for avoid lock on channel write
-		setReadLockStatus(c.readlockMutex, &c.readLock, false)
+		c.isDone = true
 
 		// send EOF to origin connection. if fail, close immediatly
+		c.log.debug("send EOF to origin")
+
 		if err := sendEOF(c.proxy.GetConn()); err != nil {
 			c.log.debug("send EOF to origin failed. close connection.")
 			connectionCloser(c.proxy, c.log)
@@ -242,8 +236,6 @@ func (c *clientHandler) readClientCommands() error {
 	}()
 
 	for {
-		c.LockClientRead()
-
 		if c.config.IdleTimeout > 0 {
 			c.setClientDeadLine(c.config.IdleTimeout)
 		}
@@ -274,6 +266,8 @@ func (c *clientHandler) readClientCommands() error {
 						}
 
 						// if timeout, send EOF to client connection for graceful disconnect
+						c.log.debug("send EOF to client")
+
 						// if send EOF failed, close immediatly
 						if err := sendEOF(c.conn); err != nil {
 							c.log.debug("send EOF to client failed. try to close connection.")
@@ -302,20 +296,7 @@ func (c *clientHandler) readClientCommands() error {
 		}
 	}
 
-	c.isDone = true
-
 	return lastError
-}
-
-// LockClientRead wait until got response from origin after send command
-// if proxy or client read handler is done, does not set channel to wait
-func (c *clientHandler) LockClientRead() {
-	if !c.isDone {
-
-		if getReadLockStatus(c.readlockMutex, &c.readLock) {
-			<-c.gotResponse
-		}
-	}
 }
 
 func (c *clientHandler) writeLine(line string) error {
@@ -375,14 +356,11 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 		}
 	} else {
 		if err := c.proxy.sendToOrigin(line); err != nil {
-			setReadLockStatus(c.readlockMutex, &c.readLock, false)
 			return &result{
 				code: 500,
 				msg:  fmt.Sprintf("Internal error: %s", err),
 			}
 		}
-
-		setReadLockStatus(c.readlockMutex, &c.readLock, true)
 	}
 
 	return nil
@@ -401,11 +379,8 @@ func (c *clientHandler) connectProxy() error {
 				clientWriter:   c.writer,
 				originAddr:     c.context.RemoteAddr,
 				mutex:          c.mutex,
-				readlockMutex:  c.readlockMutex,
 				log:            c.log,
 				config:         c.config,
-				readLock:       &c.readLock,
-				nowGotResponse: c.gotResponse,
 				isDone:         &c.isDone,
 				inDataTransfer: &c.inDataTransfer,
 			})
@@ -440,20 +415,4 @@ func (c *clientHandler) commandLog(line string) {
 	} else {
 		c.log.info("read from client: %s", line)
 	}
-}
-
-// set readLock false before send EOF to proxy for avoid lock on channel write
-func setReadLockStatus(readlockMutex *sync.Mutex, readLock *bool, status bool) {
-	readlockMutex.Lock()
-	*readLock = status
-	readlockMutex.Unlock()
-}
-
-// set readLock false before send EOF to proxy for avoid lock on channel write
-func getReadLockStatus(readlockMutex *sync.Mutex, readLock *bool) bool {
-	readlockMutex.Lock()
-	lockStatus := *readLock
-	readlockMutex.Unlock()
-
-	return lockStatus
 }

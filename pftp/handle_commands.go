@@ -41,6 +41,9 @@ func (c *clientHandler) handleUSER() *result {
 		}
 	}
 
+	// unsuspend proxy before send command to origin
+	c.proxy.unsuspend()
+
 	if err := c.proxy.sendToOrigin(c.line); err != nil {
 		return &result{
 			code: 530,
@@ -126,6 +129,9 @@ func (c *clientHandler) handlePBSZ() *result {
 
 			c.previousTLSCommands = append(c.previousTLSCommands, c.line)
 		} else {
+			// unsuspend proxy before send command to origin
+			c.proxy.unsuspend()
+
 			if err := c.proxy.sendToOrigin(c.line); err != nil {
 				return &result{
 					code: 530,
@@ -178,6 +184,9 @@ func (c *clientHandler) handlePROT() *result {
 			c.previousTLSCommands = append(c.previousTLSCommands, c.line)
 
 		} else {
+			// unsuspend proxy before send command to origin
+			c.proxy.unsuspend()
+
 			if err := c.proxy.sendToOrigin(c.line); err != nil {
 				return &result{
 					code: 530,
@@ -211,10 +220,6 @@ func (c *clientHandler) handleTransfer() *result {
 }
 
 func (c *clientHandler) handlePROXY() *result {
-	c.readlockMutex.Lock()
-	c.readLock = true
-	c.readlockMutex.Unlock()
-
 	params := strings.SplitN(strings.Trim(c.line, "\r\n"), " ", 6)
 	if len(params) != 6 {
 		return &result{
@@ -239,6 +244,13 @@ func (c *clientHandler) handlePROXY() *result {
 
 // handle PORT, EPRT, PASV, EPSV commands when set data channel proxy is true
 func (c *clientHandler) handleDATA() *result {
+	if !c.isLoggedin {
+		return &result{
+			code: 530,
+			msg:  "Please login with USER and PASS",
+		}
+	}
+
 	// if data channel proxy used
 	if c.config.DataChanProxy {
 		var toOriginMsg string
@@ -266,6 +278,10 @@ func (c *clientHandler) handleDATA() *result {
 		switch c.command {
 		case "PORT":
 			if err := c.proxy.dataConnector.parsePORTcommand(c.line); err != nil {
+				c.log.err(err.Error())
+
+				c.proxy.dataConnector.Close()
+
 				return &result{
 					code: 501,
 					msg:  "cannot parse PORT command",
@@ -276,6 +292,10 @@ func (c *clientHandler) handleDATA() *result {
 			break
 		case "EPRT":
 			if err := c.proxy.dataConnector.parseEPRTcommand(c.line); err != nil {
+				c.log.err(err.Error())
+
+				c.proxy.dataConnector.Close()
+
 				if err.Error() == "unknown network protocol" {
 					return &result{
 						code: 522,
@@ -318,6 +338,10 @@ func (c *clientHandler) handleDATA() *result {
 
 		// send command to origin
 		if err := c.proxy.sendToOrigin(toOriginMsg); err != nil {
+			c.log.err(err.Error())
+
+			c.proxy.dataConnector.Close()
+
 			return &result{
 				code: 500,
 				msg:  fmt.Sprintf("Internal error: %s", err),
@@ -327,6 +351,8 @@ func (c *clientHandler) handleDATA() *result {
 		}
 	} else {
 		if err := c.proxy.sendToOrigin(c.line); err != nil {
+			c.log.err(err.Error())
+
 			return &result{
 				code: 530,
 				msg:  "I can't deal with you (proxy error)",

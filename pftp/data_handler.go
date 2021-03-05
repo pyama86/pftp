@@ -170,9 +170,7 @@ func (d *dataHandler) setNewListener() (*net.TCPListener, error) {
 			continue
 
 		} else {
-			// set listener timeout
-			listener.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
-
+			d.log.debug("data listen port selected: '%s'", lAddr.String())
 			break
 		}
 	}
@@ -212,7 +210,7 @@ func (d *dataHandler) Close() error {
 		}
 	}
 	if d.originConn.listener != nil {
-		if err := d.originConn.dataConn.Close(); err != nil {
+		if err := d.originConn.listener.Close(); err != nil {
 			if !strings.Contains(err.Error(), alreadyClosedMsg) {
 				d.log.err("origin data listener close error: %s", err.Error())
 				lastErr = err
@@ -275,16 +273,27 @@ func (d *dataHandler) StartDataTransfer() error {
 func (d *dataHandler) clientListenOrDial() error {
 	// if client connect needs listen, open listener
 	if d.clientConn.needsListen {
+		// set listener timeout
+		d.clientConn.listener.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
+
 		conn, err := d.clientConn.listener.AcceptTCP()
 		if err != nil || conn == nil {
-			d.log.err("error on client connection listen: %v, %s", conn, err.Error())
+			if !strings.Contains(err.Error(), alreadyClosedMsg) {
+				d.log.err("error on client connection listen: %v, %s", conn, err.Error())
+			}
+
 			return err
 		}
 
-		d.clientConn.listener.Close()
-		d.clientConn.listener = nil
-
 		d.log.debug("client connected from %s", conn.RemoteAddr().String())
+		d.log.debug("close listener %s", d.clientConn.listener.Addr().String())
+
+		// release listener for reuse
+		if err := d.clientConn.listener.Close(); err != nil {
+			if !strings.Contains(err.Error(), alreadyClosedMsg) {
+				d.log.err("cannot close client data listener: %s", err.Error())
+			}
+		}
 
 		// set linger 0 and tcp keepalive setting between client connection
 		if d.config.KeepaliveTime > 0 {
@@ -336,6 +345,9 @@ func (d *dataHandler) clientListenOrDial() error {
 func (d *dataHandler) originListenOrDial() error {
 	// if origin connect needs listen, open listener
 	if d.originConn.needsListen {
+		// set listener timeout
+		d.originConn.listener.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
+
 		conn, err := d.originConn.listener.AcceptTCP()
 		if err != nil || conn == nil {
 			d.log.err("error on origin connection listen: %v, %s", conn, err.Error())
@@ -343,10 +355,15 @@ func (d *dataHandler) originListenOrDial() error {
 			return err
 		}
 
-		d.originConn.listener.Close()
-		d.originConn.listener = nil
-
 		d.log.debug("origin connected from %s", conn.RemoteAddr().String())
+		d.log.debug("close listener %s", d.originConn.listener.Addr().String())
+
+		// release listener for reuse
+		if err := d.originConn.listener.Close(); err != nil {
+			if !strings.Contains(err.Error(), alreadyClosedMsg) {
+				d.log.err("cannot close origin data listener: %s", err.Error())
+			}
+		}
 
 		// set linger 0 and tcp keepalive setting between client connection
 		if d.config.KeepaliveTime > 0 {
@@ -364,7 +381,8 @@ func (d *dataHandler) originListenOrDial() error {
 		conn, err = net.DialTimeout(
 			"tcp",
 			net.JoinHostPort(d.originConn.remoteIP, d.originConn.remotePort),
-			time.Duration(connectionTimeout)*time.Second)
+			time.Duration(connectionTimeout)*time.Second,
+		)
 
 		if err != nil || conn == nil {
 			d.log.debug("cannot connect to origin data address: %v, %s", conn, err.Error())
