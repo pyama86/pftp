@@ -23,31 +23,30 @@ const (
 )
 
 type proxyServer struct {
-	id             int
-	client         net.Conn
-	clientReader   *bufio.Reader
-	clientWriter   *bufio.Writer
-	origin         net.Conn
-	originReader   *bufio.Reader
-	originWriter   *bufio.Writer
-	masqueradeIP   string
-	passThrough    bool
-	mutex          *sync.Mutex
-	readlockMutex  *sync.Mutex
-	log            *logger
-	stopChan       chan struct{}
-	stopChanDone   chan struct{}
-	stop           bool
-	secureCommands []string
-	isSwitched     bool
-	welcomeMsg     string
-	config         *config
-	dataConnector  *dataHandler
-	readLock       *bool
-	nowGotResponse chan struct{}
-	waitSwitching  chan bool
-	isDone         *bool
-	inDataTransfer *bool
+	id                    int
+	client                net.Conn
+	clientReader          *bufio.Reader
+	clientWriter          *bufio.Writer
+	origin                net.Conn
+	originReader          *bufio.Reader
+	originWriter          *bufio.Writer
+	masqueradeIP          string
+	passThrough           bool
+	mutex                 *sync.Mutex
+	log                   *logger
+	stopChan              chan struct{}
+	stopChanDone          chan struct{}
+	stop                  bool
+	secureCommands        []string
+	isSwitched            bool
+	welcomeMsg            string
+	config                *config
+	dataConnector         *dataHandler
+	waitSwitching         chan bool
+	isDone                *bool
+	inDataTransfer        *bool
+	isDataCommandResponse bool
+	waitDataResponse      bool
 }
 
 type proxyServerConfig struct {
@@ -55,11 +54,8 @@ type proxyServerConfig struct {
 	clientWriter   *bufio.Writer
 	originAddr     string
 	mutex          *sync.Mutex
-	readlockMutex  *sync.Mutex
 	log            *logger
 	config         *config
-	readLock       *bool
-	nowGotResponse chan struct{}
 	isDone         *bool
 	inDataTransfer *bool
 }
@@ -86,15 +82,12 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		origin:         tcpConn,
 		passThrough:    true,
 		mutex:          conf.mutex,
-		readlockMutex:  conf.readlockMutex,
 		log:            conf.log,
 		stopChan:       make(chan struct{}),
 		stopChanDone:   make(chan struct{}),
 		welcomeMsg:     "220 " + conf.config.WelcomeMsg + "\r\n",
 		isSwitched:     false,
 		config:         conf.config,
-		readLock:       conf.readLock,
-		nowGotResponse: conf.nowGotResponse,
 		waitSwitching:  make(chan bool),
 		isDone:         conf.isDone,
 		inDataTransfer: conf.inDataTransfer,
@@ -189,7 +182,20 @@ func (s *proxyServer) GetConn() net.Conn {
 }
 
 func (s *proxyServer) SetDataHandler(handler *dataHandler) {
+	// only one data connection available in same time.
+	if s.dataConnector != nil {
+		// if already had previous data handler, wait until response sent to client.
+		for s.waitDataResponse {
+			time.Sleep(time.Millisecond * 500)
+		}
+
+		// after sent response for previous data command, close it for use new data handler.
+		s.dataConnector.Close()
+	}
+
 	s.dataConnector = handler
+
+	s.waitDataResponse = true
 }
 
 func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) error {
@@ -205,13 +211,11 @@ func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) erro
 	}
 
 	proxyProtocolHeader := proxyproto.Header{
-		Version:            byte(1),
-		Command:            proxyproto.PROXY,
-		TransportProtocol:  proxyproto.TCPv4,
-		SourceAddress:      net.ParseIP(sourceAddr[0]),
-		DestinationAddress: net.ParseIP(hostIP[0].String()),
-		SourcePort:         uint16(sourcePort),
-		DestinationPort:    uint16(destinationPort),
+		Version:           byte(1),
+		Command:           proxyproto.PROXY,
+		TransportProtocol: proxyproto.TCPv4,
+		SourceAddr:        &net.TCPAddr{IP: net.ParseIP(sourceAddr[0]), Port: sourcePort},
+		DestinationAddr:   &net.TCPAddr{IP: net.ParseIP(hostIP[0].String()), Port: destinationPort},
 	}
 
 	_, err = proxyProtocolHeader.WriteTo(s.origin)
@@ -373,11 +377,10 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 	send := make(chan struct{})
 	errchan := make(chan error)
 	lastError := error(nil)
-	var needStartTransfer bool
 
 	go func() {
 		for {
-			needStartTransfer = false
+			s.isDataCommandResponse = false
 			buff, err := from.ReadString('\n')
 			if err != nil {
 				if !s.stop {
@@ -413,18 +416,18 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 				// is data channel proxy used
 				if s.config.DataChanProxy && s.isSwitched {
 					if strings.HasPrefix(buff, "227 ") {
-						needStartTransfer = true
+						s.isDataCommandResponse = true
 						s.dataConnector.parsePASVresponse(buff)
 					}
 					if strings.HasPrefix(buff, "229 ") {
-						needStartTransfer = true
+						s.isDataCommandResponse = true
 						s.dataConnector.parseEPSVresponse(buff)
 					}
 					if strings.HasPrefix(buff, "200 PORT command successful") {
-						needStartTransfer = true
+						s.isDataCommandResponse = true
 					}
 
-					if needStartTransfer {
+					if s.isDataCommandResponse {
 						// start data transfer
 						go s.dataConnector.StartDataTransfer()
 
@@ -451,7 +454,7 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 				}
 
 				// handling multi-line response
-				if buff[3] == '-' {
+				if len(buff) >= 4 && buff[3] == '-' {
 					params := getCode(buff)
 					multiLine := buff
 
@@ -476,9 +479,8 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 
 				if s.passThrough {
 					read <- buff
+					<-send
 				}
-
-				<-send
 			}
 		}
 		done <- struct{}{}
@@ -491,22 +493,20 @@ loop:
 			s.mutex.Lock()
 			if _, err := to.WriteString(b); err != nil {
 				if !strings.Contains(err.Error(), alreadyClosedMsg) {
-					s.log.err("error on write response to client: %s, err: %s", b, err.Error())
+					s.log.err("error on write response to client: %s, err: %s", strings.TrimSuffix(b, "\r\n"), err.Error())
 				}
 			}
 
 			if err := to.Flush(); err != nil {
 				if !strings.Contains(err.Error(), alreadyClosedMsg) {
-					s.log.err("error on flush client writer: %s, err: %s", b, err.Error())
+					s.log.err("error on flush client writer: %s, err: %s", strings.TrimSuffix(b, "\r\n"), err.Error())
 				}
 			}
 			s.mutex.Unlock()
 			s.log.debug("response to client: %s", b)
-			s.UnlockClientRead()
 			send <- struct{}{}
 		case err := <-errchan:
 			lastError = err
-			s.UnlockClientRead()
 			connectionCloser(s, s.log)
 
 			break loop
@@ -522,7 +522,10 @@ loop:
 	}
 	<-done
 
-	*s.isDone = true
+	if s.dataConnector != nil {
+		s.waitDataResponse = false
+		s.dataConnector.Close()
+	}
 
 	return lastError
 }
@@ -538,17 +541,9 @@ func (s *proxyServer) commandLog(line string) {
 
 // split response line
 func getCode(line string) []string {
-	return strings.SplitN(strings.Trim(line, "\r\n"), string(line[3]), 2)
-}
-
-// UnlockClientRead unlock client read channel after send response to client
-// if proxy or client read handler is done, does not set channel to wait
-func (s *proxyServer) UnlockClientRead() {
-	if !*s.isDone {
-		if getReadLockStatus(s.readlockMutex, s.readLock) {
-			s.nowGotResponse <- struct{}{}
-		}
-
-		setReadLockStatus(s.readlockMutex, s.readLock, false)
+	if len(line) >= 4 {
+		return strings.SplitN(strings.Trim(line, "\r\n"), string(line[3]), 2)
 	}
+
+	return []string{line}
 }
