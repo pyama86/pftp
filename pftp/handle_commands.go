@@ -17,7 +17,7 @@ func (c *clientHandler) handleUSER() *result {
 		return &result{
 			code: 500,
 			msg:  "Already logged in",
-			err:  fmt.Errorf("already logged in"),
+			err:  fmt.Errorf("Already logged in"),
 			log:  c.log,
 		}
 	}
@@ -77,7 +77,7 @@ func (c *clientHandler) handleAUTH() *result {
 		if err := r.Response(c); err != nil {
 			return &result{
 				code: 550,
-				msg:  "Client Response Error",
+				msg:  fmt.Sprint("Client Response Error"),
 				err:  err,
 				log:  c.log,
 			}
@@ -88,7 +88,7 @@ func (c *clientHandler) handleAUTH() *result {
 		if err != nil {
 			return &result{
 				code: 550,
-				msg:  "TLS Handshake Error",
+				msg:  fmt.Sprint("TLS Handshake Error"),
 				err:  err,
 				log:  c.log,
 			}
@@ -104,7 +104,7 @@ func (c *clientHandler) handleAUTH() *result {
 	}
 	return &result{
 		code: 550,
-		msg:  "Cannot get a TLS config",
+		msg:  fmt.Sprint("Cannot get a TLS config"),
 	}
 }
 
@@ -112,7 +112,8 @@ func (c *clientHandler) handleAUTH() *result {
 func (c *clientHandler) handlePBSZ() *result {
 	if c.tlsProtocol != 0 {
 		if !c.isLoggedin {
-			r := &result{
+			var r *result
+			r = &result{
 				code: 200,
 				msg:  fmt.Sprintf("PBSZ %s successful", c.param),
 			}
@@ -120,7 +121,7 @@ func (c *clientHandler) handlePBSZ() *result {
 			if err := r.Response(c); err != nil {
 				return &result{
 					code: 550,
-					msg:  "Client Response Error",
+					msg:  fmt.Sprint("Client Response Error"),
 					err:  err,
 					log:  c.log,
 				}
@@ -145,7 +146,7 @@ func (c *clientHandler) handlePBSZ() *result {
 	}
 	return &result{
 		code: 503,
-		msg:  "Not using TLS connection",
+		msg:  fmt.Sprint("Not using TLS connection"),
 	}
 }
 
@@ -174,7 +175,7 @@ func (c *clientHandler) handlePROT() *result {
 			if err := r.Response(c); err != nil {
 				return &result{
 					code: 550,
-					msg:  "Client Response Error",
+					msg:  fmt.Sprint("Client Response Error"),
 					err:  err,
 					log:  c.log,
 				}
@@ -200,7 +201,7 @@ func (c *clientHandler) handlePROT() *result {
 	}
 	return &result{
 		code: 503,
-		msg:  "Not using TLS connection",
+		msg:  fmt.Sprint("Not using TLS connection"),
 	}
 }
 
@@ -223,7 +224,7 @@ func (c *clientHandler) handlePROXY() *result {
 	if len(params) != 6 {
 		return &result{
 			code: 500,
-			msg:  "Proxy header parse error",
+			msg:  fmt.Sprint("Proxy header parse error"),
 			err:  errors.New("wrong proxy header parameters"),
 		}
 	}
@@ -231,7 +232,7 @@ func (c *clientHandler) handlePROXY() *result {
 	if net.ParseIP(params[2]) == nil || net.ParseIP(params[3]) == nil {
 		return &result{
 			code: 500,
-			msg:  "Proxy header parse error",
+			msg:  fmt.Sprint("Proxy header parse error"),
 			err:  errors.New("wrong source ip address"),
 		}
 	}
@@ -288,6 +289,7 @@ func (c *clientHandler) handleDATA() *result {
 					log:  c.log,
 				}
 			}
+			break
 		case "EPRT":
 			if err := c.proxy.dataConnector.parseEPRTcommand(c.line); err != nil {
 				c.log.err(err.Error())
@@ -310,6 +312,7 @@ func (c *clientHandler) handleDATA() *result {
 					log:  c.log,
 				}
 			}
+			break
 		}
 
 		// if origin connect mode is PORT or CLIENT(with client use some kind of active mode)

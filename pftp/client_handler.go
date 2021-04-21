@@ -249,7 +249,7 @@ func (c *clientHandler) readClientCommands() error {
 			} else if c.command == "QUIT" {
 				lastError = nil
 			} else {
-				switch err := err.(type) {
+				switch err.(type) {
 				case net.Error:
 					if err.(net.Error).Timeout() {
 						c.conn.SetDeadline(time.Now().Add(time.Minute))

@@ -94,6 +94,7 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 	go test.LaunchTestServer(&server, conn, done, serverready, t)
 
 	type fields struct {
+		conn   net.Conn
 		config *config
 	}
 	type args struct {
@@ -274,6 +275,8 @@ func Test_clientHandler_TLS_error_type_bug(t *testing.T) {
 
 				err := clientHandler.handleCommands()
 				handlerDone <- err
+
+				return
 			}()
 
 			buff := make([]byte, 4096)
