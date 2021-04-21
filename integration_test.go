@@ -318,6 +318,11 @@ func TestDownload(t *testing.T) {
 				if !reflect.DeepEqual(a.Sum(nil), b.Sum(nil)) {
 					return fmt.Errorf("download file check sum error: %d", num)
 				}
+
+				// Download twice in same ftp connection for check lock in dataHandler problem
+				if _, err = client.Retr(fmt.Sprintf("stor/%d", num)); err != nil {
+					return err
+				}
 				return nil
 			})
 		}
