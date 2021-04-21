@@ -19,6 +19,7 @@ type dataHandler struct {
 	config         *config
 	log            *logger
 	inDataTransfer *bool
+	inUse          bool
 }
 
 type connector struct {
@@ -59,6 +60,7 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 		config:         config,
 		log:            log,
 		inDataTransfer: inDataTransfer,
+		inUse:          false,
 	}
 
 	if d.originConn.communicaionConn != nil {
@@ -222,7 +224,7 @@ func (d *dataHandler) Close() error {
 		d.log.debug("proxy data channel disconnected")
 	}
 
-	d = nil
+	d.inUse = false
 
 	return lastErr
 }
