@@ -23,21 +23,17 @@ const (
 )
 
 type proxyServer struct {
-	id                    int
-	client                net.Conn
 	clientReader          *bufio.Reader
 	clientWriter          *bufio.Writer
 	origin                net.Conn
 	originReader          *bufio.Reader
 	originWriter          *bufio.Writer
-	masqueradeIP          string
 	passThrough           bool
 	mutex                 *sync.Mutex
 	log                   *logger
 	stopChan              chan struct{}
 	stopChanDone          chan struct{}
 	stop                  bool
-	secureCommands        []string
 	isSwitched            bool
 	welcomeMsg            string
 	config                *config
@@ -46,7 +42,6 @@ type proxyServer struct {
 	isDone                *bool
 	inDataTransfer        *bool
 	isDataCommandResponse bool
-	waitDataResponse      bool
 }
 
 type proxyServerConfig struct {
@@ -183,19 +178,11 @@ func (s *proxyServer) GetConn() net.Conn {
 
 func (s *proxyServer) SetDataHandler(handler *dataHandler) {
 	// only one data connection available in same time.
-	if s.dataConnector != nil {
-		// if already had previous data handler, wait until response sent to client.
-		for s.waitDataResponse {
-			time.Sleep(time.Millisecond * 500)
-		}
-
-		// after sent response for previous data command, close it for use new data handler.
-		s.dataConnector.Close()
+	for s.dataConnector != nil {
+		time.Sleep(time.Millisecond * 500)
 	}
 
 	s.dataConnector = handler
-
-	s.waitDataResponse = true
 }
 
 func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) error {
@@ -206,7 +193,7 @@ func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) erro
 
 	// proxyProtocolHeader's DestinationAddress must be IP! not domain name
 	hostIP, err := net.LookupIP(destinationAddr[0])
-	if err != err {
+	if err != nil {
 		return err
 	}
 
@@ -434,7 +421,6 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 						switch s.dataConnector.clientConn.mode {
 						case "PORT", "EPRT":
 							buff = fmt.Sprintf("200 %s command successful\r\n", s.dataConnector.clientConn.mode)
-							break
 						case "PASV":
 							// prepare PASV response line to client
 							_, lPort, _ := net.SplitHostPort(s.dataConnector.clientConn.listener.Addr().String())
@@ -443,12 +429,10 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 								strings.ReplaceAll(s.config.MasqueradeIP, ".", ","),
 								strconv.Itoa(listenPort/256),
 								strconv.Itoa(listenPort%256))
-							break
 						case "EPSV":
 							// prepare EPSV response line to client
 							_, listenPort, _ := net.SplitHostPort(s.dataConnector.clientConn.listener.Addr().String())
 							buff = fmt.Sprintf("229 Entering Extended Passive Mode (|||%s|).\r\n", listenPort)
-							break
 						}
 					}
 				}
@@ -523,7 +507,6 @@ loop:
 	<-done
 
 	if s.dataConnector != nil {
-		s.waitDataResponse = false
 		s.dataConnector.Close()
 	}
 
