@@ -23,21 +23,17 @@ const (
 )
 
 type proxyServer struct {
-	id                    int
-	client                net.Conn
 	clientReader          *bufio.Reader
 	clientWriter          *bufio.Writer
 	origin                net.Conn
 	originReader          *bufio.Reader
 	originWriter          *bufio.Writer
-	masqueradeIP          string
 	passThrough           bool
 	mutex                 *sync.Mutex
 	log                   *logger
 	stopChan              chan struct{}
 	stopChanDone          chan struct{}
 	stop                  bool
-	secureCommands        []string
 	isSwitched            bool
 	welcomeMsg            string
 	config                *config
@@ -435,7 +431,6 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 						switch s.dataConnector.clientConn.mode {
 						case "PORT", "EPRT":
 							buff = fmt.Sprintf("200 %s command successful\r\n", s.dataConnector.clientConn.mode)
-							break
 						case "PASV":
 							// prepare PASV response line to client
 							_, lPort, _ := net.SplitHostPort(s.dataConnector.clientConn.listener.Addr().String())
@@ -444,12 +439,10 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 								strings.ReplaceAll(s.config.MasqueradeIP, ".", ","),
 								strconv.Itoa(listenPort/256),
 								strconv.Itoa(listenPort%256))
-							break
 						case "EPSV":
 							// prepare EPSV response line to client
 							_, listenPort, _ := net.SplitHostPort(s.dataConnector.clientConn.listener.Addr().String())
 							buff = fmt.Sprintf("229 Entering Extended Passive Mode (|||%s|).\r\n", listenPort)
-							break
 						}
 					}
 				}
@@ -527,7 +520,7 @@ loop:
 		if s.dataConnector.waitTransferEnd {
 			s.dataConnector.transferDone <- struct{}{}
 			s.dataConnector.waitTransferEnd = false
-			s.dataConnector.needWait = false
+			s.dataConnector.proxyHandlerAttached = false
 		}
 		s.dataConnector.Close()
 	}

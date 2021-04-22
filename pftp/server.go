@@ -65,8 +65,7 @@ func (server *FtpServer) listen() (err error) {
 }
 
 func (server *FtpServer) serve() error {
-	var currentConnection int32
-	currentConnection = 0
+	currentConnection := int32(0)
 	eg := errgroup.Group{}
 
 	for {
@@ -129,7 +128,7 @@ func (server *FtpServer) Start() error {
 		done <- struct{}{}
 	}()
 
-	ch := make(chan os.Signal)
+	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGHUP, syscall.SIGTERM)
 L:
 	for {

@@ -37,17 +37,14 @@ type testSet struct {
 }
 
 var testset = []testSet{
-	testSet{userInfo{"prouser", "prouser"}, "misc/test/data/prouser"},
-	testSet{userInfo{"vsuser", "vsuser"}, "misc/test/data/vsuser"},
+	{userInfo{"prouser", "prouser"}, "misc/test/data/prouser"},
+	{userInfo{"vsuser", "vsuser"}, "misc/test/data/vsuser"},
 }
 
 const dataPath = "misc/test/data"
 
 // goroutine leak test count
 const leaktestCount = 400
-
-// test set for leak test (use proftpd user)
-var leaktestset = testset[0]
 
 func localConnect(port int, t *testing.T) *ftp.ServerConn {
 	client, err := ftp.Dial(fmt.Sprintf("localhost:%d", port))
@@ -155,6 +152,10 @@ func removeDirFiles(t *testing.T, dir string) {
 		f := path.Join(testset[i].Dir, dir)
 		filepath.Walk(f,
 			func(fpath string, info os.FileInfo, err error) error {
+				if err != nil {
+					t.Fatal(err)
+				}
+
 				rel, err := filepath.Rel(f, fpath)
 				if err != nil {
 					t.Fatal(err)
@@ -276,8 +277,6 @@ func TestDownload(t *testing.T) {
 		t.Skip()
 	}
 	eg := errgroup.Group{}
-
-	removeDirFiles(t, "retr")
 
 	userCount := len(testset)
 
