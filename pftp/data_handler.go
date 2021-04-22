@@ -378,7 +378,7 @@ func (d *dataHandler) originListenOrDial() error {
 			}
 		}
 
-		// set linger 0 and tcp keepalive setting between client connection
+		// set linger 0 and tcp keepalive setting between origin connection
 		if d.config.KeepaliveTime > 0 {
 			conn.SetKeepAlive(true)
 			conn.SetKeepAlivePeriod(time.Duration(d.config.KeepaliveTime) * time.Second)
@@ -405,7 +405,7 @@ func (d *dataHandler) originListenOrDial() error {
 
 		d.log.debug("connected to origin %s", conn.RemoteAddr().String())
 
-		// set linger 0 and tcp keepalive setting between client connection
+		// set linger 0 and tcp keepalive setting between origin connection
 		tcpConn := conn.(*net.TCPConn)
 		tcpConn.SetKeepAlive(true)
 		tcpConn.SetKeepAlivePeriod(time.Duration(d.config.KeepaliveTime) * time.Second)
@@ -430,6 +430,10 @@ func (d *dataHandler) dataTransfer(reader net.Conn, writer net.Conn) error {
 	if err := sendEOF(writer); err != nil {
 		writer.Close()
 	}
+
+	// set deadline each conn when data transfer complete
+	reader.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
+	writer.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
 
 	return err
 }
