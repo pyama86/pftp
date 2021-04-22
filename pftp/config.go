@@ -102,13 +102,10 @@ func loadConfig(path string) (*config, error) {
 	switch c.TransferMode {
 	case "PORT", "ACTIVE":
 		c.TransferMode = "PORT"
-		break
 	case "PASV", "PASSIVE":
 		c.TransferMode = "PASV"
-		break
 	case "EPSV":
 		c.TransferMode = "EPSV"
-		break
 	case "CLIENT":
 		break
 	default:
@@ -136,7 +133,7 @@ func dataPortRangeValidation(r string) error {
 		return nil
 	}
 
-	lastErr := fmt.Errorf("Data port range config wrong. set default(random port)")
+	lastErr := fmt.Errorf("data port range config wrong. set default(random port)")
 	portRange := strings.Split(r, "-")
 
 	if len(portRange) != PortRangeLength {

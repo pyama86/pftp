@@ -9,8 +9,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var ftpServer *pftp.FtpServer
-
 var confFile = "./config.toml"
 
 func init() {
@@ -20,7 +18,6 @@ func init() {
 }
 
 func main() {
-
 	ftpServer, err := pftp.NewFtpServer(confFile)
 	if err != nil {
 		logrus.Fatal(err)

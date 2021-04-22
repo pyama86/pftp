@@ -27,15 +27,10 @@ type resource interface {
 }
 
 type (
-	getNotSupported    struct{}
 	postNotSupported   struct{}
 	putNotSupported    struct{}
 	deleteNotSupported struct{}
 )
-
-func (getNotSupported) Get(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) response {
-	return response{405, "", ""}
-}
 
 func (postNotSupported) Post(rw http.ResponseWriter, r *http.Request, ps httprouter.Params) response {
 	return response{405, "", ""}

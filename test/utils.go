@@ -77,7 +77,7 @@ func LaunchTestServer(server *net.Listener, conn chan net.Conn, done chan struct
 	for {
 		c, err := (*server).Accept()
 		if err != nil {
-			if strings.Index(err.Error(), "use of closed network connection") == -1 {
+			if !strings.Contains(err.Error(), "use of closed network connection") {
 				t.Fatal(err)
 			}
 			break

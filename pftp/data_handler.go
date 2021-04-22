@@ -406,11 +406,11 @@ func (d *dataHandler) originListenOrDial() error {
 
 // send data until got EOF or error on connection
 func (d *dataHandler) dataTransfer(reader net.Conn, writer net.Conn) error {
-	var err error
+	lastErr := error(nil)
 
 	buffer := make([]byte, dataTransferBufferSize)
 	if _, err := io.CopyBuffer(writer, reader, buffer); err != nil {
-		err = fmt.Errorf("got error on data transfer: %s", err.Error())
+		lastErr = fmt.Errorf("got error on data transfer: %s", err.Error())
 	}
 
 	// send EOF to writer. if fail, close connection
@@ -418,7 +418,7 @@ func (d *dataHandler) dataTransfer(reader net.Conn, writer net.Conn) error {
 		writer.Close()
 	}
 
-	return err
+	return lastErr
 }
 
 // parse port comand line
@@ -552,7 +552,6 @@ func parseEPRTtoAddr(line string) (string, string, error) {
 		if net.ParseIP(IP) == nil {
 			return "", "", fmt.Errorf("invalid data address")
 		}
-		break
 	default:
 		// wrong network protocol
 		return "", "", fmt.Errorf("unknown network protocol")
