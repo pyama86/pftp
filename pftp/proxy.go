@@ -184,9 +184,9 @@ func (s *proxyServer) SetDataHandler(handler *dataHandler) {
 	// only one data connection available in same time.
 	if s.dataConnector != nil {
 		// if already had previous data handler in use, wait until end.
-		if s.dataConnector.needWait {
+		if s.dataConnector.proxyHandlerAttached {
 			s.dataConnector.waitTransferEnd = true
-			s.dataConnector.needWait = false
+			s.dataConnector.proxyHandlerAttached = false
 			<-s.dataConnector.transferDone
 			s.dataConnector.waitTransferEnd = false
 		}
@@ -196,7 +196,7 @@ func (s *proxyServer) SetDataHandler(handler *dataHandler) {
 	}
 
 	s.dataConnector = handler
-	s.dataConnector.needWait = true
+	s.dataConnector.proxyHandlerAttached = true
 }
 
 func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) error {

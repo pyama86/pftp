@@ -14,14 +14,14 @@ import (
 )
 
 type dataHandler struct {
-	clientConn      connector
-	originConn      connector
-	config          *config
-	log             *logger
-	inDataTransfer  *bool
-	needWait        bool
-	waitTransferEnd bool
-	transferDone    chan struct{}
+	clientConn           connector
+	originConn           connector
+	config               *config
+	log                  *logger
+	inDataTransfer       *bool
+	proxyHandlerAttached bool
+	waitTransferEnd      bool
+	transferDone         chan struct{}
 }
 
 type connector struct {
@@ -59,12 +59,12 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 			isClient:         true,
 			mode:             mode,
 		},
-		config:          config,
-		log:             log,
-		inDataTransfer:  inDataTransfer,
-		needWait:        false,
-		waitTransferEnd: false,
-		transferDone:    make(chan struct{}),
+		config:               config,
+		log:                  log,
+		inDataTransfer:       inDataTransfer,
+		proxyHandlerAttached: false,
+		waitTransferEnd:      false,
+		transferDone:         make(chan struct{}),
 	}
 
 	if d.originConn.communicaionConn != nil {
@@ -229,7 +229,7 @@ func (d *dataHandler) Close() error {
 		d.waitTransferEnd = false
 	}
 
-	d.needWait = false
+	d.proxyHandlerAttached = false
 
 	if lastErr == nil {
 		d.log.debug("proxy data channel disconnected")
