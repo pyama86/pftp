@@ -288,6 +288,7 @@ func TestDownload(t *testing.T) {
 
 			eg.Go(func() error {
 				a := md5.New()
+				a2 := md5.New()
 				b := md5.New()
 
 				client := loggedin(2121, t, testset[user].User)
@@ -303,6 +304,8 @@ func TestDownload(t *testing.T) {
 				if err != nil {
 					return err
 				}
+				// must close ftp reader after download complete
+				r.Close()
 
 				f, err := os.Open(fmt.Sprintf("%s/stor/%d", testset[user].Dir, num))
 				if err != nil {
@@ -318,6 +321,23 @@ func TestDownload(t *testing.T) {
 				if !reflect.DeepEqual(a.Sum(nil), b.Sum(nil)) {
 					return fmt.Errorf("download file check sum error: %d", num)
 				}
+
+				// Download twice in same ftp connection for check loop lock in dataHandler problem
+				r, err = client.Retr(fmt.Sprintf("stor/%d", num))
+				if err != nil {
+					return fmt.Errorf("error when twice download: %s\n", err.Error())
+				}
+				_, err = io.Copy(a2, r)
+				if err != nil {
+					return err
+				}
+				// must close ftp reader after download complete
+				r.Close()
+
+				if !reflect.DeepEqual(a2.Sum(nil), b.Sum(nil)) {
+					return fmt.Errorf("2nd download file check sum error: %d", num)
+				}
+
 				return nil
 			})
 		}

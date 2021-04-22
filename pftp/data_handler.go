@@ -14,11 +14,14 @@ import (
 )
 
 type dataHandler struct {
-	clientConn     connector
-	originConn     connector
-	config         *config
-	log            *logger
-	inDataTransfer *bool
+	clientConn           connector
+	originConn           connector
+	config               *config
+	log                  *logger
+	inDataTransfer       *bool
+	proxyHandlerAttached bool
+	waitTransferEnd      bool
+	transferDone         chan struct{}
 }
 
 type connector struct {
@@ -56,9 +59,12 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 			isClient:         true,
 			mode:             mode,
 		},
-		config:         config,
-		log:            log,
-		inDataTransfer: inDataTransfer,
+		config:               config,
+		log:                  log,
+		inDataTransfer:       inDataTransfer,
+		proxyHandlerAttached: false,
+		waitTransferEnd:      false,
+		transferDone:         make(chan struct{}),
 	}
 
 	if d.originConn.communicaionConn != nil {
@@ -218,6 +224,13 @@ func (d *dataHandler) Close() error {
 		}
 	}
 
+	if d.waitTransferEnd {
+		d.transferDone <- struct{}{}
+		d.waitTransferEnd = false
+	}
+
+	d.proxyHandlerAttached = false
+
 	if lastErr == nil {
 		d.log.debug("proxy data channel disconnected")
 	}
@@ -365,7 +378,7 @@ func (d *dataHandler) originListenOrDial() error {
 			}
 		}
 
-		// set linger 0 and tcp keepalive setting between client connection
+		// set linger 0 and tcp keepalive setting between origin connection
 		if d.config.KeepaliveTime > 0 {
 			conn.SetKeepAlive(true)
 			conn.SetKeepAlivePeriod(time.Duration(d.config.KeepaliveTime) * time.Second)
@@ -392,7 +405,7 @@ func (d *dataHandler) originListenOrDial() error {
 
 		d.log.debug("connected to origin %s", conn.RemoteAddr().String())
 
-		// set linger 0 and tcp keepalive setting between client connection
+		// set linger 0 and tcp keepalive setting between origin connection
 		tcpConn := conn.(*net.TCPConn)
 		tcpConn.SetKeepAlive(true)
 		tcpConn.SetKeepAlivePeriod(time.Duration(d.config.KeepaliveTime) * time.Second)
@@ -417,6 +430,10 @@ func (d *dataHandler) dataTransfer(reader net.Conn, writer net.Conn) error {
 	if err := sendEOF(writer); err != nil {
 		writer.Close()
 	}
+
+	// set deadline each conn when data transfer complete
+	reader.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
+	writer.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
 
 	return err
 }

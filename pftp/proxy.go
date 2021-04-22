@@ -46,7 +46,6 @@ type proxyServer struct {
 	isDone                *bool
 	inDataTransfer        *bool
 	isDataCommandResponse bool
-	waitDataResponse      bool
 }
 
 type proxyServerConfig struct {
@@ -184,9 +183,12 @@ func (s *proxyServer) GetConn() net.Conn {
 func (s *proxyServer) SetDataHandler(handler *dataHandler) {
 	// only one data connection available in same time.
 	if s.dataConnector != nil {
-		// if already had previous data handler, wait until response sent to client.
-		for s.waitDataResponse {
-			time.Sleep(time.Millisecond * 500)
+		// if already had previous data handler in use, wait until end.
+		if s.dataConnector.proxyHandlerAttached {
+			s.dataConnector.waitTransferEnd = true
+			s.dataConnector.proxyHandlerAttached = false
+			<-s.dataConnector.transferDone
+			s.dataConnector.waitTransferEnd = false
 		}
 
 		// after sent response for previous data command, close it for use new data handler.
@@ -194,8 +196,7 @@ func (s *proxyServer) SetDataHandler(handler *dataHandler) {
 	}
 
 	s.dataConnector = handler
-
-	s.waitDataResponse = true
+	s.dataConnector.proxyHandlerAttached = true
 }
 
 func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) error {
@@ -206,7 +207,7 @@ func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) erro
 
 	// proxyProtocolHeader's DestinationAddress must be IP! not domain name
 	hostIP, err := net.LookupIP(destinationAddr[0])
-	if err != err {
+	if err != nil {
 		return err
 	}
 
@@ -523,7 +524,11 @@ loop:
 	<-done
 
 	if s.dataConnector != nil {
-		s.waitDataResponse = false
+		if s.dataConnector.waitTransferEnd {
+			s.dataConnector.transferDone <- struct{}{}
+			s.dataConnector.waitTransferEnd = false
+			s.dataConnector.needWait = false
+		}
 		s.dataConnector.Close()
 	}
 

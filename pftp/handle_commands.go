@@ -224,7 +224,7 @@ func (c *clientHandler) handlePROXY() *result {
 	if len(params) != 6 {
 		return &result{
 			code: 500,
-			msg:  fmt.Sprintf("Proxy header parse error"),
+			msg:  fmt.Sprint("Proxy header parse error"),
 			err:  errors.New("wrong proxy header parameters"),
 		}
 	}
@@ -232,7 +232,7 @@ func (c *clientHandler) handlePROXY() *result {
 	if net.ParseIP(params[2]) == nil || net.ParseIP(params[3]) == nil {
 		return &result{
 			code: 500,
-			msg:  fmt.Sprintf("Proxy header parse error"),
+			msg:  fmt.Sprint("Proxy header parse error"),
 			err:  errors.New("wrong source ip address"),
 		}
 	}
