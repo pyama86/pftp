@@ -11,7 +11,7 @@ before_install:
 script:
 - GO="GO111MODULE=on go" make ci
 go:
-  - 1.12
+  - 1.15
 cache:
   directories:
     - misc/test/data
