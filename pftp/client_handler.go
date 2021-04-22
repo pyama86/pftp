@@ -71,7 +71,7 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		context:           newContext(c),
 		currentConnection: currentConnection,
 		mutex:             &sync.Mutex{},
-		log:               &logger{fromip: connection.RemoteAddr().String(), id: id},
+		log:               &logger{fromip: connection.RemoteAddr().String(), user: "-", id: id},
 		srcIP:             connection.RemoteAddr().String(),
 		tlsProtocol:       0,
 		isLoggedin:        false,

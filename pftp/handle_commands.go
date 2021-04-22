@@ -22,6 +22,8 @@ func (c *clientHandler) handleUSER() *result {
 		}
 	}
 
+	c.log.user = c.param
+
 	if err := c.connectProxy(); err != nil {
 		// user not found
 		if err.Error() == "user id not found" {
