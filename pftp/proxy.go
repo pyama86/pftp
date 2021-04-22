@@ -185,10 +185,10 @@ func (s *proxyServer) SetDataHandler(handler *dataHandler) {
 	if s.dataConnector != nil {
 		// if already had previous data handler in use, wait until end.
 		if s.dataConnector.needWait {
-			s.dataConnector.chanWaiting = true
+			s.dataConnector.waitTransferEnd = true
 			s.dataConnector.needWait = false
-			<-s.dataConnector.waitTransferEnd
-			s.dataConnector.chanWaiting = false
+			<-s.dataConnector.transferDone
+			s.dataConnector.waitTransferEnd = false
 		}
 
 		// after sent response for previous data command, close it for use new data handler.
@@ -524,9 +524,9 @@ loop:
 	<-done
 
 	if s.dataConnector != nil {
-		if s.dataConnector.chanWaiting {
-			s.dataConnector.waitTransferEnd <- struct{}{}
-			s.dataConnector.chanWaiting = false
+		if s.dataConnector.waitTransferEnd {
+			s.dataConnector.transferDone <- struct{}{}
+			s.dataConnector.waitTransferEnd = false
 			s.dataConnector.needWait = false
 		}
 		s.dataConnector.Close()

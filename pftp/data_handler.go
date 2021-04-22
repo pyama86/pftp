@@ -20,8 +20,8 @@ type dataHandler struct {
 	log             *logger
 	inDataTransfer  *bool
 	needWait        bool
-	chanWaiting     bool
-	waitTransferEnd chan struct{}
+	waitTransferEnd bool
+	transferDone    chan struct{}
 }
 
 type connector struct {
@@ -63,8 +63,8 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 		log:             log,
 		inDataTransfer:  inDataTransfer,
 		needWait:        false,
-		chanWaiting:     false,
-		waitTransferEnd: make(chan struct{}),
+		waitTransferEnd: false,
+		transferDone:    make(chan struct{}),
 	}
 
 	if d.originConn.communicaionConn != nil {
@@ -224,9 +224,9 @@ func (d *dataHandler) Close() error {
 		}
 	}
 
-	if d.chanWaiting {
-		d.waitTransferEnd <- struct{}{}
-		d.chanWaiting = false
+	if d.waitTransferEnd {
+		d.transferDone <- struct{}{}
+		d.waitTransferEnd = false
 	}
 
 	d.needWait = false
