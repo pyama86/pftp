@@ -1,6 +1,7 @@
 package pftp
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +22,8 @@ type dataHandler struct {
 	inDataTransfer       *bool
 	proxyHandlerAttached bool
 	waitTransferEnd      bool
+	tlsConfigs           *tlsConfigSet
+	needTLSForTransfer   bool
 	transferDone         chan struct{}
 }
 
@@ -39,7 +42,7 @@ type connector struct {
 }
 
 // Make listener for data connection
-func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn net.Conn, mode string, inDataTransfer *bool) (*dataHandler, error) {
+func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn net.Conn, mode string, tlsConfigs *tlsConfigSet, transferOverTLS bool, inDataTransfer *bool) (*dataHandler, error) {
 	var err error
 
 	d := &dataHandler{
@@ -64,6 +67,8 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 		inDataTransfer:       inDataTransfer,
 		proxyHandlerAttached: false,
 		waitTransferEnd:      false,
+		tlsConfigs:           tlsConfigs,
+		needTLSForTransfer:   transferOverTLS,
 		transferDone:         make(chan struct{}),
 	}
 
@@ -151,6 +156,7 @@ func (d *dataHandler) setNewListener() (*net.TCPListener, error) {
 	var listener *net.TCPListener
 	var lAddr *net.TCPAddr
 	var err error
+
 	// reallocate listener port when selected port is busy until LISTEN_TIMEOUT
 	counter := 0
 	for {
@@ -334,7 +340,6 @@ func (d *dataHandler) clientListenOrDial() error {
 		}
 
 		conn, err = netDialer.Dial("tcp", net.JoinHostPort(d.clientConn.remoteIP, d.clientConn.remotePort))
-
 		if err != nil || conn == nil {
 			d.log.err("cannot connect to client data address: %v, %s", conn, err.Error())
 			return err
@@ -349,6 +354,20 @@ func (d *dataHandler) clientListenOrDial() error {
 		tcpConn.SetLinger(0)
 
 		d.clientConn.dataConn = tcpConn
+	}
+
+	if d.needTLSForTransfer {
+		if d.tlsConfigs.getTLSConfigForClient() == nil {
+			return errors.New("cannot get TLS config for data transfer. abort data transfer")
+		}
+
+		tlsConn := tls.Server(d.clientConn.dataConn, d.tlsConfigs.getTLSConfigForClient())
+		if err := tlsConn.Handshake(); err != nil {
+			d.log.err("TLS client data connection handshake got error: %v", err)
+		}
+		d.log.debug("TLS data connection with client has set. (resumed?: %v)", tlsConn.ConnectionState().DidResume)
+
+		d.clientConn.dataConn = tlsConn
 	}
 
 	return nil
@@ -412,6 +431,21 @@ func (d *dataHandler) originListenOrDial() error {
 		tcpConn.SetLinger(0)
 
 		d.originConn.dataConn = tcpConn
+	}
+
+	// set TLS session.
+	if d.needTLSForTransfer {
+		if d.tlsConfigs.getTLSConfigForOrigin() == nil {
+			return errors.New("cannot get TLS config for data transfer. abort data transfer")
+		}
+
+		tlsConn := tls.Client(d.originConn.dataConn, d.tlsConfigs.getTLSConfigForOrigin())
+		if err := tlsConn.Handshake(); err != nil {
+			d.log.err("TLS origin data connection handshake got error: %v", err)
+		}
+		d.log.debug("TLS data connection with origin has set. (resumed?: %v)", tlsConn.ConnectionState().DidResume)
+
+		d.originConn.dataConn = tlsConn
 	}
 
 	return nil
