@@ -86,5 +86,4 @@ func LaunchTestServer(server *net.Listener, conn chan net.Conn, done chan struct
 		conn <- c
 	}
 	done <- struct{}{}
-
 }
