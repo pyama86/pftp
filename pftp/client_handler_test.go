@@ -1,6 +1,7 @@
 package pftp
 
 import (
+	"bufio"
 	"crypto/tls"
 	"errors"
 	"net"
@@ -64,6 +65,7 @@ func Test_clientHandler_handleCommands(t *testing.T) {
 			clientHandler := newClientHandler(
 				<-conn,
 				tt.fields.config,
+				nil,
 				nil,
 				1,
 				&cn,
@@ -192,6 +194,7 @@ func Test_clientHandler_handleCommand(t *testing.T) {
 				<-conn,
 				tt.fields.config,
 				nil,
+				nil,
 				1,
 				&cn,
 			)
@@ -230,7 +233,7 @@ func Test_clientHandler_TLS_error_type_bug(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "err_type_check",
+			name: "tls_err_type_check",
 			fields: fields{
 				config: &config{
 					IdleTimeout:    1,
@@ -252,21 +255,19 @@ func Test_clientHandler_TLS_error_type_bug(t *testing.T) {
 	var cn int32
 
 	for _, tt := range tests {
-		if cert, err := tls.LoadX509KeyPair(tt.fields.config.TLS.Cert, tt.fields.config.TLS.Key); err == nil {
-			tt.fields.config.TLSConfig = &tls.Config{
-				NextProtos:   []string{"ftp"},
-				Certificates: []tls.Certificate{cert},
-			}
-		} else {
-			t.Errorf("clientHandler.TLS_error_type_bug() can not set tls config: %v", err)
-			return
-		}
+		tlsConfig := buildTLSConfigForOrigin()
 
 		t.Run(tt.name, func(t *testing.T) {
+			serverTLSConfig, err := buildTLSConfigForClient(tt.fields.config.TLS)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// run client handler
 			go func() {
 				clientHandler := newClientHandler(
 					<-conn,
 					tt.fields.config,
+					serverTLSConfig,
 					nil,
 					1,
 					&cn,
@@ -276,7 +277,134 @@ func Test_clientHandler_TLS_error_type_bug(t *testing.T) {
 				handlerDone <- err
 			}()
 
-			buff := make([]byte, 4096)
+			// connect to test server
+			c, err := net.Dial("tcp", server.Addr().String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+
+			reader := bufio.NewReader(c)
+			writer := bufio.NewWriter(c)
+
+			// read welcome message
+			_, err = reader.ReadString('\n')
+			if err != nil {
+				t.Errorf("clientHandler.TLS_error_type_bug() can not read welcome message from origin: %v", err)
+			}
+
+			// send AUTH command to server
+			if _, err = writer.WriteString("AUTH TLS\r\n"); err != nil {
+				t.Errorf("clientHandler.TLS_error_type_bug() can not write string to proxy: %v", err)
+			}
+			if err = writer.Flush(); err != nil {
+				t.Errorf("clientHandler.TLS_error_type_bug() can not write string to proxy: %v", err)
+			}
+			_, err = reader.ReadString('\n')
+			if err != nil {
+				t.Errorf("clientHandler.TLS_error_type_bug() can not read response from origin: %v", err)
+			}
+
+			// make tls handshake for full tls connection
+			tlsConn := tls.Client(c, tlsConfig)
+			err = tlsConn.Handshake()
+			if err != nil {
+				t.Errorf("TLS Handshake Error: %v", err)
+			}
+
+			// comment out tls wrapping client connection
+			// reader = bufio.NewReader(tlsConn)
+			// writer = bufio.NewWriter(tlsConn)
+
+			// send some command using by non wrapped conn
+			if _, err = writer.WriteString("NOOP\r\n"); err != nil {
+				t.Errorf("clientHandler.TLS_error_type_bug() can not write string to proxy: %v", err)
+			}
+			if err = writer.Flush(); err != nil {
+				t.Errorf("clientHandler.TLS_error_type_bug() can not write string to proxy: %v", err)
+			}
+
+			// if err is nil, it means failed on test
+			_, err = reader.ReadString('\n')
+			if err == nil {
+				t.Errorf("clientHandler.TLS_error_type_bug() test failed! successfully read response from origin: %v, want err != nil", err)
+			}
+
+			// check connection normally finished
+			serverErr := <-handlerDone
+			if (serverErr != nil) != tt.wantErr {
+				t.Errorf("clientHandler.TLS_error_type_bug() error = %v, wantErr %v\n", serverErr, tt.wantErr)
+			}
+		})
+	}
+	server.Close()
+	<-done
+}
+
+func Test_clientHandler_TLS_Session_Resumption(t *testing.T) {
+	var server net.Listener
+	serverready := make(chan struct{})
+	conn := make(chan net.Conn)
+	done := make(chan struct{})
+	clientHandlerDone := make(chan error)
+
+	go test.LaunchTestServer(&server, conn, done, serverready, t)
+
+	type fields struct {
+		config *config
+	}
+
+	tests := []struct {
+		name    string
+		fields  fields
+		command string
+		hook    func()
+		wantErr bool
+	}{
+		{
+			name: "err_type_check",
+			fields: fields{
+				config: &config{
+					IdleTimeout:    1,
+					MaxConnections: 5,
+					RemoteAddr:     "127.0.0.1:20021",
+					WelcomeMsg:     "TLS test server",
+					TLS: &tlsPair{
+						Cert: "../tls/server.crt",
+						Key:  "../tls/server.key",
+					},
+				},
+			},
+			hook:    func() { time.Sleep(2 * time.Second) },
+			wantErr: false,
+		},
+	}
+	<-serverready
+
+	var cn int32
+
+	for _, tt := range tests {
+		tlsConfig := buildTLSConfigForOrigin()
+
+		t.Run(tt.name, func(t *testing.T) {
+			serverTLSConfig, err := buildTLSConfigForClient(tt.fields.config.TLS)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// run 1st client handler
+			go func() {
+				clientHandler := newClientHandler(
+					<-conn,
+					tt.fields.config,
+					serverTLSConfig,
+					nil,
+					1,
+					&cn,
+				)
+
+				err := clientHandler.handleCommands()
+				clientHandlerDone <- err
+			}()
 
 			// connect to test server
 			c, err := net.Dial("tcp", server.Addr().String())
@@ -285,40 +413,139 @@ func Test_clientHandler_TLS_error_type_bug(t *testing.T) {
 			}
 			defer c.Close()
 
+			reader := bufio.NewReader(c)
+			writer := bufio.NewWriter(c)
+
 			// read welcome message
-			_, err = c.Read(buff)
+			_, err = reader.ReadString('\n')
 			if err != nil {
-				t.Errorf("clientHandler.TLS_error_type_bug() can not read welcome message from origin: %v", err)
+				t.Errorf("clientHandler.TLS_Session_Resumption() can not read welcome message from origin: %v", err)
 			}
 
 			// send AUTH command to server
-			c.Write([]byte("AUTH TLS\r\n"))
-			_, err = c.Read(buff)
+			if _, err = writer.WriteString("AUTH TLS\r\n"); err != nil {
+				t.Errorf("clientHandler.TLS_Session_Resumption() can not write string to proxy: %v", err)
+			}
+			if err = writer.Flush(); err != nil {
+				t.Errorf("clientHandler.TLS_Session_Resumption() can not write string to proxy: %v", err)
+			}
+			_, err = reader.ReadString('\n')
 			if err != nil {
-				t.Errorf("clientHandler.TLS_error_type_bug() can not read response from origin: %v", err)
+				t.Errorf("clientHandler.TLS_Session_Resumption() can not read response from origin: %v", err)
 			}
 
 			// make tls handshake for full tls connection
-			tlsConn := tls.Client(c, &tls.Config{InsecureSkipVerify: true})
-			tlsConn.Handshake()
-
-			// comment out tls wrapping client connection
-			// c = net.Conn(tlsConn)
-
-			// send some command using by non wrapped conn
-			// if fail this test, goroutine got panic and terminate server
-			// so error response is ok (if err is nil, it means fail on test too).
-			c.Write([]byte("NOOP\r\n"))
-			_, err = c.Read(buff)
+			tlsConn := tls.Client(c, tlsConfig)
+			err = tlsConn.Handshake()
 			if err != nil {
-				t.Errorf("clientHandler.TLS_error_type_bug() can not read response from origin: %v", err)
+				t.Errorf("TLS Handshake Error: %v", err)
 			}
 
-			// wait until client Handler end
-			serverErr := <-handlerDone
+			// check 1st TLS connection is resumed. if resumed(true), failed
+			state := tlsConn.ConnectionState()
+			if state.DidResume {
+				t.Errorf("clientHandler.TLS_Session_Resumption() 1st TLS session resumption failed: got = %v, want = false", state.DidResume)
+			}
+
+			// close 1st connections
+			tlsConn.Close()
+
+			// check 1st connection normally finished
+			serverErr := <-clientHandlerDone
+			if (serverErr != nil) != tt.wantErr {
+				t.Errorf("clientHandler.TLS_Session_Resumption() error = %v, wantErr %v\n", serverErr, tt.wantErr)
+			}
+
+			// 1st TLS connection is done
+			// run 2nd client handler
+			go func() {
+				clientHandler := newClientHandler(
+					<-conn,
+					tt.fields.config,
+					serverTLSConfig,
+					nil,
+					1,
+					&cn,
+				)
+
+				err := clientHandler.handleCommands()
+				clientHandlerDone <- err
+			}()
+
+			// connect to test server
+			c, err = net.Dial("tcp", server.Addr().String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+
+			reader = bufio.NewReader(c)
+			writer = bufio.NewWriter(c)
+
+			// read welcome message
+			_, err = reader.ReadString('\n')
+			if err != nil {
+				t.Errorf("clientHandler.TLS_Session_Resumption() can not read welcome message from origin: %v", err)
+			}
+
+			// send AUTH command to server
+			if _, err = writer.WriteString("AUTH TLS\r\n"); err != nil {
+				t.Errorf("clientHandler.TLS_Session_Resumption() can not write string to proxy: %v", err)
+			}
+			if err = writer.Flush(); err != nil {
+				t.Errorf("clientHandler.TLS_Session_Resumption() can not write string to proxy: %v", err)
+			}
+			_, err = reader.ReadString('\n')
+			if err != nil {
+				t.Errorf("clientHandler.TLS_Session_Resumption() can not read response from origin: %v", err)
+			}
+
+			// make tls handshake for full tls connection
+			tlsConn = tls.Client(c, tlsConfig)
+			err = tlsConn.Handshake()
+			if err != nil {
+				t.Errorf("TLS Handshake Error: %v", err)
+			}
+
+			// check 2nd TLS connection is resumed. if not resumed(false), failed
+			state = tlsConn.ConnectionState()
+			if !state.DidResume {
+				t.Errorf("clientHandler.TLS_Session_Resumption() 2nd TLS session resumption failed: got = %v, want = true", state.DidResume)
+			}
+
+			reader = bufio.NewReader(tlsConn)
+			writer = bufio.NewWriter(tlsConn)
+
+			// test some FTP commands under TLS session
+			if _, err = writer.WriteString("FEAT\r\n"); err != nil {
+				t.Errorf("clientHandler.TLS_Session_Resumption() can not write string to proxy: %v", err)
+			}
+			if err = writer.Flush(); err != nil {
+				t.Errorf("clientHandler.TLS_Session_Resumption() can not write string to proxy: %v", err)
+			}
+			_, err = reader.ReadString('\n')
+			if err != nil {
+				t.Errorf("clientHandler.TLS_Session_Resumption() can not read response from origin: %v", err)
+			}
+
+			if _, err = writer.WriteString("QUIT\r\n"); err != nil {
+				t.Errorf("clientHandler.TLS_Session_Resumption() can not write string to proxy: %v", err)
+			}
+			if err = writer.Flush(); err != nil {
+				t.Errorf("clientHandler.TLS_Session_Resumption() can not write string to proxy: %v", err)
+			}
+			_, err = reader.ReadString('\n')
+			if err != nil {
+				t.Errorf("clientHandler.TLS_Session_Resumption() can not read response from origin: %v", err)
+			}
+
+			tlsConn.Close()
+
+			// wait until 2nd client Handler end
+			serverErr = <-clientHandlerDone
 
 			if (serverErr != nil) != tt.wantErr {
-				t.Errorf("clientHandler.TLS_error_type_bug() error = %v, wantErr %v\n", serverErr, tt.wantErr)
+				t.Errorf("clientHandler.TLS_Session_Resumption() error = %v, wantErr %v\n", serverErr, tt.wantErr)
 			}
 		})
 	}
