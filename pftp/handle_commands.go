@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"reflect"
 	"strconv"
 	"strings"
 )
@@ -59,18 +58,8 @@ func (c *clientHandler) handleUSER() *result {
 	return nil
 }
 
-func getTLSVersion(c *tls.Conn) uint16 {
-	cv := reflect.ValueOf(c)
-	switch ce := cv.Elem(); ce.Kind() {
-	case reflect.Struct:
-		fe := ce.FieldByName("vers")
-		return uint16(fe.Uint())
-	}
-	return 0
-}
-
 func (c *clientHandler) handleAUTH() *result {
-	if c.config.TLSConfig != nil {
+	if c.tlsConfigs.getTLSConfigForClient() != nil {
 		r := &result{
 			code: 234,
 			msg:  fmt.Sprintf("AUTH command ok. Expecting %s Negotiation.", c.param),
@@ -85,7 +74,7 @@ func (c *clientHandler) handleAUTH() *result {
 			}
 		}
 
-		tlsConn := tls.Server(c.conn, c.config.TLSConfig)
+		tlsConn := tls.Server(c.conn, c.tlsConfigs.getTLSConfigForClient())
 		err := tlsConn.Handshake()
 		if err != nil {
 			return &result{
@@ -96,11 +85,17 @@ func (c *clientHandler) handleAUTH() *result {
 			}
 		}
 
+		c.log.debug("TLS control connection with client has set")
+
 		c.conn = tlsConn
 		*c.reader = *(bufio.NewReader(c.conn))
 		*c.writer = *(bufio.NewWriter(c.conn))
-		c.tlsProtocol = getTLSVersion(tlsConn)
 		c.previousTLSCommands = append(c.previousTLSCommands, c.line)
+
+		// set specific client TLS version to origin TLS config
+		c.tlsProtocol = tlsConn.ConnectionState().Version
+		c.tlsConfigs.forOrigin.MinVersion = c.tlsProtocol
+		c.tlsConfigs.forOrigin.MaxVersion = c.tlsProtocol
 
 		return nil
 	}
@@ -198,6 +193,8 @@ func (c *clientHandler) handlePROT() *result {
 			}
 		}
 
+		c.setTransferOverTLS(c.param == "P")
+
 		return nil
 	}
 	return &result{
@@ -263,6 +260,8 @@ func (c *clientHandler) handleDATA() *result {
 			c.conn,
 			c.proxy.GetConn(),
 			c.command,
+			c.tlsConfigs,
+			c.hasTransferOverTLS(),
 			&c.inDataTransfer,
 		)
 		if err != nil {

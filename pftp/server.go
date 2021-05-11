@@ -1,6 +1,7 @@
 package pftp
 
 import (
+	"crypto/tls"
 	"net"
 	"os"
 	"os/signal"
@@ -19,11 +20,12 @@ type middleware map[string]middlewareFunc
 
 // FtpServer struct type
 type FtpServer struct {
-	listener      net.Listener
-	clientCounter int
-	config        *config
-	middleware    middleware
-	shutdown      bool
+	listener        net.Listener
+	clientCounter   int
+	config          *config
+	serverTLSConfig *tls.Config
+	middleware      middleware
+	shutdown        bool
 }
 
 // NewFtpServer load config and create new ftp server struct
@@ -32,11 +34,24 @@ func NewFtpServer(confFile string) (*FtpServer, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	m := middleware{}
-	return &FtpServer{
+	server := &FtpServer{
 		config:     c,
 		middleware: m,
-	}, nil
+	}
+
+	// build and set TLS configuration
+	if server.config.TLS != nil {
+		logrus.Info("build server TLS configurations...")
+		server.serverTLSConfig, err = buildTLSConfigForClient(server.config.TLS)
+		if err != nil {
+			return nil, err
+		}
+		logrus.Infof("TLS certificate successfully loaded")
+	}
+
+	return server, nil
 }
 
 // Use set middleware function
@@ -94,7 +109,7 @@ func (server *FtpServer) serve() error {
 
 		server.clientCounter++
 
-		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection)
+		c := newClientHandler(conn, server.config, server.serverTLSConfig, server.middleware, server.clientCounter, &currentConnection)
 		eg.Go(func() error {
 			err := c.handleCommands()
 			logrus.Info("handle command end runtime goroutine count: ", runtime.NumGoroutine())

@@ -2,6 +2,7 @@ package pftp
 
 import (
 	"bufio"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -39,6 +40,9 @@ type clientHandler struct {
 	id                  int
 	conn                net.Conn
 	config              *config
+	tlsConfigs          *tlsConfigSet
+	isTLSTransfer       bool
+	tlsMutex            sync.RWMutex
 	middleware          middleware
 	writer              *bufio.Writer
 	reader              *bufio.Reader
@@ -60,11 +64,12 @@ type clientHandler struct {
 	inDataTransfer      bool
 }
 
-func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32) *clientHandler {
+func newClientHandler(connection net.Conn, c *config, sharedTLSConfig *tls.Config, m middleware, id int, currentConnection *int32) *clientHandler {
 	p := &clientHandler{
 		id:                id,
 		conn:              connection,
 		config:            c,
+		isTLSTransfer:     false,
 		middleware:        m,
 		writer:            bufio.NewWriter(connection),
 		reader:            bufio.NewReader(connection),
@@ -88,7 +93,27 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		p.config.MasqueradeIP = strings.Split(connection.LocalAddr().String(), ":")[0]
 	}
 
+	// make TLS configs by shared pftp server conf(for client) and client own conf(for origin)
+	p.tlsConfigs = &tlsConfigSet{
+		forClient: sharedTLSConfig,
+		forOrigin: buildTLSConfigForOrigin(),
+	}
+
 	return p
+}
+
+func (c *clientHandler) hasTransferOverTLS() bool {
+	c.tlsMutex.RLock()
+	defer c.tlsMutex.RUnlock()
+
+	return c.isTLSTransfer
+}
+
+func (c *clientHandler) setTransferOverTLS(value bool) {
+	c.tlsMutex.Lock()
+	defer c.tlsMutex.Unlock()
+
+	c.isTLSTransfer = value
 }
 
 // Close client connection and check return
@@ -378,6 +403,7 @@ func (c *clientHandler) connectProxy() error {
 				clientReader:   c.reader,
 				clientWriter:   c.writer,
 				originAddr:     c.context.RemoteAddr,
+				tlsConfigs:     c.tlsConfigs,
 				mutex:          c.mutex,
 				log:            c.log,
 				config:         c.config,

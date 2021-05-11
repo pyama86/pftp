@@ -28,6 +28,7 @@ type proxyServer struct {
 	origin                net.Conn
 	originReader          *bufio.Reader
 	originWriter          *bufio.Writer
+	tlsConfigs            *tlsConfigSet
 	passThrough           bool
 	mutex                 *sync.Mutex
 	log                   *logger
@@ -48,6 +49,7 @@ type proxyServerConfig struct {
 	clientReader   *bufio.Reader
 	clientWriter   *bufio.Writer
 	originAddr     string
+	tlsConfigs     *tlsConfigSet
 	mutex          *sync.Mutex
 	log            *logger
 	config         *config
@@ -75,6 +77,7 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		originWriter:   bufio.NewWriter(c),
 		originReader:   bufio.NewReader(c),
 		origin:         tcpConn,
+		tlsConfigs:     conf.tlsConfigs,
 		passThrough:    true,
 		mutex:          conf.mutex,
 		log:            conf.log,
@@ -259,14 +262,8 @@ func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []s
 						break
 					}
 				} else {
-					config := tls.Config{
-						InsecureSkipVerify: true,
-						MinVersion:         tlsProtocol,
-						MaxVersion:         tlsProtocol,
-					}
-
 					// SSL/TLS wrapping on connection
-					s.origin = tls.Client(s.origin, &config)
+					s.origin = tls.Client(s.origin, s.tlsConfigs.forOrigin)
 					s.originReader = bufio.NewReader(s.origin)
 					s.originWriter = bufio.NewWriter(s.origin)
 
