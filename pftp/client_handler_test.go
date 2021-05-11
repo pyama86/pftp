@@ -441,7 +441,7 @@ func Test_clientHandler_TLS_Session_Resumption(t *testing.T) {
 				t.Errorf("TLS Handshake Error: %v", err)
 			}
 
-			// check 1st TLS connection is resumed. if resumed(true), failed
+			// check 1st TLS connection is resumed. if already resumed(true) in first time, fail
 			state := tlsConn.ConnectionState()
 			if state.DidResume {
 				t.Errorf("clientHandler.TLS_Session_Resumption() 1st TLS session resumption failed: got = %v, want = false", state.DidResume)
@@ -507,7 +507,7 @@ func Test_clientHandler_TLS_Session_Resumption(t *testing.T) {
 				t.Errorf("TLS Handshake Error: %v", err)
 			}
 
-			// check 2nd TLS connection is resumed. if not resumed(false), failed
+			// check 2nd TLS connection is resumed. if not resumed(false), fail
 			state = tlsConn.ConnectionState()
 			if !state.DidResume {
 				t.Errorf("clientHandler.TLS_Session_Resumption() 2nd TLS session resumption failed: got = %v, want = true", state.DidResume)
