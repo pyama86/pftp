@@ -30,20 +30,24 @@ func getTLSProtocol(protocol string) uint16 {
 	}
 }
 
+type tlsData struct {
+	config *tls.Config
+}
+
 // tls configset for client and origin
-type tlsConfigSet struct {
-	forClient *tls.Config
-	forOrigin *tls.Config
+type tlsDataSet struct {
+	forClient *tlsData
+	forOrigin *tlsData
 }
 
 // get tls config for client connection
-func (t *tlsConfigSet) getTLSConfigForClient() *tls.Config {
-	return t.forClient
+func (t *tlsDataSet) getTLSConfigForClient() *tls.Config {
+	return t.forClient.config
 }
 
 // get tls config for origin connection
-func (t *tlsConfigSet) getTLSConfigForOrigin() *tls.Config {
-	return t.forOrigin
+func (t *tlsDataSet) getTLSConfigForOrigin() *tls.Config {
+	return t.forOrigin.config
 }
 
 // build origin side tls config (pftp works like client)
@@ -53,6 +57,17 @@ func buildTLSConfigForOrigin() *tls.Config {
 		ClientSessionCache:     tls.NewLRUClientSessionCache(10),
 		SessionTicketsDisabled: false,
 	}
+}
+
+// set specific tls version to tls.Config
+func (t *tlsData) setSpecificTLSVersion(version uint16) {
+	t.config.MinVersion = version
+	t.config.MaxVersion = version
+}
+
+// set server name to tls.Config
+func (t *tlsData) setServerName(name string) {
+	t.config.ServerName = name
 }
 
 // build client side tls config (pftp works like server)

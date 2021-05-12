@@ -59,7 +59,7 @@ func (c *clientHandler) handleUSER() *result {
 }
 
 func (c *clientHandler) handleAUTH() *result {
-	if c.tlsConfigs.getTLSConfigForClient() != nil {
+	if c.tlsDatas.getTLSConfigForClient() != nil {
 		r := &result{
 			code: 234,
 			msg:  fmt.Sprintf("AUTH command ok. Expecting %s Negotiation.", c.param),
@@ -74,7 +74,7 @@ func (c *clientHandler) handleAUTH() *result {
 			}
 		}
 
-		tlsConn := tls.Server(c.conn, c.tlsConfigs.getTLSConfigForClient())
+		tlsConn := tls.Server(c.conn, c.tlsDatas.getTLSConfigForClient())
 		err := tlsConn.Handshake()
 		if err != nil {
 			return &result{
@@ -92,10 +92,13 @@ func (c *clientHandler) handleAUTH() *result {
 		*c.writer = *(bufio.NewWriter(c.conn))
 		c.previousTLSCommands = append(c.previousTLSCommands, c.line)
 
-		// set specific client TLS version to origin TLS config
-		c.tlsProtocol = tlsConn.ConnectionState().Version
-		c.tlsConfigs.forOrigin.MinVersion = c.tlsProtocol
-		c.tlsConfigs.forOrigin.MaxVersion = c.tlsProtocol
+		c.controlInTLS = true
+
+		// set specific client TLS informations to origin TLS config
+		tlsServerName := tlsConn.ConnectionState().ServerName
+		tlsProtocol := tlsConn.ConnectionState().Version
+		c.tlsDatas.forOrigin.setServerName(tlsServerName)
+		c.tlsDatas.forOrigin.setSpecificTLSVersion(tlsProtocol)
 
 		return nil
 	}
@@ -107,7 +110,7 @@ func (c *clientHandler) handleAUTH() *result {
 
 // response PBSZ to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePBSZ() *result {
-	if c.tlsProtocol != 0 {
+	if c.controlInTLS {
 		if !c.isLoggedin {
 			r := &result{
 				code: 200,
@@ -148,7 +151,7 @@ func (c *clientHandler) handlePBSZ() *result {
 
 // response PROT to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePROT() *result {
-	if c.tlsProtocol != 0 {
+	if c.controlInTLS {
 		if !c.isLoggedin {
 			var r *result
 			if c.param == "C" {
@@ -193,7 +196,7 @@ func (c *clientHandler) handlePROT() *result {
 			}
 		}
 
-		c.setTransferOverTLS(c.param == "P")
+		c.transferInTLS = (c.param == "P")
 
 		return nil
 	}
@@ -260,8 +263,8 @@ func (c *clientHandler) handleDATA() *result {
 			c.conn,
 			c.proxy.GetConn(),
 			c.command,
-			c.tlsConfigs,
-			c.hasTransferOverTLS(),
+			c.tlsDatas,
+			c.transferInTLS,
 			&c.inDataTransfer,
 		)
 		if err != nil {

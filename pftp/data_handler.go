@@ -22,7 +22,7 @@ type dataHandler struct {
 	inDataTransfer       *bool
 	proxyHandlerAttached bool
 	waitTransferEnd      bool
-	tlsConfigs           *tlsConfigSet
+	tlsDataSet           *tlsDataSet
 	needTLSForTransfer   bool
 	transferDone         chan struct{}
 }
@@ -42,7 +42,7 @@ type connector struct {
 }
 
 // Make listener for data connection
-func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn net.Conn, mode string, tlsConfigs *tlsConfigSet, transferOverTLS bool, inDataTransfer *bool) (*dataHandler, error) {
+func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn net.Conn, mode string, tlsDataSet *tlsDataSet, transferOverTLS bool, inDataTransfer *bool) (*dataHandler, error) {
 	var err error
 
 	d := &dataHandler{
@@ -67,7 +67,7 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 		inDataTransfer:       inDataTransfer,
 		proxyHandlerAttached: false,
 		waitTransferEnd:      false,
-		tlsConfigs:           tlsConfigs,
+		tlsDataSet:           tlsDataSet,
 		needTLSForTransfer:   transferOverTLS,
 		transferDone:         make(chan struct{}),
 	}
@@ -357,11 +357,11 @@ func (d *dataHandler) clientListenOrDial() error {
 	}
 
 	if d.needTLSForTransfer {
-		if d.tlsConfigs.getTLSConfigForClient() == nil {
+		if d.tlsDataSet.getTLSConfigForClient() == nil {
 			return errors.New("cannot get TLS config for data transfer. abort data transfer")
 		}
 
-		tlsConn := tls.Server(d.clientConn.dataConn, d.tlsConfigs.getTLSConfigForClient())
+		tlsConn := tls.Server(d.clientConn.dataConn, d.tlsDataSet.getTLSConfigForClient())
 		if err := tlsConn.Handshake(); err != nil {
 			d.log.err("TLS client data connection handshake got error: %v", err)
 		}
@@ -435,11 +435,11 @@ func (d *dataHandler) originListenOrDial() error {
 
 	// set TLS session.
 	if d.needTLSForTransfer {
-		if d.tlsConfigs.getTLSConfigForOrigin() == nil {
+		if d.tlsDataSet.getTLSConfigForOrigin() == nil {
 			return errors.New("cannot get TLS config for data transfer. abort data transfer")
 		}
 
-		tlsConn := tls.Client(d.originConn.dataConn, d.tlsConfigs.getTLSConfigForOrigin())
+		tlsConn := tls.Client(d.originConn.dataConn, d.tlsDataSet.getTLSConfigForOrigin())
 		if err := tlsConn.Handshake(); err != nil {
 			d.log.err("TLS origin data connection handshake got error: %v", err)
 		}

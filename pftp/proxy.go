@@ -28,7 +28,7 @@ type proxyServer struct {
 	origin                net.Conn
 	originReader          *bufio.Reader
 	originWriter          *bufio.Writer
-	tlsConfigs            *tlsConfigSet
+	tlsDataSet            *tlsDataSet
 	passThrough           bool
 	mutex                 *sync.Mutex
 	log                   *logger
@@ -49,7 +49,7 @@ type proxyServerConfig struct {
 	clientReader   *bufio.Reader
 	clientWriter   *bufio.Writer
 	originAddr     string
-	tlsConfigs     *tlsConfigSet
+	tlsDataSet     *tlsDataSet
 	mutex          *sync.Mutex
 	log            *logger
 	config         *config
@@ -77,7 +77,7 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		originWriter:   bufio.NewWriter(c),
 		originReader:   bufio.NewReader(c),
 		origin:         tcpConn,
-		tlsConfigs:     conf.tlsConfigs,
+		tlsDataSet:     conf.tlsDataSet,
 		passThrough:    true,
 		mutex:          conf.mutex,
 		log:            conf.log,
@@ -222,10 +222,8 @@ func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) erro
 	return err
 }
 
-/* send command before login to origin.                  *
-*  TLS version set by client to pftp tls version         *
-*  because client/pftp/origin must set same TLS version. */
-func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []string) error {
+// send command before login to origin
+func (s *proxyServer) sendTLSCommand(previousTLSCommands []string) error {
 	lastError := error(nil)
 
 	for _, cmd := range previousTLSCommands {
@@ -263,11 +261,17 @@ func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []s
 					}
 				} else {
 					// SSL/TLS wrapping on connection
-					s.origin = tls.Client(s.origin, s.tlsConfigs.forOrigin)
+					tlsConn := tls.Client(s.origin, s.tlsDataSet.getTLSConfigForOrigin())
+					err = tlsConn.Handshake()
+					if err != nil {
+						return fmt.Errorf("TLS handshake with origin has failed")
+					}
+
+					s.log.debug("TLS control connection finished with origin")
+
+					s.origin = tlsConn
 					s.originReader = bufio.NewReader(s.origin)
 					s.originWriter = bufio.NewWriter(s.origin)
-
-					s.log.debug("TLS connection established")
 
 					break
 				}
@@ -280,7 +284,7 @@ func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []s
 	return lastError
 }
 
-func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProtocol uint16, previousTLSCommands []string) error {
+func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, previousTLSCommands []string) error {
 	// return error when user not found
 	if len(originAddr) == 0 {
 		return fmt.Errorf("user id not found")
@@ -350,7 +354,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	s.origin = tcpConn
 
 	// If client connect with TLS connection, make TLS connection to origin ftp server too.
-	if err := s.sendTLSCommand(tlsProtocol, previousTLSCommands); err != nil {
+	if err := s.sendTLSCommand(previousTLSCommands); err != nil {
 		return err
 	}
 

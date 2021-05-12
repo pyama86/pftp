@@ -40,9 +40,9 @@ type clientHandler struct {
 	id                  int
 	conn                net.Conn
 	config              *config
-	tlsConfigs          *tlsConfigSet
-	isTLSTransfer       bool
-	tlsMutex            sync.RWMutex
+	tlsDatas            *tlsDataSet
+	controlInTLS        bool
+	transferInTLS       bool
 	middleware          middleware
 	writer              *bufio.Writer
 	reader              *bufio.Reader
@@ -57,7 +57,6 @@ type clientHandler struct {
 	log                 *logger
 	deadline            time.Time
 	srcIP               string
-	tlsProtocol         uint16
 	isLoggedin          bool
 	previousTLSCommands []string
 	isDone              bool
@@ -69,7 +68,8 @@ func newClientHandler(connection net.Conn, c *config, sharedTLSConfig *tls.Confi
 		id:                id,
 		conn:              connection,
 		config:            c,
-		isTLSTransfer:     false,
+		controlInTLS:      false,
+		transferInTLS:     false,
 		middleware:        m,
 		writer:            bufio.NewWriter(connection),
 		reader:            bufio.NewReader(connection),
@@ -78,7 +78,6 @@ func newClientHandler(connection net.Conn, c *config, sharedTLSConfig *tls.Confi
 		mutex:             &sync.Mutex{},
 		log:               &logger{fromip: connection.RemoteAddr().String(), user: "-", id: id},
 		srcIP:             connection.RemoteAddr().String(),
-		tlsProtocol:       0,
 		isLoggedin:        false,
 		isDone:            false,
 		inDataTransfer:    false,
@@ -94,26 +93,12 @@ func newClientHandler(connection net.Conn, c *config, sharedTLSConfig *tls.Confi
 	}
 
 	// make TLS configs by shared pftp server conf(for client) and client own conf(for origin)
-	p.tlsConfigs = &tlsConfigSet{
-		forClient: sharedTLSConfig,
-		forOrigin: buildTLSConfigForOrigin(),
+	p.tlsDatas = &tlsDataSet{
+		forClient: &tlsData{config: sharedTLSConfig},
+		forOrigin: &tlsData{config: buildTLSConfigForOrigin()},
 	}
 
 	return p
-}
-
-func (c *clientHandler) hasTransferOverTLS() bool {
-	c.tlsMutex.RLock()
-	defer c.tlsMutex.RUnlock()
-
-	return c.isTLSTransfer
-}
-
-func (c *clientHandler) setTransferOverTLS(value bool) {
-	c.tlsMutex.Lock()
-	defer c.tlsMutex.Unlock()
-
-	c.isTLSTransfer = value
 }
 
 // Close client connection and check return
@@ -393,7 +378,7 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 
 func (c *clientHandler) connectProxy() error {
 	if c.proxy != nil {
-		err := c.proxy.switchOrigin(c.srcIP, c.context.RemoteAddr, c.tlsProtocol, c.previousTLSCommands)
+		err := c.proxy.switchOrigin(c.srcIP, c.context.RemoteAddr, c.previousTLSCommands)
 		if err != nil {
 			return err
 		}
@@ -403,7 +388,7 @@ func (c *clientHandler) connectProxy() error {
 				clientReader:   c.reader,
 				clientWriter:   c.writer,
 				originAddr:     c.context.RemoteAddr,
-				tlsConfigs:     c.tlsConfigs,
+				tlsDataSet:     c.tlsDatas,
 				mutex:          c.mutex,
 				log:            c.log,
 				config:         c.config,

@@ -38,9 +38,9 @@ func Test_clientHandler_handleAUTH(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &clientHandler{
 				config: tt.fields.config,
-				tlsConfigs: &tlsConfigSet{
-					forOrigin: nil,
-					forClient: nil,
+				tlsDatas: &tlsDataSet{
+					forOrigin: &tlsData{},
+					forClient: &tlsData{},
 				},
 			}
 			r := c.handleAUTH()
