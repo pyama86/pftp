@@ -367,7 +367,7 @@ func Test_clientHandler_TLS_Session_Resumption(t *testing.T) {
 				config: &config{
 					IdleTimeout:    1,
 					MaxConnections: 5,
-					RemoteAddr:     "127.0.0.1:20021",
+					RemoteAddr:     "127.0.0.1:21",
 					WelcomeMsg:     "TLS test server",
 					TLS: &tlsPair{
 						Cert: "../tls/server.crt",
