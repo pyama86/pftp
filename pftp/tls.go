@@ -31,6 +31,8 @@ func getTLSProtocol(protocol string) uint16 {
 }
 
 type tlsData struct {
+	rootCA *x509.CertPool
+	cert   *tls.Certificate
 	config *tls.Config
 }
 
@@ -40,39 +42,24 @@ type tlsDataSet struct {
 	forOrigin *tlsData
 }
 
-// get tls config for client connection
-func (t *tlsDataSet) getTLSConfigForClient() *tls.Config {
-	return t.forClient.config
-}
-
-// get tls config for origin connection
-func (t *tlsDataSet) getTLSConfigForOrigin() *tls.Config {
-	return t.forOrigin.config
-}
-
-// build origin side tls config (pftp works like client)
-func buildTLSConfigForOrigin() *tls.Config {
-	return &tls.Config{
-		InsecureSkipVerify:     true,
-		ClientSessionCache:     tls.NewLRUClientSessionCache(10),
-		SessionTicketsDisabled: false,
+// build origin side tls config
+// it is working TLS client
+func buildTLSConfigForOrigin() *tlsData {
+	return &tlsData{
+		config: &tls.Config{
+			InsecureSkipVerify:     true,
+			ClientSessionCache:     tls.NewLRUClientSessionCache(10),
+			SessionTicketsDisabled: false,
+		},
+		rootCA: nil,
+		cert:   nil,
 	}
 }
 
-// set specific tls version to tls.Config
-func (t *tlsData) setSpecificTLSVersion(version uint16) {
-	t.config.MinVersion = version
-	t.config.MaxVersion = version
-}
-
-// set server name to tls.Config
-func (t *tlsData) setServerName(name string) {
-	t.config.ServerName = name
-}
-
 // build client side tls config (pftp works like server)
-func buildTLSConfigForClient(TLS *tlsPair) (*tls.Config, error) {
-	var tlsConfig *tls.Config
+// it is working TLS server
+func buildTLSConfigForClient(TLS *tlsPair) (*tlsData, error) {
+	var t *tlsData
 
 	caCertFile := TLS.CACert
 
@@ -90,31 +77,38 @@ func buildTLSConfigForClient(TLS *tlsPair) (*tls.Config, error) {
 		return nil, fmt.Errorf("failed to parse CA cert")
 	}
 
-	if cert, err := tls.LoadX509KeyPair(TLS.Cert, TLS.Key); err == nil {
-		tlsConfig = &tls.Config{
-			NextProtos:               []string{"ftp"},
-			Certificates:             []tls.Certificate{cert},
-			MinVersion:               getTLSProtocol(TLS.MinProtocol),
-			MaxVersion:               getTLSProtocol(TLS.MaxProtocol),
-			ClientCAs:                caCert,
-			ClientAuth:               tls.VerifyClientCertIfGiven,
-			PreferServerCipherSuites: true,
-			CipherSuites:             getCiphers(TLS.CipherSuite),
-			VerifyConnection:         verifyTLSConnection,
-		}
-	} else {
+	cert, err := tls.LoadX509KeyPair(TLS.Cert, TLS.Key)
+	if err != nil {
 		return nil, fmt.Errorf("TLS configuration error: %s", err.Error())
 	}
 
-	return tlsConfig, nil
+	t = &tlsData{
+		config: nil,
+		rootCA: caCert,
+		cert:   &cert,
+	}
+
+	t.config = &tls.Config{
+		NextProtos:               []string{"ftp"},
+		Certificates:             []tls.Certificate{cert},
+		MinVersion:               getTLSProtocol(TLS.MinProtocol),
+		MaxVersion:               getTLSProtocol(TLS.MaxProtocol),
+		ClientCAs:                caCert,
+		ClientAuth:               tls.VerifyClientCertIfGiven,
+		CipherSuites:             getCiphers(TLS.CipherSuite),
+		PreferServerCipherSuites: true,
+		VerifyConnection:         t.verifyTLSConnection,
+	}
+
+	return t, nil
 }
 
 // verify TLS connection using Peer certificates
-func verifyTLSConnection(cs tls.ConnectionState) error {
+func (t *tlsData) verifyTLSConnection(cs tls.ConnectionState) error {
 	opts := x509.VerifyOptions{
+		Roots:         t.rootCA,
 		DNSName:       cs.ServerName,
 		Intermediates: x509.NewCertPool(),
-		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
 
 	if len(cs.PeerCertificates) > 0 {
@@ -131,6 +125,22 @@ func verifyTLSConnection(cs tls.ConnectionState) error {
 	}
 
 	return nil
+}
+
+// get tls config
+func (t *tlsData) getTLSConfig() *tls.Config {
+	return t.config
+}
+
+// set specific tls version to tls.Config
+func (t *tlsData) setSpecificTLSVersion(version uint16) {
+	t.config.MinVersion = version
+	t.config.MaxVersion = version
+}
+
+// set server name to tls.Config
+func (t *tlsData) setServerName(name string) {
+	t.config.ServerName = name
 }
 
 // get available Ciphersuites from config

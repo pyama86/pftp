@@ -255,7 +255,7 @@ func Test_clientHandler_TLS_error_type_bug(t *testing.T) {
 	var cn int32
 
 	for _, tt := range tests {
-		tlsConfig := buildTLSConfigForOrigin()
+		tlsData := buildTLSConfigForOrigin()
 
 		t.Run(tt.name, func(t *testing.T) {
 			serverTLSConfig, err := buildTLSConfigForClient(tt.fields.config.TLS)
@@ -306,7 +306,7 @@ func Test_clientHandler_TLS_error_type_bug(t *testing.T) {
 			}
 
 			// make tls handshake for full tls connection
-			tlsConn := tls.Client(c, tlsConfig)
+			tlsConn := tls.Client(c, tlsData.config)
 			err = tlsConn.Handshake()
 			if err != nil {
 				t.Errorf("TLS Handshake Error: %v", err)
@@ -384,7 +384,7 @@ func Test_clientHandler_TLS_Session_Resumption(t *testing.T) {
 	var cn int32
 
 	for _, tt := range tests {
-		tlsConfig := buildTLSConfigForOrigin()
+		tlsData := buildTLSConfigForOrigin()
 
 		t.Run(tt.name, func(t *testing.T) {
 			serverTLSConfig, err := buildTLSConfigForClient(tt.fields.config.TLS)
@@ -435,7 +435,7 @@ func Test_clientHandler_TLS_Session_Resumption(t *testing.T) {
 			}
 
 			// make tls handshake for full tls connection
-			tlsConn := tls.Client(c, tlsConfig)
+			tlsConn := tls.Client(c, tlsData.config)
 			err = tlsConn.Handshake()
 			if err != nil {
 				t.Errorf("TLS Handshake Error: %v", err)
@@ -501,7 +501,7 @@ func Test_clientHandler_TLS_Session_Resumption(t *testing.T) {
 			}
 
 			// make tls handshake for full tls connection
-			tlsConn = tls.Client(c, tlsConfig)
+			tlsConn = tls.Client(c, tlsData.config)
 			err = tlsConn.Handshake()
 			if err != nil {
 				t.Errorf("TLS Handshake Error: %v", err)

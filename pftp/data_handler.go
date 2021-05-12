@@ -357,11 +357,11 @@ func (d *dataHandler) clientListenOrDial() error {
 	}
 
 	if d.needTLSForTransfer {
-		if d.tlsDataSet.getTLSConfigForClient() == nil {
+		if d.tlsDataSet.forClient.getTLSConfig() == nil {
 			return errors.New("cannot get TLS config for data transfer. abort data transfer")
 		}
 
-		tlsConn := tls.Server(d.clientConn.dataConn, d.tlsDataSet.getTLSConfigForClient())
+		tlsConn := tls.Server(d.clientConn.dataConn, d.tlsDataSet.forClient.getTLSConfig())
 		if err := tlsConn.Handshake(); err != nil {
 			d.log.err("TLS client data connection handshake got error: %v", err)
 		}
@@ -435,11 +435,11 @@ func (d *dataHandler) originListenOrDial() error {
 
 	// set TLS session.
 	if d.needTLSForTransfer {
-		if d.tlsDataSet.getTLSConfigForOrigin() == nil {
+		if d.tlsDataSet.forOrigin.getTLSConfig() == nil {
 			return errors.New("cannot get TLS config for data transfer. abort data transfer")
 		}
 
-		tlsConn := tls.Client(d.originConn.dataConn, d.tlsDataSet.getTLSConfigForOrigin())
+		tlsConn := tls.Client(d.originConn.dataConn, d.tlsDataSet.forOrigin.getTLSConfig())
 		if err := tlsConn.Handshake(); err != nil {
 			d.log.err("TLS origin data connection handshake got error: %v", err)
 		}

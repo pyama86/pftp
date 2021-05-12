@@ -59,7 +59,7 @@ func (c *clientHandler) handleUSER() *result {
 }
 
 func (c *clientHandler) handleAUTH() *result {
-	if c.tlsDatas.getTLSConfigForClient() != nil {
+	if c.tlsDatas.forClient.getTLSConfig() != nil {
 		r := &result{
 			code: 234,
 			msg:  fmt.Sprintf("AUTH command ok. Expecting %s Negotiation.", c.param),
@@ -74,7 +74,7 @@ func (c *clientHandler) handleAUTH() *result {
 			}
 		}
 
-		tlsConn := tls.Server(c.conn, c.tlsDatas.getTLSConfigForClient())
+		tlsConn := tls.Server(c.conn, c.tlsDatas.forClient.getTLSConfig())
 		err := tlsConn.Handshake()
 		if err != nil {
 			return &result{

@@ -261,7 +261,7 @@ func (s *proxyServer) sendTLSCommand(previousTLSCommands []string) error {
 					}
 				} else {
 					// SSL/TLS wrapping on connection
-					tlsConn := tls.Client(s.origin, s.tlsDataSet.getTLSConfigForOrigin())
+					tlsConn := tls.Client(s.origin, s.tlsDataSet.forOrigin.getTLSConfig())
 					err = tlsConn.Handshake()
 					if err != nil {
 						return fmt.Errorf("TLS handshake with origin has failed")
