@@ -36,6 +36,22 @@ func getTLSProtocol(protocol string) uint16 {
 	}
 }
 
+// get TLS protocol name from uint16 id
+func getTLSProtocolName(version uint16) string {
+	switch version {
+	case tls.VersionTLS10:
+		return "TLSv1"
+	case tls.VersionTLS11:
+		return "TLSv1.1"
+	case tls.VersionTLS12:
+		return "TLSv1.2"
+	case tls.VersionTLS13:
+		return "TLSv1.3"
+	default:
+		return "unsupport TLS version"
+	}
+}
+
 type tlsData struct {
 	rootCA *x509.CertPool
 	cert   *tls.Certificate

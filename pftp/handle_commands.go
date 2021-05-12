@@ -85,7 +85,7 @@ func (c *clientHandler) handleAUTH() *result {
 			}
 		}
 
-		c.log.debug("TLS control connection finished with client. TLS protocol version: %s", tlsConn.ConnectionState().Version)
+		c.log.debug("TLS control connection finished with client. TLS protocol version: %s", getTLSProtocolName(tlsConn.ConnectionState().Version))
 
 		c.conn = tlsConn
 		*c.reader = *(bufio.NewReader(c.conn))
