@@ -326,7 +326,7 @@ func Test_clientHandler_TLS_error_type_bug(t *testing.T) {
 			}
 
 			// if err is nil, or received message not 200(OK), it means failed on test
-			if res, err := reader.ReadString('\n'); err == nil || (err != nil && strings.HasPrefix(res, "200")) {
+			if res, err := reader.ReadString('\n'); err == nil && strings.HasPrefix(res, "200") {
 				t.Errorf("clientHandler.TLS_error_type_bug() test failed! successfully read response from origin: %v, want err != nil", err)
 			}
 
