@@ -58,7 +58,6 @@ type clientHandler struct {
 	srcIP               string
 	isLoggedin          bool
 	previousTLSCommands []string
-	isDone              bool
 	inDataTransfer      bool
 }
 
@@ -78,7 +77,6 @@ func newClientHandler(connection net.Conn, c *config, sharedTLSData *tlsData, m 
 		log:               &logger{fromip: connection.RemoteAddr().String(), user: "-", id: id},
 		srcIP:             connection.RemoteAddr().String(),
 		isLoggedin:        false,
-		isDone:            false,
 		inDataTransfer:    false,
 	}
 
@@ -181,8 +179,6 @@ func (c *clientHandler) getResponseFromOrigin() error {
 
 	// close origin connection when close goroutine
 	defer func() {
-		c.isDone = true
-
 		// send EOF to client connection. if fail, close immediatly
 		c.log.debug("send EOF to client")
 
@@ -230,8 +226,6 @@ func (c *clientHandler) readClientCommands() error {
 
 	// close client connection when close goroutine
 	defer func() {
-		c.isDone = true
-
 		// send EOF to origin connection. if fail, close immediatly
 		c.log.debug("send EOF to origin")
 
@@ -391,7 +385,6 @@ func (c *clientHandler) connectProxy() error {
 				mutex:          c.mutex,
 				log:            c.log,
 				config:         c.config,
-				isDone:         &c.isDone,
 				inDataTransfer: &c.inDataTransfer,
 			})
 

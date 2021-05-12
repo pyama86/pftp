@@ -40,7 +40,6 @@ type proxyServer struct {
 	config                *config
 	dataConnector         *dataHandler
 	waitSwitching         chan bool
-	isDone                *bool
 	inDataTransfer        *bool
 	isDataCommandResponse bool
 }
@@ -53,7 +52,6 @@ type proxyServerConfig struct {
 	mutex          *sync.Mutex
 	log            *logger
 	config         *config
-	isDone         *bool
 	inDataTransfer *bool
 }
 
@@ -87,7 +85,6 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		isSwitched:     false,
 		config:         conf.config,
 		waitSwitching:  make(chan bool),
-		isDone:         conf.isDone,
 		inDataTransfer: conf.inDataTransfer,
 	}
 
