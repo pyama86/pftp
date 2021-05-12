@@ -13,26 +13,22 @@ import (
 // TLS version codes
 const (
 	defaultTLSVer = "TLSv1.2"
-	TLSv1         = tls.VersionTLS10
-	TLSv11        = tls.VersionTLS11
-	TLSv12        = tls.VersionTLS12
-	TLSv13        = tls.VersionTLS13
 )
 
 // get TLS protocol from string version name
 func getTLSProtocol(protocol string) uint16 {
 	switch protocol {
 	case "TLSv1":
-		return TLSv1
+		return tls.VersionTLS10
 	case "TLSv1.1":
-		return TLSv11
+		return tls.VersionTLS11
 	case "TLSv1.2":
-		return TLSv12
+		return tls.VersionTLS12
 	case "TLSv1.3":
-		return TLSv13
+		return tls.VersionTLS13
 	default:
 		logrus.Debugf("%s is unsupport TLS protocol version. use default: %s", protocol, defaultTLSVer)
-		return TLSv12 // the default TLS protocol is TLSv1.0
+		return tls.VersionTLS12 // the default TLS protocol is TLSv1.0
 	}
 }
 
