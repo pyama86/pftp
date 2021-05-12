@@ -363,7 +363,7 @@ func (d *dataHandler) clientListenOrDial() error {
 
 		tlsConn := tls.Server(d.clientConn.dataConn, d.tlsDataSet.forClient.getTLSConfig())
 		if err := tlsConn.Handshake(); err != nil {
-			d.log.err("TLS client data connection handshake got error: %v", err)
+			return fmt.Errorf("TLS client data connection handshake got error: %v", err)
 		}
 		d.log.debug("TLS data connection with client has set. (resumed?: %v)", tlsConn.ConnectionState().DidResume)
 
