@@ -28,7 +28,7 @@ func getTLSProtocol(protocol string) uint16 {
 		return tls.VersionTLS13
 	default:
 		logrus.Debugf("%s is unsupport TLS protocol version. use default: %s", protocol, defaultTLSVer)
-		return tls.VersionTLS12 // the default TLS protocol is TLSv1.0
+		return tls.VersionTLS12 // the default TLS protocol is TLSv1.2
 	}
 }
 
