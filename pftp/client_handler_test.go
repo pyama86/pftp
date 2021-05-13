@@ -325,7 +325,7 @@ func Test_clientHandler_TLS_error_type_bug(t *testing.T) {
 				t.Errorf("clientHandler.TLS_error_type_bug() can not write string to proxy: %v", err)
 			}
 
-			// if err is nil, or received message not 200(OK), it means failed on test
+			// if err == nil and received message starts with 200(OK), it means communication success without TLS. so failed on test
 			if res, err := reader.ReadString('\n'); err == nil && strings.HasPrefix(res, "200") {
 				t.Errorf("clientHandler.TLS_error_type_bug() test failed! successfully read response from origin: %v, want err != nil", err)
 			}
