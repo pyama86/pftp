@@ -434,11 +434,6 @@ func (s *proxyServer) startProxy() error {
 					}
 				}
 
-				// handle data transfer failed message from origin server
-				if (strings.HasPrefix(getCode(buff)[0], "55") || strings.HasPrefix(getCode(buff)[0], "45")) && s.dataConnector != nil {
-					s.DestroyDataHandler()
-				}
-
 				// handling multi-line response
 				if len(buff) >= 4 && buff[3] == '-' {
 					params := getCode(buff)
