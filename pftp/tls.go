@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"strings"
+	"sync"
 
 	"github.com/sirupsen/logrus"
 )
@@ -52,12 +53,16 @@ type tlsData struct {
 	rootCA *x509.CertPool
 	cert   *tls.Certificate
 	config *tls.Config
+	mutex  sync.Mutex
 }
 
 // tls configset for client and origin
 type tlsDataSet struct {
-	forClient *tlsData
-	forOrigin *tlsData
+	forClient   *tlsData
+	forOrigin   *tlsData
+	version     uint16
+	cipherSuite uint16
+	serverName  string
 }
 
 // build origin side tls config
@@ -123,6 +128,8 @@ func buildTLSConfigForClient(TLS *tlsPair) (*tlsData, error) {
 
 // verify TLS connection using Peer certificates
 func (t *tlsData) verifyTLSConnection(cs tls.ConnectionState) error {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 	opts := x509.VerifyOptions{
 		Roots:         t.rootCA,
 		DNSName:       cs.ServerName,
@@ -147,18 +154,31 @@ func (t *tlsData) verifyTLSConnection(cs tls.ConnectionState) error {
 
 // get tls config
 func (t *tlsData) getTLSConfig() *tls.Config {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 	return t.config
 }
 
 // set specific tls version to tls.Config
-func (t *tlsData) setSpecificTLSVersion(version uint16) {
-	t.config.MinVersion = version
-	t.config.MaxVersion = version
+func (t *tlsData) setSpecificTLSVersion(tlsVersion uint16) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	t.config.MinVersion = tlsVersion
+	t.config.MaxVersion = tlsVersion
 }
 
 // set server name to tls.Config
 func (t *tlsData) setServerName(name string) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 	t.config.ServerName = name
+}
+
+// set specific cipher suite name to tls.Config
+func (t *tlsData) setCipherSUite(cipherSuite uint16) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	t.config.CipherSuites = []uint16{cipherSuite}
 }
 
 // get available Ciphersuites from config
