@@ -1,17 +1,21 @@
 package pftp
 
 import (
+	"bufio"
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"io"
 	"math/rand"
 	"net"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
+)
 
-	"golang.org/x/sync/errgroup"
+const (
+	uploadStream   = "upload"
+	downloadStream = "download"
 )
 
 type dataHandler struct {
@@ -19,11 +23,11 @@ type dataHandler struct {
 	originConn           connector
 	config               *config
 	log                  *logger
-	inDataTransfer       *bool
-	proxyHandlerAttached bool
-	waitTransferEnd      bool
+	proxyHandlerAttached int32
+	waitTransferEnd      int32
 	tlsDataSet           *tlsDataSet
-	needTLSForTransfer   bool
+	needTLSForTransfer   *int32
+	inDataTransfer       *int32
 	transferDone         chan struct{}
 }
 
@@ -42,7 +46,7 @@ type connector struct {
 }
 
 // Make listener for data connection
-func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn net.Conn, mode string, tlsDataSet *tlsDataSet, transferOverTLS bool, inDataTransfer *bool) (*dataHandler, error) {
+func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn net.Conn, mode string, tlsDataSet *tlsDataSet, transferOverTLS *int32, inDataTransfer *int32) (*dataHandler, error) {
 	var err error
 
 	d := &dataHandler{
@@ -65,8 +69,8 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 		config:               config,
 		log:                  log,
 		inDataTransfer:       inDataTransfer,
-		proxyHandlerAttached: false,
-		waitTransferEnd:      false,
+		proxyHandlerAttached: 0,
+		waitTransferEnd:      0,
 		tlsDataSet:           tlsDataSet,
 		needTLSForTransfer:   transferOverTLS,
 		transferDone:         make(chan struct{}),
@@ -230,12 +234,12 @@ func (d *dataHandler) Close() error {
 		}
 	}
 
-	if d.waitTransferEnd {
+	if atomic.LoadInt32(&d.waitTransferEnd) == 1 {
 		d.transferDone <- struct{}{}
-		d.waitTransferEnd = false
+		atomic.StoreInt32(&d.waitTransferEnd, 0)
 	}
 
-	d.proxyHandlerAttached = false
+	atomic.StoreInt32(&d.proxyHandlerAttached, 0)
 
 	if lastErr == nil {
 		d.log.debug("proxy data channel disconnected")
@@ -245,12 +249,8 @@ func (d *dataHandler) Close() error {
 }
 
 // Make listener for data connection
-func (d *dataHandler) StartDataTransfer() error {
+func (d *dataHandler) StartDataTransfer(direction <-chan string, wantDataDirection *int32) error {
 	var err error
-
-	eg := errgroup.Group{}
-
-	defer connectionCloser(d, d.log)
 
 	// make data connection (origin first)
 	if err := d.originListenOrDial(); err != nil {
@@ -263,25 +263,33 @@ func (d *dataHandler) StartDataTransfer() error {
 
 		return err
 	}
+	defer func() {
+		atomic.StoreInt32(wantDataDirection, 0)
+		connectionCloser(d, d.log)
+	}()
+
+	streamDirection := <-direction
 
 	// do not timeout communication connection during data transfer
-	*d.inDataTransfer = true
+	atomic.StoreInt32(d.inDataTransfer, 1)
 	d.clientConn.communicaionConn.SetDeadline(time.Time{})
 	d.originConn.communicaionConn.SetDeadline(time.Time{})
 
-	// client to origin
-	eg.Go(func() error { return d.dataTransfer(d.clientConn.dataConn, d.originConn.dataConn, "upload") })
-
-	// origin to client
-	eg.Go(func() error { return d.dataTransfer(d.originConn.dataConn, d.clientConn.dataConn, "download") })
-
-	// wait until data transfer goroutine end
-	if err = eg.Wait(); err != nil {
-		d.log.err(err.Error())
+	switch streamDirection {
+	case uploadStream:
+		// start upload stream
+		if err := d.dataTransfer(d.clientConn.dataConn, d.originConn.dataConn, uploadStream); err != nil {
+			d.log.err(err.Error())
+		}
+	case downloadStream:
+		// start download stream
+		if err := d.dataTransfer(d.originConn.dataConn, d.clientConn.dataConn, downloadStream); err != nil {
+			d.log.err(err.Error())
+		}
 	}
 
 	// set timeout to each connection
-	*d.inDataTransfer = false
+	atomic.StoreInt32(d.inDataTransfer, 0)
 	d.clientConn.communicaionConn.SetDeadline(time.Now().Add(time.Duration(d.config.IdleTimeout) * time.Second))
 	d.originConn.communicaionConn.SetDeadline(time.Now().Add(time.Duration(d.config.ProxyTimeout) * time.Second))
 
@@ -356,7 +364,7 @@ func (d *dataHandler) clientListenOrDial() error {
 		d.clientConn.dataConn = tcpConn
 	}
 
-	if d.needTLSForTransfer {
+	if atomic.LoadInt32(d.needTLSForTransfer) == 1 {
 		if d.tlsDataSet.forClient.getTLSConfig() == nil {
 			return errors.New("cannot get client TLS config for data transfer. abort data transfer")
 		}
@@ -434,7 +442,7 @@ func (d *dataHandler) originListenOrDial() error {
 	}
 
 	// set TLS session.
-	if d.needTLSForTransfer {
+	if atomic.LoadInt32(d.needTLSForTransfer) == 1 {
 		if d.tlsDataSet.forOrigin.getTLSConfig() == nil {
 			return errors.New("cannot get origin TLS config for data transfer. abort data transfer")
 		}
@@ -455,24 +463,37 @@ func (d *dataHandler) originListenOrDial() error {
 func (d *dataHandler) dataTransfer(reader net.Conn, writer net.Conn, direction string) error {
 	lastErr := error(nil)
 
-	buffer := make([]byte, dataTransferBufferSize)
-	if _, err := io.CopyBuffer(writer, reader, buffer); err != nil {
+	src := bufio.NewReader(reader)
+	dst := bufio.NewReader(writer)
+
+	// start transfer (dst → host)
+	if _, err := src.WriteTo(writer); err != nil {
 		if !strings.Contains(err.Error(), alreadyClosedMsg) {
 			lastErr = fmt.Errorf("got error on %s data transfer: %s", direction, err.Error())
 		}
+	} else {
+		// send EOF to dst for notify transfer end.
+		if err := sendEOF(writer); err != nil {
+			d.log.err("got error on send EOF to destination socket: %s", err.Error())
+		}
 	}
-	defer reader.Close()
 
-	// send EOF to writer. if fail, close connection
-	if err := sendEOF(writer); err != nil {
-		d.log.err("got error on send EOF to writer conn: %s", err.Error())
+	// confirm (dst → host)
+	if _, err := dst.WriteTo(reader); err != nil {
+		d.log.err("got error on confirm %s data transfer: %s", direction, err.Error())
+	} else {
+		// send EOF to src for confirm transfer end.
+		if err := sendEOF(reader); err != nil {
+			d.log.err("got error on send EOF to source socket: %s", err.Error())
+		}
 	}
 
-	// set deadline each conn when data transfer complete
-	reader.SetDeadline(time.Now().Add(time.Duration(d.config.TransferTimeout) * time.Second))
-	writer.SetDeadline(time.Now().Add(time.Duration(d.config.TransferTimeout) * time.Second))
-
-	d.log.info("%s data transfer routine has done", direction)
+	// close from tx side (in stream mode, close socket mean data transfer finished)
+	if err := writer.Close(); err != nil {
+		if !strings.Contains(err.Error(), alreadyClosedMsg) {
+			lastErr = fmt.Errorf("got error on close %s destination socket: %s", direction, err.Error())
+		}
+	}
 
 	return lastErr
 }
