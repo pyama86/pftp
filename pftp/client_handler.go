@@ -306,10 +306,7 @@ func (c *clientHandler) writeLine(line string) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	if _, err := c.writer.Write([]byte(line)); err != nil {
-		return err
-	}
-	if _, err := c.writer.Write([]byte("\r\n")); err != nil {
+	if _, err := c.writer.WriteString(line + "\r\n"); err != nil {
 		return err
 	}
 	if err := c.writer.Flush(); err != nil {
@@ -376,18 +373,7 @@ func (c *clientHandler) connectProxy() error {
 			return err
 		}
 	} else {
-		p, err := newProxyServer(
-			&proxyServerConfig{
-				clientReader:   c.reader,
-				clientWriter:   c.writer,
-				originAddr:     c.context.RemoteAddr,
-				tlsDataSet:     c.tlsDatas,
-				mutex:          c.mutex,
-				log:            c.log,
-				config:         c.config,
-				inDataTransfer: &c.inDataTransfer,
-			})
-
+		p, err := newProxyServer(c)
 		if err != nil {
 			return err
 		}
@@ -416,6 +402,6 @@ func (c *clientHandler) commandLog(line string) {
 	if strings.Compare(strings.ToUpper(getCommand(line)[0]), secureCommand) == 0 {
 		c.log.info("read from client: %s ********\r\n", secureCommand)
 	} else {
-		c.log.info("read from client: %s", line)
+		c.log.info("read from client: %s", strings.TrimSuffix(line, "\r\n"))
 	}
 }

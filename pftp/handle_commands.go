@@ -85,20 +85,23 @@ func (c *clientHandler) handleAUTH() *result {
 			}
 		}
 
-		c.log.debug("TLS control connection finished with client. TLS protocol version: %s", getTLSProtocolName(tlsConn.ConnectionState().Version))
+		c.log.debug("TLS control connection finished with client. TLS protocol version: %s and Cipher Suite: %s", getTLSProtocolName(tlsConn.ConnectionState().Version), tls.CipherSuiteName(tlsConn.ConnectionState().CipherSuite))
 
 		c.conn = tlsConn
-		*c.reader = *(bufio.NewReader(c.conn))
-		*c.writer = *(bufio.NewWriter(c.conn))
+		c.reader = bufio.NewReader(c.conn)
+		c.writer = bufio.NewWriter(c.conn)
 		c.previousTLSCommands = append(c.previousTLSCommands, c.line)
 
 		c.controlInTLS = true
 
+		c.tlsDatas.serverName = tlsConn.ConnectionState().ServerName
+		c.tlsDatas.version = tlsConn.ConnectionState().Version
+		c.tlsDatas.cipherSuite = tlsConn.ConnectionState().CipherSuite
+
 		// set specific client TLS informations to origin TLS config
-		tlsServerName := tlsConn.ConnectionState().ServerName
-		tlsProtocol := tlsConn.ConnectionState().Version
-		c.tlsDatas.forOrigin.setServerName(tlsServerName)
-		c.tlsDatas.forOrigin.setSpecificTLSVersion(tlsProtocol)
+		c.tlsDatas.forOrigin.setServerName(c.tlsDatas.serverName)
+		c.tlsDatas.forOrigin.setSpecificTLSVersion(c.tlsDatas.version)
+		c.tlsDatas.forOrigin.setCipherSUite(c.tlsDatas.cipherSuite)
 
 		return nil
 	}

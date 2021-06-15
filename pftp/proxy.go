@@ -8,7 +8,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	proxyproto "github.com/pires/go-proxyproto"
@@ -23,14 +22,12 @@ const (
 )
 
 type proxyServer struct {
-	clientReader          *bufio.Reader
-	clientWriter          *bufio.Writer
+	cHandler              *clientHandler
 	origin                net.Conn
 	originReader          *bufio.Reader
 	originWriter          *bufio.Writer
 	tlsDataSet            *tlsDataSet
 	passThrough           bool
-	mutex                 *sync.Mutex
 	log                   *logger
 	stopChan              chan struct{}
 	stopChanDone          chan struct{}
@@ -44,20 +41,9 @@ type proxyServer struct {
 	isDataCommandResponse bool
 }
 
-type proxyServerConfig struct {
-	clientReader   *bufio.Reader
-	clientWriter   *bufio.Writer
-	originAddr     string
-	tlsDataSet     *tlsDataSet
-	mutex          *sync.Mutex
-	log            *logger
-	config         *config
-	inDataTransfer *bool
-}
-
-func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
+func newProxyServer(cHandler *clientHandler) (*proxyServer, error) {
 	c, err := net.DialTimeout("tcp",
-		conf.originAddr,
+		cHandler.context.RemoteAddr,
 		time.Duration(connectionTimeout)*time.Second)
 	if err != nil {
 		return nil, err
@@ -66,26 +52,24 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 	// set linger 0 and tcp keepalive setting between origin connection
 	tcpConn := c.(*net.TCPConn)
 	tcpConn.SetKeepAlive(true)
-	tcpConn.SetKeepAlivePeriod(time.Duration(conf.config.KeepaliveTime) * time.Second)
+	tcpConn.SetKeepAlivePeriod(time.Duration(cHandler.config.KeepaliveTime) * time.Second)
 	tcpConn.SetLinger(0)
 
 	p := &proxyServer{
-		clientReader:   conf.clientReader,
-		clientWriter:   conf.clientWriter,
+		cHandler:       cHandler,
 		originWriter:   bufio.NewWriter(c),
 		originReader:   bufio.NewReader(c),
 		origin:         tcpConn,
-		tlsDataSet:     conf.tlsDataSet,
+		tlsDataSet:     cHandler.tlsDatas,
 		passThrough:    true,
-		mutex:          conf.mutex,
-		log:            conf.log,
+		log:            cHandler.log,
 		stopChan:       make(chan struct{}),
 		stopChanDone:   make(chan struct{}),
-		welcomeMsg:     "220 " + conf.config.WelcomeMsg + "\r\n",
+		welcomeMsg:     "220 " + cHandler.config.WelcomeMsg + "\r\n",
 		isSwitched:     false,
-		config:         conf.config,
+		config:         cHandler.config,
 		waitSwitching:  make(chan bool),
-		inDataTransfer: conf.inDataTransfer,
+		inDataTransfer: &cHandler.inDataTransfer,
 	}
 
 	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
@@ -148,7 +132,7 @@ func (s *proxyServer) sendToOrigin(line string) error {
 }
 
 func (s *proxyServer) responseProxy() error {
-	return s.start(s.originReader, s.clientWriter)
+	return s.startProxy()
 }
 
 func (s *proxyServer) suspend() {
@@ -195,6 +179,11 @@ func (s *proxyServer) SetDataHandler(handler *dataHandler) {
 	s.dataConnector.proxyHandlerAttached = true
 }
 
+// Destroy data handler
+func (s *proxyServer) DestroyDataHandler() {
+	connectionCloser(s.dataConnector, s.log)
+}
+
 func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) error {
 	sourceAddr := strings.Split(clientAddr, ":")
 	destinationAddr := strings.Split(originAddr, ":")
@@ -239,7 +228,7 @@ func (s *proxyServer) sendTLSCommand(previousTLSCommands []string) error {
 				return fmt.Errorf("failed to make TLS connection")
 			}
 
-			s.log.debug("response from origin: %s", str)
+			s.log.debug("response from origin: %s", strings.TrimSuffix(str, "\r\n"))
 
 			if strings.Compare(strings.ToUpper(getCommand(cmd)[0]), "AUTH") == 0 {
 				code := getCode(str)[0]
@@ -264,7 +253,7 @@ func (s *proxyServer) sendTLSCommand(previousTLSCommands []string) error {
 						return fmt.Errorf("TLS handshake with origin has failed")
 					}
 
-					s.log.debug("TLS control connection finished with origin")
+					s.log.debug("TLS control connection finished with origin. TLS protocol version: %s and Cipher Suite: %s", getTLSProtocolName(tlsConn.ConnectionState().Version), tls.CipherSuiteName(tlsConn.ConnectionState().CipherSuite))
 
 					s.origin = tlsConn
 					s.originReader = bufio.NewReader(s.origin)
@@ -340,7 +329,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, previou
 		return errors.New("cannot connect to new origin server")
 	}
 
-	s.log.debug("response from new origin: %s", res)
+	s.log.debug("response from new origin: %s", strings.TrimSuffix(res, "\r\n"))
 
 	// set linger 0 and tcp keepalive setting between switched origin connection
 	tcpConn := s.origin.(*net.TCPConn)
@@ -361,7 +350,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, previou
 	return lastError
 }
 
-func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
+func (s *proxyServer) startProxy() error {
 	// return if proxy still unsuspended or s.stop is true
 	if s.stop || !s.passThrough {
 		return nil
@@ -376,7 +365,7 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 	go func() {
 		for {
 			s.isDataCommandResponse = false
-			buff, err := from.ReadString('\n')
+			buff, err := s.originReader.ReadString('\n')
 			if err != nil {
 				if !s.stop {
 					safeSetChanel(errchan, err)
@@ -392,7 +381,7 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 					}
 				}
 
-				s.log.debug("response from origin: %s", buff)
+				s.log.debug("response from origin: %s", strings.TrimSuffix(buff, "\r\n"))
 
 				// response user setted welcome message
 				if strings.Compare(getCode(buff)[0], "220") == 0 && !s.isSwitched {
@@ -445,13 +434,18 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 					}
 				}
 
+				// handle data transfer failed message from origin server
+				if (strings.HasPrefix(getCode(buff)[0], "55") || strings.HasPrefix(getCode(buff)[0], "45")) && s.dataConnector != nil {
+					s.DestroyDataHandler()
+				}
+
 				// handling multi-line response
 				if len(buff) >= 4 && buff[3] == '-' {
 					params := getCode(buff)
 					multiLine := buff
 
 					for {
-						res, err := from.ReadString('\n')
+						res, err := s.originReader.ReadString('\n')
 						if err != nil {
 							safeSetChanel(errchan, err)
 							done <- struct{}{}
@@ -482,20 +476,11 @@ loop:
 	for {
 		select {
 		case b := <-read:
-			s.mutex.Lock()
-			if _, err := to.WriteString(b); err != nil {
+			if err := s.cHandler.writeLine(strings.TrimRight(b, "\r\n")); err != nil {
 				if !strings.Contains(err.Error(), alreadyClosedMsg) {
 					s.log.err("error on write response to client: %s, err: %s", strings.TrimSuffix(b, "\r\n"), err.Error())
 				}
 			}
-
-			if err := to.Flush(); err != nil {
-				if !strings.Contains(err.Error(), alreadyClosedMsg) {
-					s.log.err("error on flush client writer: %s, err: %s", strings.TrimSuffix(b, "\r\n"), err.Error())
-				}
-			}
-			s.mutex.Unlock()
-			s.log.debug("response to client: %s", b)
 			send <- struct{}{}
 		case err := <-errchan:
 			lastError = err
@@ -515,12 +500,7 @@ loop:
 	<-done
 
 	if s.dataConnector != nil {
-		if s.dataConnector.waitTransferEnd {
-			s.dataConnector.transferDone <- struct{}{}
-			s.dataConnector.waitTransferEnd = false
-			s.dataConnector.proxyHandlerAttached = false
-		}
-		s.dataConnector.Close()
+		s.DestroyDataHandler()
 	}
 
 	return lastError
@@ -529,9 +509,9 @@ loop:
 // Hide parameters from log
 func (s *proxyServer) commandLog(line string) {
 	if strings.Compare(strings.ToUpper(getCommand(line)[0]), secureCommand) == 0 {
-		s.log.debug("send to origin: %s ********\r\n", secureCommand)
+		s.log.debug("send to origin: %s ********", secureCommand)
 	} else {
-		s.log.debug("send to origin: %s", line)
+		s.log.debug("send to origin: %s", strings.TrimSuffix(line, "\r\n"))
 	}
 }
 
