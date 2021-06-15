@@ -373,7 +373,17 @@ func (c *clientHandler) connectProxy() error {
 			return err
 		}
 	} else {
-		p, err := newProxyServer(c)
+		p, err := newProxyServer(
+			&proxyServerConfig{
+				clientReader:   c.reader,
+				clientWriter:   c.writer,
+				tlsDatas:       c.tlsDatas,
+				originAddr:     c.context.RemoteAddr,
+				mutex:          c.mutex,
+				log:            c.log,
+				config:         c.config,
+				inDataTransfer: &c.inDataTransfer,
+			})
 		if err != nil {
 			return err
 		}
