@@ -31,17 +31,24 @@ func init() {
 	handlers["EPRT"] = &handleFunc{(*clientHandler).handleDATA, false}
 	handlers["PASV"] = &handleFunc{(*clientHandler).handleDATA, false}
 	handlers["EPSV"] = &handleFunc{(*clientHandler).handleDATA, false}
+
+	// handle data transfer begin commands
 	handlers["RETR"] = &handleFunc{(*clientHandler).handleTransfer, false}
 	handlers["STOR"] = &handleFunc{(*clientHandler).handleTransfer, false}
+	handlers["STOU"] = &handleFunc{(*clientHandler).handleTransfer, false}
+	handlers["APPE"] = &handleFunc{(*clientHandler).handleTransfer, false}
+	handlers["LIST"] = &handleFunc{(*clientHandler).handleTransfer, false}
+	handlers["MLSD"] = &handleFunc{(*clientHandler).handleTransfer, false}
+	handlers["NLST"] = &handleFunc{(*clientHandler).handleTransfer, false}
 }
 
 type clientHandler struct {
-	id                  int
+	id                  uint64
 	conn                net.Conn
 	config              *config
 	tlsDatas            *tlsDataSet
-	controlInTLS        bool
-	transferInTLS       bool
+	controlInTLS        int32
+	transferInTLS       int32
 	middleware          middleware
 	writer              *bufio.Writer
 	reader              *bufio.Reader
@@ -58,16 +65,18 @@ type clientHandler struct {
 	srcIP               string
 	isLoggedin          bool
 	previousTLSCommands []string
-	inDataTransfer      bool
+	inDataTransfer      int32
+	wantDataDirection   int32
+	dataDirection       chan string
 }
 
-func newClientHandler(connection net.Conn, c *config, sharedTLSData *tlsData, m middleware, id int, currentConnection *int32) *clientHandler {
+func newClientHandler(connection net.Conn, c *config, sharedTLSData *tlsData, m middleware, id uint64, currentConnection *int32) *clientHandler {
 	p := &clientHandler{
 		id:                id,
 		conn:              connection,
 		config:            c,
-		controlInTLS:      false,
-		transferInTLS:     false,
+		controlInTLS:      0,
+		transferInTLS:     0,
 		middleware:        m,
 		writer:            bufio.NewWriter(connection),
 		reader:            bufio.NewReader(connection),
@@ -77,7 +86,9 @@ func newClientHandler(connection net.Conn, c *config, sharedTLSData *tlsData, m 
 		log:               &logger{fromip: connection.RemoteAddr().String(), user: "-", id: id},
 		srcIP:             connection.RemoteAddr().String(),
 		isLoggedin:        false,
-		inDataTransfer:    false,
+		inDataTransfer:    0,
+		wantDataDirection: 0,
+		dataDirection:     make(chan string, 1),
 	}
 
 	// increase current connection count
@@ -111,7 +122,7 @@ func (c *clientHandler) Close() error {
 
 func (c *clientHandler) setClientDeadLine(t int) {
 	// do not time out during transfer data
-	if c.inDataTransfer {
+	if atomic.LoadInt32(&c.inDataTransfer) == 1 {
 		c.conn.SetDeadline(time.Time{})
 	} else {
 		d := time.Now().Add(time.Duration(t) * time.Second)
@@ -375,14 +386,16 @@ func (c *clientHandler) connectProxy() error {
 	} else {
 		p, err := newProxyServer(
 			&proxyServerConfig{
-				clientReader:   c.reader,
-				clientWriter:   c.writer,
-				tlsDatas:       c.tlsDatas,
-				originAddr:     c.context.RemoteAddr,
-				mutex:          c.mutex,
-				log:            c.log,
-				config:         c.config,
-				inDataTransfer: &c.inDataTransfer,
+				clientReader:      c.reader,
+				clientWriter:      c.writer,
+				tlsDatas:          c.tlsDatas,
+				originAddr:        c.context.RemoteAddr,
+				mutex:             c.mutex,
+				log:               c.log,
+				config:            c.config,
+				inDataTransfer:    &c.inDataTransfer,
+				wantDataDirection: &c.wantDataDirection,
+				dataDirection:     c.dataDirection,
 			})
 		if err != nil {
 			return err

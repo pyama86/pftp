@@ -8,6 +8,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 func (c *clientHandler) handleUSER() *result {
@@ -99,7 +100,7 @@ func (c *clientHandler) handleAUTH() *result {
 
 		c.previousTLSCommands = append(c.previousTLSCommands, c.line)
 
-		c.controlInTLS = true
+		atomic.StoreInt32(&c.controlInTLS, 1)
 
 		c.tlsDatas.serverName = tlsConn.ConnectionState().ServerName
 		c.tlsDatas.version = tlsConn.ConnectionState().Version
@@ -120,7 +121,7 @@ func (c *clientHandler) handleAUTH() *result {
 
 // response PBSZ to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePBSZ() *result {
-	if c.controlInTLS {
+	if atomic.LoadInt32(&c.controlInTLS) == 1 {
 		if !c.isLoggedin {
 			r := &result{
 				code: 200,
@@ -161,7 +162,7 @@ func (c *clientHandler) handlePBSZ() *result {
 
 // response PROT to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePROT() *result {
-	if c.controlInTLS {
+	if atomic.LoadInt32(&c.controlInTLS) == 1 {
 		if !c.isLoggedin {
 			var r *result
 			if c.param == "C" {
@@ -206,7 +207,11 @@ func (c *clientHandler) handlePROT() *result {
 			}
 		}
 
-		c.transferInTLS = (c.param == "P")
+		if c.param == "P" {
+			atomic.StoreInt32(&c.transferInTLS, 1)
+		} else {
+			atomic.StoreInt32(&c.transferInTLS, 0)
+		}
 
 		return nil
 	}
@@ -219,6 +224,18 @@ func (c *clientHandler) handlePROT() *result {
 func (c *clientHandler) handleTransfer() *result {
 	if c.config.TransferTimeout > 0 {
 		c.setClientDeadLine(c.config.TransferTimeout)
+	}
+
+	// set direction
+	if atomic.LoadInt32(&c.wantDataDirection) == 1 {
+		switch c.command {
+		case "RETR", "LIST", "MLSD", "NLST":
+			// set transfer direction to download
+			c.dataDirection <- downloadStream
+		case "STOR", "STOU", "APPE":
+			// set transfer direction to upload
+			c.dataDirection <- uploadStream
+		}
 	}
 
 	if err := c.proxy.sendToOrigin(c.line); err != nil {
@@ -274,7 +291,7 @@ func (c *clientHandler) handleDATA() *result {
 			c.proxy.GetConn(),
 			c.command,
 			c.tlsDatas,
-			c.transferInTLS,
+			&c.transferInTLS,
 			&c.inDataTransfer,
 		)
 		if err != nil {
