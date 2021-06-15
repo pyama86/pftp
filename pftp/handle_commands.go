@@ -90,6 +90,13 @@ func (c *clientHandler) handleAUTH() *result {
 		c.conn = tlsConn
 		c.reader = bufio.NewReader(c.conn)
 		c.writer = bufio.NewWriter(c.conn)
+
+		// if proxy server attached, change proxy handler's client reader & writer to TLS conn
+		if c.proxy != nil {
+			c.proxy.clientReader = c.reader
+			c.proxy.clientWriter = c.writer
+		}
+
 		c.previousTLSCommands = append(c.previousTLSCommands, c.line)
 
 		c.controlInTLS = true
