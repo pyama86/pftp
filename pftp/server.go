@@ -20,7 +20,7 @@ type middleware map[string]middlewareFunc
 // FtpServer struct type
 type FtpServer struct {
 	listener      net.Listener
-	clientCounter int
+	clientCounter uint64
 	config        *config
 	serverTLSData *tlsData
 	middleware    middleware
