@@ -116,8 +116,6 @@ func buildTLSConfigForClient(TLS *tlsPair) (*tlsData, error) {
 		Certificates:             []tls.Certificate{cert},
 		MinVersion:               getTLSProtocol(TLS.MinProtocol),
 		MaxVersion:               getTLSProtocol(TLS.MaxProtocol),
-		ClientCAs:                caCert,
-		ClientAuth:               tls.VerifyClientCertIfGiven,
 		CipherSuites:             getCiphers(TLS.CipherSuite),
 		PreferServerCipherSuites: true,
 		VerifyConnection:         t.verifyTLSConnection,
