@@ -461,7 +461,6 @@ func (d *dataHandler) dataTransfer(reader net.Conn, writer net.Conn, direction s
 			lastErr = fmt.Errorf("got error on %s data transfer: %s", direction, err.Error())
 		}
 	}
-	defer reader.Close()
 
 	// send EOF to writer. if fail, close connection
 	if err := sendEOF(writer); err != nil {
