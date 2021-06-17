@@ -11,11 +11,14 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 const (
 	uploadStream   = "upload"
 	downloadStream = "download"
+	abortStream    = "abort"
 )
 
 type dataHandler struct {
@@ -29,6 +32,7 @@ type dataHandler struct {
 	needTLSForTransfer   *int32
 	inDataTransfer       *int32
 	transferDone         chan struct{}
+	closed               bool
 }
 
 type connector struct {
@@ -74,6 +78,7 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 		tlsDataSet:           tlsDataSet,
 		needTLSForTransfer:   transferOverTLS,
 		transferDone:         make(chan struct{}),
+		closed:               false,
 	}
 
 	if d.originConn.communicaionConn != nil {
@@ -236,12 +241,12 @@ func (d *dataHandler) Close() error {
 
 	if atomic.LoadInt32(&d.waitTransferEnd) == 1 {
 		d.transferDone <- struct{}{}
-		atomic.StoreInt32(&d.waitTransferEnd, 0)
 	}
 
 	atomic.StoreInt32(&d.proxyHandlerAttached, 0)
 
-	if lastErr == nil {
+	if lastErr == nil && !d.closed {
+		d.closed = true
 		d.log.debug("proxy data channel disconnected")
 	}
 
@@ -252,40 +257,41 @@ func (d *dataHandler) Close() error {
 func (d *dataHandler) StartDataTransfer(direction <-chan string, wantDataDirection *int32) error {
 	var err error
 
+	defer connectionCloser(d, d.log)
+
+	// wait until transfer direction has decided
+	streamDirection := <-direction
+	atomic.StoreInt32(wantDataDirection, 0)
+
+	if streamDirection == abortStream {
+		d.log.debug("data connection aborted by control connection")
+
+		return nil
+	}
+
 	// make data connection (origin first)
 	if err := d.originListenOrDial(); err != nil {
-		d.log.debug("data channel with origin creation failed: %s", err.Error())
+		d.log.err("data channel with origin creation failed: %s", err.Error())
 
 		return err
 	}
 	if err := d.clientListenOrDial(); err != nil {
-		d.log.debug("data channel with client creation failed: %s", err.Error())
+		d.log.err("data channel with client creation failed: %s", err.Error())
 
 		return err
 	}
-	defer func() {
-		atomic.StoreInt32(wantDataDirection, 0)
-		connectionCloser(d, d.log)
-	}()
 
-	streamDirection := <-direction
+	d.log.debug("start %s data transfer", streamDirection)
 
 	// do not timeout communication connection during data transfer
 	atomic.StoreInt32(d.inDataTransfer, 1)
 	d.clientConn.communicaionConn.SetDeadline(time.Time{})
 	d.originConn.communicaionConn.SetDeadline(time.Time{})
 
-	switch streamDirection {
-	case uploadStream:
-		// start upload stream
-		if err := d.dataTransfer(d.clientConn.dataConn, d.originConn.dataConn, uploadStream); err != nil {
-			d.log.err(err.Error())
-		}
-	case downloadStream:
-		// start download stream
-		if err := d.dataTransfer(d.originConn.dataConn, d.clientConn.dataConn, downloadStream); err != nil {
-			d.log.err(err.Error())
-		}
+	if err := d.dataTransfer(); err != nil {
+		d.log.err("got error on %s data transfer: %s", streamDirection, err.Error())
+	} else {
+		d.log.debug("%s data transfer finished", streamDirection)
 	}
 
 	// set timeout to each connection
@@ -304,11 +310,7 @@ func (d *dataHandler) clientListenOrDial() error {
 		d.clientConn.listener.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
 
 		conn, err := d.clientConn.listener.AcceptTCP()
-		if err != nil || conn == nil {
-			if !strings.Contains(err.Error(), alreadyClosedMsg) {
-				d.log.err("error on client connection listen: %v, %s", conn, err.Error())
-			}
-
+		if err != nil {
 			return err
 		}
 
@@ -337,8 +339,7 @@ func (d *dataHandler) clientListenOrDial() error {
 		// when connect to client(use active mode), dial to client use port 20 only
 		lAddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort("", "20"))
 		if err != nil {
-			d.log.err("cannot resolve local address")
-			return err
+			return fmt.Errorf("cannot resolve local address: %s", err.Error())
 		}
 		// set port reuse and local address
 		netDialer := net.Dialer{
@@ -348,12 +349,9 @@ func (d *dataHandler) clientListenOrDial() error {
 		}
 
 		conn, err = netDialer.Dial("tcp", net.JoinHostPort(d.clientConn.remoteIP, d.clientConn.remotePort))
-		if err != nil || conn == nil {
-			d.log.err("cannot connect to client data address: %v, %s", conn, err.Error())
-			return err
+		if err != nil {
+			return fmt.Errorf("cannot connect to client data address: %v, %s", conn, err.Error())
 		}
-
-		d.log.debug("connect to client %s", conn.RemoteAddr().String())
 
 		// set linger 0 and tcp keepalive setting between client connection
 		tcpConn := conn.(*net.TCPConn)
@@ -389,9 +387,7 @@ func (d *dataHandler) originListenOrDial() error {
 		d.originConn.listener.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
 
 		conn, err := d.originConn.listener.AcceptTCP()
-		if err != nil || conn == nil {
-			d.log.err("error on origin connection listen: %v, %s", conn, err.Error())
-
+		if err != nil {
 			return err
 		}
 
@@ -423,11 +419,8 @@ func (d *dataHandler) originListenOrDial() error {
 			net.JoinHostPort(d.originConn.remoteIP, d.originConn.remotePort),
 			time.Duration(connectionTimeout)*time.Second,
 		)
-
-		if err != nil || conn == nil {
-			d.log.debug("cannot connect to origin data address: %v, %s", conn, err.Error())
-
-			return err
+		if err != nil {
+			return fmt.Errorf("cannot connect to origin data address: %v, %s", conn, err.Error())
 		}
 
 		d.log.debug("connected to origin %s", conn.RemoteAddr().String())
@@ -459,39 +452,34 @@ func (d *dataHandler) originListenOrDial() error {
 	return nil
 }
 
-// send data until got EOF or error on connection
-func (d *dataHandler) dataTransfer(reader net.Conn, writer net.Conn, direction string) error {
+// make full duplex connection between client and origin sockets
+func (d *dataHandler) dataTransfer() error {
+	eg := errgroup.Group{}
+
+	// origin to client
+	eg.Go(func() error { return piping(d.clientConn.dataConn, d.originConn.dataConn, downloadStream) })
+	// client to origin
+	eg.Go(func() error { return piping(d.originConn.dataConn, d.clientConn.dataConn, uploadStream) })
+
+	// wait until data transfer goroutine end
+	err := eg.Wait()
+
+	return err
+}
+
+// send data src to dst without buffering
+func piping(dst net.Conn, src net.Conn, direction string) error {
 	lastErr := error(nil)
 
-	src := bufio.NewReader(reader)
-	dst := bufio.NewReader(writer)
+	rx := bufio.NewReader(src)
 
 	// start transfer (dst → host)
-	if _, err := src.WriteTo(writer); err != nil {
-		if !strings.Contains(err.Error(), alreadyClosedMsg) {
-			lastErr = fmt.Errorf("got error on %s data transfer: %s", direction, err.Error())
-		}
+	if _, err := rx.WriteTo(dst); err != nil {
+		dst.Close()
 	} else {
 		// send EOF to dst for notify transfer end.
-		if err := sendEOF(writer); err != nil {
-			d.log.err("got error on send EOF to destination socket: %s", err.Error())
-		}
-	}
-
-	// confirm (dst → host)
-	if _, err := dst.WriteTo(reader); err != nil {
-		d.log.err("got error on confirm %s data transfer: %s", direction, err.Error())
-	} else {
-		// send EOF to src for confirm transfer end.
-		if err := sendEOF(reader); err != nil {
-			d.log.err("got error on send EOF to source socket: %s", err.Error())
-		}
-	}
-
-	// close from tx side (in stream mode, close socket mean data transfer finished)
-	if err := writer.Close(); err != nil {
-		if !strings.Contains(err.Error(), alreadyClosedMsg) {
-			lastErr = fmt.Errorf("got error on close %s destination socket: %s", direction, err.Error())
+		if err := sendEOF(dst); err != nil {
+			lastErr = fmt.Errorf("got error on send EOF to destination socket: %s", err.Error())
 		}
 	}
 
