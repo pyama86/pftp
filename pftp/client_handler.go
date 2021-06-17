@@ -198,6 +198,10 @@ func (c *clientHandler) getResponseFromOrigin() error {
 			connectionCloser(c, c.log)
 		}
 
+		if atomic.LoadInt32(&c.wantDataDirection) == 1 {
+			c.dataDirection <- abortStream
+		}
+
 		// close current proxy connection
 		connectionCloser(c.proxy, c.log)
 	}()
@@ -207,7 +211,7 @@ func (c *clientHandler) getResponseFromOrigin() error {
 		err = c.proxy.responseProxy()
 		if err != nil {
 			if err == io.EOF {
-				c.log.debug("EOF from proxy connection")
+				c.log.debug("EOF from origin connection")
 				err = nil
 			} else {
 				if !strings.Contains(err.Error(), alreadyClosedMsg) {
