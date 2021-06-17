@@ -204,7 +204,12 @@ func (s *proxyServer) SetDataHandler(handler *dataHandler) {
 		// if already had previous data handler in use, wait until end.
 		if atomic.LoadInt32(&s.dataConnector.proxyHandlerAttached) == 1 {
 			atomic.StoreInt32(&s.dataConnector.waitTransferEnd, 1)
-			atomic.StoreInt32(&s.dataConnector.proxyHandlerAttached, 0)
+
+			// if data transfer not started yes, send abort for destroy current data handler
+			if atomic.LoadInt32(s.wantDataDirection) == 1 {
+				s.dataConnDirection <- abortStream
+			}
+
 			<-s.dataConnector.transferDone
 			atomic.StoreInt32(&s.dataConnector.waitTransferEnd, 0)
 		}
