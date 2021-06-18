@@ -1,10 +1,10 @@
 package pftp
 
 import (
-	"bufio"
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"strconv"
@@ -207,16 +207,14 @@ func (d *dataHandler) Close() error {
 	if d.clientConn.dataConn != nil {
 		if err := d.clientConn.dataConn.Close(); err != nil {
 			if !strings.Contains(err.Error(), alreadyClosedMsg) {
-				d.log.err("origin data connection close error: %s", err.Error())
-				lastErr = err
+				lastErr = fmt.Errorf("client data connection close error: %s", err.Error())
 			}
 		}
 	}
 	if d.originConn.dataConn != nil {
 		if err := d.originConn.dataConn.Close(); err != nil {
 			if !strings.Contains(err.Error(), alreadyClosedMsg) {
-				d.log.err("origin data connection close error: %s", err.Error())
-				lastErr = err
+				lastErr = fmt.Errorf("origin data connection close error: %s", err.Error())
 			}
 		}
 	}
@@ -225,16 +223,14 @@ func (d *dataHandler) Close() error {
 	if d.clientConn.listener != nil {
 		if err := d.clientConn.listener.Close(); err != nil {
 			if !strings.Contains(err.Error(), alreadyClosedMsg) {
-				d.log.err("client data listener close error: %s", err.Error())
-				lastErr = err
+				lastErr = fmt.Errorf("client data listener close error: %s", err.Error())
 			}
 		}
 	}
 	if d.originConn.listener != nil {
 		if err := d.originConn.listener.Close(); err != nil {
 			if !strings.Contains(err.Error(), alreadyClosedMsg) {
-				d.log.err("origin data listener close error: %s", err.Error())
-				lastErr = err
+				lastErr = fmt.Errorf("origin data listener close error: %s", err.Error())
 			}
 		}
 	}
@@ -288,7 +284,7 @@ func (d *dataHandler) StartDataTransfer(direction <-chan string, wantDataDirecti
 	d.clientConn.communicaionConn.SetDeadline(time.Time{})
 	d.originConn.communicaionConn.SetDeadline(time.Time{})
 
-	if err := d.dataTransfer(); err != nil {
+	if err := d.run(); err != nil {
 		d.log.err("got error on %s data transfer: %s", streamDirection, err.Error())
 	} else {
 		d.log.debug("%s data transfer finished", streamDirection)
@@ -376,6 +372,9 @@ func (d *dataHandler) clientListenOrDial() error {
 		d.clientConn.dataConn = tlsConn
 	}
 
+	// set transfer timeout to data connection
+	d.clientConn.dataConn.SetDeadline(time.Now().Add(time.Duration(d.config.TransferTimeout) * time.Second))
+
 	return nil
 }
 
@@ -449,37 +448,58 @@ func (d *dataHandler) originListenOrDial() error {
 		d.originConn.dataConn = tlsConn
 	}
 
+	// set transfer timeout to data connection
+	d.originConn.dataConn.SetDeadline(time.Now().Add(time.Duration(d.config.TransferTimeout) * time.Second))
+
 	return nil
 }
 
 // make full duplex connection between client and origin sockets
-func (d *dataHandler) dataTransfer() error {
+func (d *dataHandler) run() error {
 	eg := errgroup.Group{}
 
 	// origin to client
-	eg.Go(func() error { return piping(d.clientConn.dataConn, d.originConn.dataConn, downloadStream) })
+	eg.Go(func() error {
+		return copyPackets(d.clientConn.dataConn, d.originConn.dataConn, d.config.TransferTimeout)
+	})
 	// client to origin
-	eg.Go(func() error { return piping(d.originConn.dataConn, d.clientConn.dataConn, uploadStream) })
+	eg.Go(func() error {
+		return copyPackets(d.originConn.dataConn, d.clientConn.dataConn, d.config.TransferTimeout)
+	})
 
-	// wait until data transfer goroutine end
+	// wait until copy goroutine end
 	err := eg.Wait()
 
 	return err
 }
 
-// send data src to dst without buffering
-func piping(dst net.Conn, src net.Conn, direction string) error {
+// send src packet to dst.
+// replace io.Copy function to manual coding because io.Copy
+// function can not increase src conn's deadline per each read.
+func copyPackets(dst net.Conn, src net.Conn, timeout int) error {
 	lastErr := error(nil)
+	buff := make([]byte, bufferSize)
 
-	rx := bufio.NewReader(src)
+	for {
+		n, err := src.Read(buff)
+		if n > 0 {
+			// stop coping when failed to write dst socket
+			if _, err := dst.Write(buff[:n]); err != nil {
+				dst.Close()
+				break
+			}
+			// increase data transfer timeout
+			src.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+		}
+		if err != nil {
+			if err == io.EOF {
+				// got EOF from src, send EOF to dst
+				lastErr = sendEOF(dst)
+			} else {
+				lastErr = err
+			}
 
-	// start transfer (dst → host)
-	if _, err := rx.WriteTo(dst); err != nil {
-		dst.Close()
-	} else {
-		// send EOF to dst for notify transfer end.
-		if err := sendEOF(dst); err != nil {
-			lastErr = fmt.Errorf("got error on send EOF to destination socket: %s", err.Error())
+			break
 		}
 	}
 
