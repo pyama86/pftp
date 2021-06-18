@@ -61,7 +61,6 @@ type clientHandler struct {
 	connCounts          int32
 	mutex               *sync.Mutex
 	log                 *logger
-	deadline            time.Time
 	srcIP               string
 	isLoggedin          bool
 	previousTLSCommands []string
@@ -125,11 +124,7 @@ func (c *clientHandler) setClientDeadLine(t int) {
 	if atomic.LoadInt32(&c.inDataTransfer) == 1 {
 		c.conn.SetDeadline(time.Time{})
 	} else {
-		d := time.Now().Add(time.Duration(t) * time.Second)
-		if c.deadline.Unix() < d.Unix() {
-			c.deadline = d
-			c.conn.SetDeadline(d)
-		}
+		c.conn.SetDeadline(time.Now().Add(time.Duration(t) * time.Second))
 	}
 }
 
