@@ -222,10 +222,6 @@ func (c *clientHandler) handlePROT() *result {
 }
 
 func (c *clientHandler) handleTransfer() *result {
-	if c.config.TransferTimeout > 0 {
-		c.setClientDeadLine(c.config.TransferTimeout)
-	}
-
 	// set direction
 	if atomic.LoadInt32(&c.wantDataDirection) == 1 {
 		switch c.command {
