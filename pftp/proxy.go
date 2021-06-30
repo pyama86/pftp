@@ -42,22 +42,18 @@ type proxyServer struct {
 	dataConnector         *dataHandler
 	waitSwitching         chan bool
 	inDataTransfer        *int32
-	wantDataDirection     *int32
 	isDataCommandResponse bool
-	dataConnDirection     chan string
 }
 
 type proxyServerConfig struct {
-	clientReader      *bufio.Reader
-	clientWriter      *bufio.Writer
-	tlsDatas          *tlsDataSet
-	originAddr        string
-	mutex             *sync.Mutex
-	log               *logger
-	config            *config
-	inDataTransfer    *int32
-	wantDataDirection *int32
-	dataDirection     chan string
+	clientReader   *bufio.Reader
+	clientWriter   *bufio.Writer
+	tlsDatas       *tlsDataSet
+	originAddr     string
+	mutex          *sync.Mutex
+	log            *logger
+	config         *config
+	inDataTransfer *int32
 }
 
 func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
@@ -75,24 +71,22 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 	tcpConn.SetLinger(0)
 
 	p := &proxyServer{
-		clientReader:      conf.clientReader,
-		clientWriter:      conf.clientWriter,
-		originWriter:      bufio.NewWriter(c),
-		originReader:      bufio.NewReader(c),
-		origin:            tcpConn,
-		tlsDatas:          conf.tlsDatas,
-		passThrough:       true,
-		mutex:             conf.mutex,
-		log:               conf.log,
-		stopChan:          make(chan struct{}),
-		stopChanDone:      make(chan struct{}),
-		welcomeMsg:        "220 " + conf.config.WelcomeMsg + "\r\n",
-		isSwitched:        false,
-		config:            conf.config,
-		waitSwitching:     make(chan bool),
-		inDataTransfer:    conf.inDataTransfer,
-		wantDataDirection: conf.wantDataDirection,
-		dataConnDirection: conf.dataDirection,
+		clientReader:   conf.clientReader,
+		clientWriter:   conf.clientWriter,
+		originWriter:   bufio.NewWriter(c),
+		originReader:   bufio.NewReader(c),
+		origin:         tcpConn,
+		tlsDatas:       conf.tlsDatas,
+		passThrough:    true,
+		mutex:          conf.mutex,
+		log:            conf.log,
+		stopChan:       make(chan struct{}),
+		stopChanDone:   make(chan struct{}),
+		welcomeMsg:     "220 " + conf.config.WelcomeMsg + "\r\n",
+		isSwitched:     false,
+		config:         conf.config,
+		waitSwitching:  make(chan bool),
+		inDataTransfer: conf.inDataTransfer,
 	}
 
 	p.log.debug("new proxy from=%s to=%s", c.LocalAddr(), c.RemoteAddr())
@@ -191,6 +185,10 @@ func (s *proxyServer) Close() error {
 		}
 	}
 
+	if s.dataConnector != nil {
+		s.DestroyDataHandler()
+	}
+
 	return nil
 }
 
@@ -198,33 +196,22 @@ func (s *proxyServer) GetConn() net.Conn {
 	return s.origin
 }
 
+// basically, this function never called during data transfer
+// in progress, so block by chan is not necessary.
 func (s *proxyServer) SetDataHandler(handler *dataHandler) {
-	// only one data connection available in same time.
+	// cleanup previous data connector.
 	if s.dataConnector != nil {
-		// if already had previous data handler in use, wait until end.
-		if atomic.LoadInt32(&s.dataConnector.proxyHandlerAttached) == 1 {
-			atomic.StoreInt32(&s.dataConnector.waitTransferEnd, 1)
-
-			// if data transfer not started yes, send abort for destroy current data handler
-			if atomic.LoadInt32(s.wantDataDirection) == 1 {
-				s.dataConnDirection <- abortStream
-			}
-
-			<-s.dataConnector.transferDone
-			atomic.StoreInt32(&s.dataConnector.waitTransferEnd, 0)
-		}
-
-		// after sent response for previous data command, close it for use new data handler.
-		s.dataConnector.Close()
+		s.DestroyDataHandler()
 	}
 
 	s.dataConnector = handler
-	atomic.StoreInt32(&s.dataConnector.proxyHandlerAttached, 1)
 }
 
 // Destroy data handler
 func (s *proxyServer) DestroyDataHandler() {
-	connectionCloser(s.dataConnector, s.log)
+	if s.dataConnector != nil {
+		connectionCloser(s.dataConnector, s.log)
+	}
 }
 
 func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) error {
@@ -455,10 +442,6 @@ func (s *proxyServer) startProxy() error {
 					}
 
 					if s.isDataCommandResponse {
-						// start data transfer
-						go s.dataConnector.StartDataTransfer(s.dataConnDirection, s.wantDataDirection)
-						atomic.StoreInt32(s.wantDataDirection, 1)
-
 						switch s.dataConnector.clientConn.mode {
 						case "PORT", "EPRT":
 							buff = fmt.Sprintf("200 %s command successful\r\n", s.dataConnector.clientConn.mode)
@@ -537,10 +520,6 @@ loop:
 		}
 	}
 	<-done
-
-	if s.dataConnector != nil {
-		s.DestroyDataHandler()
-	}
 
 	return lastError
 }

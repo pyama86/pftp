@@ -222,16 +222,14 @@ func (c *clientHandler) handlePROT() *result {
 }
 
 func (c *clientHandler) handleTransfer() *result {
-	// set direction
-	if atomic.LoadInt32(&c.wantDataDirection) == 1 {
-		switch c.command {
-		case "RETR", "LIST", "MLSD", "NLST":
-			// set transfer direction to download
-			c.dataDirection <- downloadStream
-		case "STOR", "STOU", "APPE":
-			// set transfer direction to upload
-			c.dataDirection <- uploadStream
-		}
+	// start data transfer by direction
+	switch c.command {
+	case "RETR", "LIST", "MLSD", "NLST":
+		// set transfer direction to download
+		go c.proxy.dataConnector.StartDataTransfer(downloadStream)
+	case "STOR", "STOU", "APPE":
+		// set transfer direction to upload
+		go c.proxy.dataConnector.StartDataTransfer(uploadStream)
 	}
 
 	if err := c.proxy.sendToOrigin(c.line); err != nil {
@@ -278,6 +276,16 @@ func (c *clientHandler) handleDATA() *result {
 	// if data channel proxy used
 	if c.config.DataChanProxy {
 		var toOriginMsg string
+
+		// only one data connection available in same time.
+		// Return 450 response code to client without create
+		// & attach new data handler when data transfer in progress.
+		if atomic.LoadInt32(&c.inDataTransfer) == 1 {
+			return &result{
+				code: 450,
+				msg:  fmt.Sprintf("%s: data transfer in progress", c.command),
+			}
+		}
 
 		// make new listener and store listener port
 		dataHandler, err := newDataHandler(

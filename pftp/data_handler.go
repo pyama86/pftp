@@ -22,17 +22,14 @@ const (
 )
 
 type dataHandler struct {
-	clientConn           connector
-	originConn           connector
-	config               *config
-	log                  *logger
-	proxyHandlerAttached int32
-	waitTransferEnd      int32
-	tlsDataSet           *tlsDataSet
-	needTLSForTransfer   *int32
-	inDataTransfer       *int32
-	transferDone         chan struct{}
-	closed               bool
+	clientConn         connector
+	originConn         connector
+	config             *config
+	log                *logger
+	tlsDataSet         *tlsDataSet
+	needTLSForTransfer *int32
+	inDataTransfer     *int32
+	closed             bool
 }
 
 type connector struct {
@@ -70,15 +67,12 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 			isClient:         true,
 			mode:             mode,
 		},
-		config:               config,
-		log:                  log,
-		inDataTransfer:       inDataTransfer,
-		proxyHandlerAttached: 0,
-		waitTransferEnd:      0,
-		tlsDataSet:           tlsDataSet,
-		needTLSForTransfer:   transferOverTLS,
-		transferDone:         make(chan struct{}),
-		closed:               false,
+		config:             config,
+		log:                log,
+		inDataTransfer:     inDataTransfer,
+		tlsDataSet:         tlsDataSet,
+		needTLSForTransfer: transferOverTLS,
+		closed:             false,
 	}
 
 	if d.originConn.communicaionConn != nil {
@@ -235,13 +229,7 @@ func (d *dataHandler) Close() error {
 		}
 	}
 
-	if atomic.LoadInt32(&d.waitTransferEnd) == 1 {
-		d.transferDone <- struct{}{}
-	}
-
-	atomic.StoreInt32(&d.proxyHandlerAttached, 0)
-
-	if lastErr == nil && !d.closed {
+	if !d.closed {
 		d.closed = true
 		d.log.debug("proxy data channel disconnected")
 	}
@@ -250,20 +238,11 @@ func (d *dataHandler) Close() error {
 }
 
 // Make listener for data connection
-func (d *dataHandler) StartDataTransfer(direction <-chan string, wantDataDirection *int32) error {
+// func (d *dataHandler) StartDataTransfer(direction <-chan string, wantDataDirection *int32) error {
+func (d *dataHandler) StartDataTransfer(direction string) error {
 	var err error
 
 	defer connectionCloser(d, d.log)
-
-	// wait until transfer direction has decided
-	streamDirection := <-direction
-	atomic.StoreInt32(wantDataDirection, 0)
-
-	if streamDirection == abortStream {
-		d.log.debug("data connection aborted by control connection")
-
-		return nil
-	}
 
 	// make data connection (origin first)
 	if err := d.originListenOrDial(); err != nil {
@@ -277,7 +256,7 @@ func (d *dataHandler) StartDataTransfer(direction <-chan string, wantDataDirecti
 		return err
 	}
 
-	d.log.debug("start %s data transfer", streamDirection)
+	d.log.debug("start %s data transfer", direction)
 
 	// do not timeout communication connection during data transfer
 	atomic.StoreInt32(d.inDataTransfer, 1)
@@ -285,9 +264,9 @@ func (d *dataHandler) StartDataTransfer(direction <-chan string, wantDataDirecti
 	d.originConn.communicaionConn.SetDeadline(time.Time{})
 
 	if err := d.run(); err != nil {
-		d.log.err("got error on %s data transfer: %s", streamDirection, err.Error())
+		d.log.err("got error on %s data transfer: %s", direction, err.Error())
 	} else {
-		d.log.debug("%s data transfer finished", streamDirection)
+		d.log.debug("%s data transfer finished", direction)
 	}
 
 	// set timeout to each connection

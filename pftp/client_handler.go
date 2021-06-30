@@ -65,8 +65,6 @@ type clientHandler struct {
 	isLoggedin          bool
 	previousTLSCommands []string
 	inDataTransfer      int32
-	wantDataDirection   int32
-	dataDirection       chan string
 }
 
 func newClientHandler(connection net.Conn, c *config, sharedTLSData *tlsData, m middleware, id uint64, currentConnection *int32) *clientHandler {
@@ -86,8 +84,6 @@ func newClientHandler(connection net.Conn, c *config, sharedTLSData *tlsData, m 
 		srcIP:             connection.RemoteAddr().String(),
 		isLoggedin:        false,
 		inDataTransfer:    0,
-		wantDataDirection: 0,
-		dataDirection:     make(chan string, 1),
 	}
 
 	// increase current connection count
@@ -191,10 +187,6 @@ func (c *clientHandler) getResponseFromOrigin() error {
 		if err := sendEOF(c.conn); err != nil {
 			c.log.debug("send EOF to client failed. close connection.")
 			connectionCloser(c, c.log)
-		}
-
-		if atomic.LoadInt32(&c.wantDataDirection) == 1 {
-			c.dataDirection <- abortStream
 		}
 
 		// close current proxy connection
@@ -385,16 +377,14 @@ func (c *clientHandler) connectProxy() error {
 	} else {
 		p, err := newProxyServer(
 			&proxyServerConfig{
-				clientReader:      c.reader,
-				clientWriter:      c.writer,
-				tlsDatas:          c.tlsDatas,
-				originAddr:        c.context.RemoteAddr,
-				mutex:             c.mutex,
-				log:               c.log,
-				config:            c.config,
-				inDataTransfer:    &c.inDataTransfer,
-				wantDataDirection: &c.wantDataDirection,
-				dataDirection:     c.dataDirection,
+				clientReader:   c.reader,
+				clientWriter:   c.writer,
+				tlsDatas:       c.tlsDatas,
+				originAddr:     c.context.RemoteAddr,
+				mutex:          c.mutex,
+				log:            c.log,
+				config:         c.config,
+				inDataTransfer: &c.inDataTransfer,
 			})
 		if err != nil {
 			return err
