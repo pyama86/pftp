@@ -14,6 +14,6 @@ require (
 	github.com/pires/go-proxyproto v0.4.2
 	github.com/sirupsen/logrus v1.8.0
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/sys v0.0.0-20210611083646-a4fc73990273
+	golang.org/x/sys v0.0.0-20210630005230-0f9fa26af87c
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
 )
