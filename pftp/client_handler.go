@@ -62,7 +62,6 @@ type clientHandler struct {
 	mutex               *sync.Mutex
 	log                 *logger
 	srcIP               string
-	isLoggedin          bool
 	previousTLSCommands []string
 	inDataTransfer      int32
 }
@@ -82,7 +81,6 @@ func newClientHandler(connection net.Conn, c *config, sharedTLSData *tlsData, m 
 		mutex:             &sync.Mutex{},
 		log:               &logger{fromip: connection.RemoteAddr().String(), user: "-", id: id},
 		srcIP:             connection.RemoteAddr().String(),
-		isLoggedin:        false,
 		inDataTransfer:    0,
 	}
 

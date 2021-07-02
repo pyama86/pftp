@@ -13,7 +13,7 @@ import (
 
 func (c *clientHandler) handleUSER() *result {
 	// make fail when try to login after logged in
-	if c.isLoggedin {
+	if c.proxy.isLoggedIn() {
 		return &result{
 			code: 500,
 			msg:  "Already logged in",
@@ -54,7 +54,6 @@ func (c *clientHandler) handleUSER() *result {
 			log:  c.log,
 		}
 	}
-	c.isLoggedin = true
 
 	return nil
 }
@@ -122,7 +121,7 @@ func (c *clientHandler) handleAUTH() *result {
 // response PBSZ to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePBSZ() *result {
 	if atomic.LoadInt32(&c.controlInTLS) == 1 {
-		if !c.isLoggedin {
+		if !c.proxy.isLoggedIn() {
 			r := &result{
 				code: 200,
 				msg:  fmt.Sprintf("PBSZ %s successful", c.param),
@@ -163,7 +162,7 @@ func (c *clientHandler) handlePBSZ() *result {
 // response PROT to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePROT() *result {
 	if atomic.LoadInt32(&c.controlInTLS) == 1 {
-		if !c.isLoggedin {
+		if !c.proxy.isLoggedIn() {
 			var r *result
 			if c.param == "C" {
 				r = &result{
@@ -222,6 +221,27 @@ func (c *clientHandler) handlePROT() *result {
 }
 
 func (c *clientHandler) handleTransfer() *result {
+	if !c.proxy.isLoggedIn() {
+		return &result{
+			code: 530,
+			msg:  "Please login with USER and PASS",
+		}
+	}
+
+	if !c.proxy.isDataHandlerAvailable() {
+		return &result{
+			code: 425,
+			msg:  "Can't open data connection",
+		}
+	}
+
+	if c.proxy.isDataTransferStarted() {
+		return &result{
+			code: 450,
+			msg:  fmt.Sprintf("%s: data transfer in progress", c.command),
+		}
+	}
+
 	// start data transfer by direction
 	switch c.command {
 	case "RETR", "LIST", "MLSD", "NLST":
@@ -266,7 +286,7 @@ func (c *clientHandler) handlePROXY() *result {
 
 // handle PORT, EPRT, PASV, EPSV commands when set data channel proxy is true
 func (c *clientHandler) handleDATA() *result {
-	if !c.isLoggedin {
+	if !c.proxy.isLoggedIn() {
 		return &result{
 			code: 530,
 			msg:  "Please login with USER and PASS",
@@ -280,7 +300,7 @@ func (c *clientHandler) handleDATA() *result {
 		// only one data connection available in same time.
 		// Return 450 response code to client without create
 		// & attach new data handler when data transfer in progress.
-		if atomic.LoadInt32(&c.inDataTransfer) == 1 {
+		if c.proxy.isDataTransferStarted() {
 			return &result{
 				code: 450,
 				msg:  fmt.Sprintf("%s: data transfer in progress", c.command),
