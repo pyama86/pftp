@@ -278,12 +278,6 @@ func (d *dataHandler) StartDataTransfer(direction string) error {
 	// make data connection (origin first)
 	eg.Go(func() error {
 		if err := d.originListenOrDial(); err != nil {
-			if strings.Contains(err.Error(), "EOF") {
-				d.log.debug("data channel with origin aborted by EOF")
-			} else {
-				d.log.err("data channel with origin creation failed: %s", err.Error())
-			}
-
 			connectionCloser(d, d.log)
 			return err
 		}
@@ -292,12 +286,6 @@ func (d *dataHandler) StartDataTransfer(direction string) error {
 	})
 	eg.Go(func() error {
 		if err := d.clientListenOrDial(); err != nil {
-			if strings.Contains(err.Error(), "EOF") {
-				d.log.debug("data channel with client aborted by EOF")
-			} else {
-				d.log.err("data channel with client creation failed: %s", err.Error())
-			}
-
 			connectionCloser(d, d.log)
 			return err
 		}
@@ -307,6 +295,12 @@ func (d *dataHandler) StartDataTransfer(direction string) error {
 
 	// wait until copy goroutine end
 	if err := eg.Wait(); err != nil {
+		if strings.Contains(err.Error(), "EOF") {
+			d.log.debug("data connection aborted by EOF")
+		} else {
+			d.log.err("data connection creation failed: %s", err.Error())
+		}
+
 		return err
 	}
 
