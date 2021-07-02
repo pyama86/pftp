@@ -201,6 +201,11 @@ func (d *dataHandler) Close() error {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
+	// return nil when handler already closed
+	if d.closed {
+		return nil
+	}
+
 	lastErr := error(nil)
 
 	// close net.Conn
@@ -239,10 +244,8 @@ func (d *dataHandler) Close() error {
 		d.originConn.listener = nil
 	}
 
-	if !d.closed {
-		d.closed = true
-		d.log.debug("proxy data channel disconnected")
-	}
+	d.closed = true
+	d.log.debug("proxy data channel disconnected")
 
 	return lastErr
 }
@@ -305,6 +308,13 @@ func (d *dataHandler) StartDataTransfer(direction string) error {
 
 // make client connection
 func (d *dataHandler) clientListenOrDial() error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	if d.closed {
+		return errors.New("abort: data handler already closed")
+	}
+
 	// if client connect needs listen, open listener
 	if d.clientConn.needsListen {
 		// set listener timeout
@@ -385,6 +395,13 @@ func (d *dataHandler) clientListenOrDial() error {
 
 // make origin connection
 func (d *dataHandler) originListenOrDial() error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	if d.closed {
+		return errors.New("abort: data handler already closed")
+	}
+
 	// if origin connect needs listen, open listener
 	if d.originConn.needsListen {
 		// set listener timeout
@@ -461,6 +478,13 @@ func (d *dataHandler) originListenOrDial() error {
 
 // make full duplex connection between client and origin sockets
 func (d *dataHandler) run() error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	if d.closed {
+		return errors.New("abort: data handler already closed")
+	}
+
 	eg := errgroup.Group{}
 
 	// origin to client
