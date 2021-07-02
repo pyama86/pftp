@@ -9,6 +9,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -30,6 +31,7 @@ type dataHandler struct {
 	needTLSForTransfer *int32
 	inDataTransfer     *int32
 	closed             bool
+	mutex              *sync.Mutex
 }
 
 type connector struct {
@@ -73,6 +75,7 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 		tlsDataSet:         tlsDataSet,
 		needTLSForTransfer: transferOverTLS,
 		closed:             false,
+		mutex:              &sync.Mutex{},
 	}
 
 	if d.originConn.communicaionConn != nil {
@@ -195,6 +198,9 @@ func (d *dataHandler) setNewListener() (*net.TCPListener, error) {
 
 // close all connection and listener
 func (d *dataHandler) Close() error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
 	lastErr := error(nil)
 
 	// close net.Conn
@@ -204,6 +210,7 @@ func (d *dataHandler) Close() error {
 				lastErr = fmt.Errorf("client data connection close error: %s", err.Error())
 			}
 		}
+		d.clientConn.dataConn = nil
 	}
 	if d.originConn.dataConn != nil {
 		if err := d.originConn.dataConn.Close(); err != nil {
@@ -211,6 +218,7 @@ func (d *dataHandler) Close() error {
 				lastErr = fmt.Errorf("origin data connection close error: %s", err.Error())
 			}
 		}
+		d.originConn.dataConn = nil
 	}
 
 	// close listener
@@ -220,6 +228,7 @@ func (d *dataHandler) Close() error {
 				lastErr = fmt.Errorf("client data listener close error: %s", err.Error())
 			}
 		}
+		d.clientConn.listener = nil
 	}
 	if d.originConn.listener != nil {
 		if err := d.originConn.listener.Close(); err != nil {
@@ -227,6 +236,7 @@ func (d *dataHandler) Close() error {
 				lastErr = fmt.Errorf("origin data listener close error: %s", err.Error())
 			}
 		}
+		d.originConn.listener = nil
 	}
 
 	if !d.closed {
@@ -235,6 +245,22 @@ func (d *dataHandler) Close() error {
 	}
 
 	return lastErr
+}
+
+// return current handler closed state
+func (d *dataHandler) isClosed() bool {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	return d.closed
+}
+
+// return true when handler start transfer progress
+func (d *dataHandler) isStarted() bool {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	return atomic.LoadInt32(d.inDataTransfer) == 1
 }
 
 // Make listener for data connection
@@ -420,7 +446,7 @@ func (d *dataHandler) originListenOrDial() error {
 
 		tlsConn := tls.Client(d.originConn.dataConn, d.tlsDataSet.forOrigin.getTLSConfig())
 		if err := tlsConn.Handshake(); err != nil {
-			d.log.err("TLS origin data connection handshake got error: %v", err)
+			return fmt.Errorf("TLS origin data connection handshake got error: %v", err)
 		}
 		d.log.debug("TLS data connection with origin has set. TLS protocol version: %s and Cipher Suite: %s. (resumed?: %v)", getTLSProtocolName(tlsConn.ConnectionState().Version), tls.CipherSuiteName(tlsConn.ConnectionState().CipherSuite), tlsConn.ConnectionState().DidResume)
 

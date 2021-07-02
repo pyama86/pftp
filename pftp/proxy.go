@@ -36,7 +36,7 @@ type proxyServer struct {
 	stopChan              chan struct{}
 	stopChanDone          chan struct{}
 	stop                  bool
-	isSwitched            bool
+	isLoggedin            bool
 	welcomeMsg            string
 	config                *config
 	dataConnector         *dataHandler
@@ -83,7 +83,7 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		stopChan:       make(chan struct{}),
 		stopChanDone:   make(chan struct{}),
 		welcomeMsg:     "220 " + conf.config.WelcomeMsg + "\r\n",
-		isSwitched:     false,
+		isLoggedin:     false,
 		config:         conf.config,
 		waitSwitching:  make(chan bool),
 		inDataTransfer: conf.inDataTransfer,
@@ -214,6 +214,29 @@ func (s *proxyServer) DestroyDataHandler() {
 	}
 }
 
+// return true when data handler is available now
+func (s *proxyServer) isDataHandlerAvailable() bool {
+	if s.dataConnector == nil {
+		return false
+	}
+
+	return !s.dataConnector.isClosed()
+}
+
+// return true when data transfer in progress
+func (s *proxyServer) isDataTransferStarted() bool {
+	if s.dataConnector == nil {
+		return false
+	}
+
+	return s.dataConnector.isStarted()
+}
+
+// return switch origin & user logged in state
+func (s *proxyServer) isLoggedIn() bool {
+	return s.isLoggedin
+}
+
 func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) error {
 	sourceAddr := strings.Split(clientAddr, ":")
 	destinationAddr := strings.Split(originAddr, ":")
@@ -307,14 +330,12 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, previou
 	}
 
 	// if client switched before, return error
-	if s.isSwitched {
+	if s.isLoggedin {
 		return fmt.Errorf("origin already switched")
 	}
 
 	s.log.info("switch origin to: %s", originAddr)
 	var err error
-
-	s.isSwitched = true
 
 	if s.passThrough {
 		s.suspend()
@@ -336,9 +357,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, previou
 	}()
 
 	// change connection and reset reader and writer buffer
-	s.origin, err = net.DialTimeout("tcp",
-		originAddr,
-		time.Duration(connectionTimeout)*time.Second)
+	s.origin, err = net.DialTimeout("tcp", originAddr, time.Duration(connectionTimeout)*time.Second)
 	if err != nil {
 		return err
 	}
@@ -414,8 +433,13 @@ func (s *proxyServer) startProxy() error {
 				s.log.debug("response from origin: %s", strings.TrimSuffix(buff, "\r\n"))
 
 				// response user setted welcome message
-				if strings.Compare(getCode(buff)[0], "220") == 0 && !s.isSwitched {
+				if strings.Compare(getCode(buff)[0], "220") == 0 && !s.isLoggedin {
 					buff = s.welcomeMsg
+				}
+
+				// check login and switch origin success
+				if strings.Compare(getCode(buff)[0], "230") == 0 {
+					s.isLoggedin = true
 				}
 
 				// when got 500 PROXY not understood, ignore it
@@ -428,7 +452,7 @@ func (s *proxyServer) startProxy() error {
 				}
 
 				// is data channel proxy used
-				if s.config.DataChanProxy && s.isSwitched {
+				if s.config.DataChanProxy && s.isLoggedin {
 					if strings.HasPrefix(buff, "227 ") {
 						s.isDataCommandResponse = true
 						s.dataConnector.parsePASVresponse(buff)
