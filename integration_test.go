@@ -14,9 +14,9 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/heat1024/pftp/test"
 	"github.com/jlaffaye/ftp"
 	"github.com/marcobeierer/ftps"
-	"github.com/pyama86/pftp/test"
 	"golang.org/x/sync/errgroup"
 )
 
