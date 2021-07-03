@@ -9,7 +9,7 @@ import (
 type logger struct {
 	fromip string
 	user   string
-	id     int
+	id     uint64
 }
 
 func (l *logger) debug(format string, args ...interface{}) {

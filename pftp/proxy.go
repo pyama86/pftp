@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	proxyproto "github.com/pires/go-proxyproto"
@@ -28,31 +29,31 @@ type proxyServer struct {
 	origin                net.Conn
 	originReader          *bufio.Reader
 	originWriter          *bufio.Writer
+	tlsDatas              *tlsDataSet
 	passThrough           bool
 	mutex                 *sync.Mutex
 	log                   *logger
 	stopChan              chan struct{}
 	stopChanDone          chan struct{}
 	stop                  bool
-	isSwitched            bool
+	isLoggedin            bool
 	welcomeMsg            string
 	config                *config
 	dataConnector         *dataHandler
 	waitSwitching         chan bool
-	isDone                *bool
-	inDataTransfer        *bool
+	inDataTransfer        *int32
 	isDataCommandResponse bool
 }
 
 type proxyServerConfig struct {
 	clientReader   *bufio.Reader
 	clientWriter   *bufio.Writer
+	tlsDatas       *tlsDataSet
 	originAddr     string
 	mutex          *sync.Mutex
 	log            *logger
 	config         *config
-	isDone         *bool
-	inDataTransfer *bool
+	inDataTransfer *int32
 }
 
 func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
@@ -75,16 +76,16 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		originWriter:   bufio.NewWriter(c),
 		originReader:   bufio.NewReader(c),
 		origin:         tcpConn,
+		tlsDatas:       conf.tlsDatas,
 		passThrough:    true,
 		mutex:          conf.mutex,
 		log:            conf.log,
 		stopChan:       make(chan struct{}),
 		stopChanDone:   make(chan struct{}),
 		welcomeMsg:     "220 " + conf.config.WelcomeMsg + "\r\n",
-		isSwitched:     false,
+		isLoggedin:     false,
 		config:         conf.config,
 		waitSwitching:  make(chan bool),
-		isDone:         conf.isDone,
 		inDataTransfer: conf.inDataTransfer,
 	}
 
@@ -147,8 +148,23 @@ func (s *proxyServer) sendToOrigin(line string) error {
 	return nil
 }
 
+func (s *proxyServer) sendToClient(line string) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	if _, err := s.clientWriter.WriteString(line + "\r\n"); err != nil {
+		return err
+	}
+	if err := s.clientWriter.Flush(); err != nil {
+		return err
+	}
+
+	s.log.debug("send to client: %s", line)
+	return nil
+}
+
 func (s *proxyServer) responseProxy() error {
-	return s.start(s.originReader, s.clientWriter)
+	return s.startProxy()
 }
 
 func (s *proxyServer) suspend() {
@@ -169,6 +185,10 @@ func (s *proxyServer) Close() error {
 		}
 	}
 
+	if s.dataConnector != nil {
+		s.DestroyDataHandler()
+	}
+
 	return nil
 }
 
@@ -176,23 +196,45 @@ func (s *proxyServer) GetConn() net.Conn {
 	return s.origin
 }
 
+// basically, this function never called during data transfer
+// in progress, so block by chan is not necessary.
 func (s *proxyServer) SetDataHandler(handler *dataHandler) {
-	// only one data connection available in same time.
+	// cleanup previous data connector.
 	if s.dataConnector != nil {
-		// if already had previous data handler in use, wait until end.
-		if s.dataConnector.proxyHandlerAttached {
-			s.dataConnector.waitTransferEnd = true
-			s.dataConnector.proxyHandlerAttached = false
-			<-s.dataConnector.transferDone
-			s.dataConnector.waitTransferEnd = false
-		}
-
-		// after sent response for previous data command, close it for use new data handler.
-		s.dataConnector.Close()
+		s.DestroyDataHandler()
 	}
 
 	s.dataConnector = handler
-	s.dataConnector.proxyHandlerAttached = true
+}
+
+// Destroy data handler
+func (s *proxyServer) DestroyDataHandler() {
+	if s.dataConnector != nil {
+		connectionCloser(s.dataConnector, s.log)
+	}
+}
+
+// return true when data handler is available now
+func (s *proxyServer) isDataHandlerAvailable() bool {
+	if s.dataConnector == nil {
+		return false
+	}
+
+	return !s.dataConnector.isClosed()
+}
+
+// return true when data transfer in progress
+func (s *proxyServer) isDataTransferStarted() bool {
+	if s.dataConnector == nil {
+		return false
+	}
+
+	return s.dataConnector.isStarted()
+}
+
+// return switch origin & user logged in state
+func (s *proxyServer) isLoggedIn() bool {
+	return s.isLoggedin
 }
 
 func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) error {
@@ -219,10 +261,8 @@ func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) erro
 	return err
 }
 
-/* send command before login to origin.                  *
-*  TLS version set by client to pftp tls version         *
-*  because client/pftp/origin must set same TLS version. */
-func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []string) error {
+// send command before login to origin
+func (s *proxyServer) sendTLSCommand(previousTLSCommands []string) error {
 	lastError := error(nil)
 
 	for _, cmd := range previousTLSCommands {
@@ -241,7 +281,7 @@ func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []s
 				return fmt.Errorf("failed to make TLS connection")
 			}
 
-			s.log.debug("response from origin: %s", str)
+			s.log.debug("response from origin: %s", strings.TrimSuffix(str, "\r\n"))
 
 			if strings.Compare(strings.ToUpper(getCommand(cmd)[0]), "AUTH") == 0 {
 				code := getCode(str)[0]
@@ -259,18 +299,18 @@ func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []s
 						break
 					}
 				} else {
-					config := tls.Config{
-						InsecureSkipVerify: true,
-						MinVersion:         tlsProtocol,
-						MaxVersion:         tlsProtocol,
+					// SSL/TLS wrapping on connection
+					tlsConn := tls.Client(s.origin, s.tlsDatas.forOrigin.getTLSConfig())
+					err = tlsConn.Handshake()
+					if err != nil {
+						return fmt.Errorf("TLS handshake with origin has failed")
 					}
 
-					// SSL/TLS wrapping on connection
-					s.origin = tls.Client(s.origin, &config)
+					s.log.debug("TLS control connection finished with origin. TLS protocol version: %s and Cipher Suite: %s", getTLSProtocolName(tlsConn.ConnectionState().Version), tls.CipherSuiteName(tlsConn.ConnectionState().CipherSuite))
+
+					s.origin = tlsConn
 					s.originReader = bufio.NewReader(s.origin)
 					s.originWriter = bufio.NewWriter(s.origin)
-
-					s.log.debug("TLS connection established")
 
 					break
 				}
@@ -283,21 +323,19 @@ func (s *proxyServer) sendTLSCommand(tlsProtocol uint16, previousTLSCommands []s
 	return lastError
 }
 
-func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProtocol uint16, previousTLSCommands []string) error {
+func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, previousTLSCommands []string) error {
 	// return error when user not found
 	if len(originAddr) == 0 {
 		return fmt.Errorf("user id not found")
 	}
 
 	// if client switched before, return error
-	if s.isSwitched {
+	if s.isLoggedin {
 		return fmt.Errorf("origin already switched")
 	}
 
 	s.log.info("switch origin to: %s", originAddr)
 	var err error
-
-	s.isSwitched = true
 
 	if s.passThrough {
 		s.suspend()
@@ -319,9 +357,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	}()
 
 	// change connection and reset reader and writer buffer
-	s.origin, err = net.DialTimeout("tcp",
-		originAddr,
-		time.Duration(connectionTimeout)*time.Second)
+	s.origin, err = net.DialTimeout("tcp", originAddr, time.Duration(connectionTimeout)*time.Second)
 	if err != nil {
 		return err
 	}
@@ -342,7 +378,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 		return errors.New("cannot connect to new origin server")
 	}
 
-	s.log.debug("response from new origin: %s", res)
+	s.log.debug("response from new origin: %s", strings.TrimSuffix(res, "\r\n"))
 
 	// set linger 0 and tcp keepalive setting between switched origin connection
 	tcpConn := s.origin.(*net.TCPConn)
@@ -353,7 +389,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	s.origin = tcpConn
 
 	// If client connect with TLS connection, make TLS connection to origin ftp server too.
-	if err := s.sendTLSCommand(tlsProtocol, previousTLSCommands); err != nil {
+	if err := s.sendTLSCommand(previousTLSCommands); err != nil {
 		return err
 	}
 
@@ -363,7 +399,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, tlsProt
 	return lastError
 }
 
-func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
+func (s *proxyServer) startProxy() error {
 	// return if proxy still unsuspended or s.stop is true
 	if s.stop || !s.passThrough {
 		return nil
@@ -378,7 +414,7 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 	go func() {
 		for {
 			s.isDataCommandResponse = false
-			buff, err := from.ReadString('\n')
+			buff, err := s.originReader.ReadString('\n')
 			if err != nil {
 				if !s.stop {
 					safeSetChanel(errchan, err)
@@ -387,18 +423,23 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 			} else {
 				if s.config.ProxyTimeout > 0 {
 					// do not time out during transfer data
-					if *s.inDataTransfer {
+					if atomic.LoadInt32(s.inDataTransfer) == 1 {
 						s.origin.SetDeadline(time.Time{})
 					} else {
 						s.origin.SetDeadline(time.Now().Add(time.Duration(s.config.ProxyTimeout) * time.Second))
 					}
 				}
 
-				s.log.debug("response from origin: %s", buff)
+				s.log.debug("response from origin: %s", strings.TrimSuffix(buff, "\r\n"))
 
 				// response user setted welcome message
-				if strings.Compare(getCode(buff)[0], "220") == 0 && !s.isSwitched {
+				if strings.Compare(getCode(buff)[0], "220") == 0 && !s.isLoggedin {
 					buff = s.welcomeMsg
+				}
+
+				// check login and switch origin success
+				if strings.Compare(getCode(buff)[0], "230") == 0 {
+					s.isLoggedin = true
 				}
 
 				// when got 500 PROXY not understood, ignore it
@@ -411,7 +452,7 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 				}
 
 				// is data channel proxy used
-				if s.config.DataChanProxy && s.isSwitched {
+				if s.config.DataChanProxy && s.isLoggedin {
 					if strings.HasPrefix(buff, "227 ") {
 						s.isDataCommandResponse = true
 						s.dataConnector.parsePASVresponse(buff)
@@ -425,9 +466,6 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 					}
 
 					if s.isDataCommandResponse {
-						// start data transfer
-						go s.dataConnector.StartDataTransfer()
-
 						switch s.dataConnector.clientConn.mode {
 						case "PORT", "EPRT":
 							buff = fmt.Sprintf("200 %s command successful\r\n", s.dataConnector.clientConn.mode)
@@ -453,7 +491,7 @@ func (s *proxyServer) start(from *bufio.Reader, to *bufio.Writer) error {
 					multiLine := buff
 
 					for {
-						res, err := from.ReadString('\n')
+						res, err := s.originReader.ReadString('\n')
 						if err != nil {
 							safeSetChanel(errchan, err)
 							done <- struct{}{}
@@ -484,20 +522,11 @@ loop:
 	for {
 		select {
 		case b := <-read:
-			s.mutex.Lock()
-			if _, err := to.WriteString(b); err != nil {
+			if err := s.sendToClient(strings.TrimRight(b, "\r\n")); err != nil {
 				if !strings.Contains(err.Error(), alreadyClosedMsg) {
 					s.log.err("error on write response to client: %s, err: %s", strings.TrimSuffix(b, "\r\n"), err.Error())
 				}
 			}
-
-			if err := to.Flush(); err != nil {
-				if !strings.Contains(err.Error(), alreadyClosedMsg) {
-					s.log.err("error on flush client writer: %s, err: %s", strings.TrimSuffix(b, "\r\n"), err.Error())
-				}
-			}
-			s.mutex.Unlock()
-			s.log.debug("response to client: %s", b)
 			send <- struct{}{}
 		case err := <-errchan:
 			lastError = err
@@ -516,24 +545,15 @@ loop:
 	}
 	<-done
 
-	if s.dataConnector != nil {
-		if s.dataConnector.waitTransferEnd {
-			s.dataConnector.transferDone <- struct{}{}
-			s.dataConnector.waitTransferEnd = false
-			s.dataConnector.proxyHandlerAttached = false
-		}
-		s.dataConnector.Close()
-	}
-
 	return lastError
 }
 
 // Hide parameters from log
 func (s *proxyServer) commandLog(line string) {
 	if strings.Compare(strings.ToUpper(getCommand(line)[0]), secureCommand) == 0 {
-		s.log.debug("send to origin: %s ********\r\n", secureCommand)
+		s.log.debug("send to origin: %s ********", secureCommand)
 	} else {
-		s.log.debug("send to origin: %s", line)
+		s.log.debug("send to origin: %s", strings.TrimSuffix(line, "\r\n"))
 	}
 }
 

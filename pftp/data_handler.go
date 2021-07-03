@@ -1,6 +1,7 @@
 package pftp
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -8,20 +9,29 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
 )
 
+const (
+	uploadStream   = "upload"
+	downloadStream = "download"
+	abortStream    = "abort"
+)
+
 type dataHandler struct {
-	clientConn           connector
-	originConn           connector
-	config               *config
-	log                  *logger
-	inDataTransfer       *bool
-	proxyHandlerAttached bool
-	waitTransferEnd      bool
-	transferDone         chan struct{}
+	clientConn         connector
+	originConn         connector
+	config             *config
+	log                *logger
+	tlsDataSet         *tlsDataSet
+	needTLSForTransfer *int32
+	inDataTransfer     *int32
+	closed             bool
+	mutex              *sync.Mutex
 }
 
 type connector struct {
@@ -39,7 +49,7 @@ type connector struct {
 }
 
 // Make listener for data connection
-func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn net.Conn, mode string, inDataTransfer *bool) (*dataHandler, error) {
+func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn net.Conn, mode string, tlsDataSet *tlsDataSet, transferOverTLS *int32, inDataTransfer *int32) (*dataHandler, error) {
 	var err error
 
 	d := &dataHandler{
@@ -59,12 +69,13 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 			isClient:         true,
 			mode:             mode,
 		},
-		config:               config,
-		log:                  log,
-		inDataTransfer:       inDataTransfer,
-		proxyHandlerAttached: false,
-		waitTransferEnd:      false,
-		transferDone:         make(chan struct{}),
+		config:             config,
+		log:                log,
+		inDataTransfer:     inDataTransfer,
+		tlsDataSet:         tlsDataSet,
+		needTLSForTransfer: transferOverTLS,
+		closed:             false,
+		mutex:              &sync.Mutex{},
 	}
 
 	if d.originConn.communicaionConn != nil {
@@ -151,6 +162,7 @@ func (d *dataHandler) setNewListener() (*net.TCPListener, error) {
 	var listener *net.TCPListener
 	var lAddr *net.TCPAddr
 	var err error
+
 	// reallocate listener port when selected port is busy until LISTEN_TIMEOUT
 	counter := 0
 	for {
@@ -186,96 +198,127 @@ func (d *dataHandler) setNewListener() (*net.TCPListener, error) {
 
 // close all connection and listener
 func (d *dataHandler) Close() error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	// return nil when handler already closed
+	if d.closed {
+		return nil
+	}
+
 	lastErr := error(nil)
 
 	// close net.Conn
 	if d.clientConn.dataConn != nil {
 		if err := d.clientConn.dataConn.Close(); err != nil {
 			if !strings.Contains(err.Error(), alreadyClosedMsg) {
-				d.log.err("origin data connection close error: %s", err.Error())
-				lastErr = err
+				lastErr = fmt.Errorf("client data connection close error: %s", err.Error())
 			}
 		}
+		d.clientConn.dataConn = nil
 	}
 	if d.originConn.dataConn != nil {
 		if err := d.originConn.dataConn.Close(); err != nil {
 			if !strings.Contains(err.Error(), alreadyClosedMsg) {
-				d.log.err("origin data connection close error: %s", err.Error())
-				lastErr = err
+				lastErr = fmt.Errorf("origin data connection close error: %s", err.Error())
 			}
 		}
+		d.originConn.dataConn = nil
 	}
 
 	// close listener
 	if d.clientConn.listener != nil {
 		if err := d.clientConn.listener.Close(); err != nil {
 			if !strings.Contains(err.Error(), alreadyClosedMsg) {
-				d.log.err("client data listener close error: %s", err.Error())
-				lastErr = err
+				lastErr = fmt.Errorf("client data listener close error: %s", err.Error())
 			}
 		}
+		d.clientConn.listener = nil
 	}
 	if d.originConn.listener != nil {
 		if err := d.originConn.listener.Close(); err != nil {
 			if !strings.Contains(err.Error(), alreadyClosedMsg) {
-				d.log.err("origin data listener close error: %s", err.Error())
-				lastErr = err
+				lastErr = fmt.Errorf("origin data listener close error: %s", err.Error())
 			}
 		}
+		d.originConn.listener = nil
 	}
 
-	if d.waitTransferEnd {
-		d.transferDone <- struct{}{}
-		d.waitTransferEnd = false
-	}
-
-	d.proxyHandlerAttached = false
-
-	if lastErr == nil {
-		d.log.debug("proxy data channel disconnected")
-	}
+	d.closed = true
+	d.log.debug("proxy data channel disconnected")
 
 	return lastErr
 }
 
-// Make listener for data connection
-func (d *dataHandler) StartDataTransfer() error {
-	var err error
+// return current handler closed state
+func (d *dataHandler) isClosed() bool {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
 
-	eg := errgroup.Group{}
+	return d.closed
+}
+
+// return true when handler start transfer progress
+func (d *dataHandler) isStarted() bool {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	return atomic.LoadInt32(d.inDataTransfer) == 1
+}
+
+// Make listener for data connection
+// func (d *dataHandler) StartDataTransfer(direction <-chan string, wantDataDirection *int32) error {
+func (d *dataHandler) StartDataTransfer(direction string) error {
+	var err error
 
 	defer connectionCloser(d, d.log)
 
+	eg := errgroup.Group{}
+
 	// make data connection (origin first)
-	if err := d.originListenOrDial(); err != nil {
-		d.log.debug("data channel with origin creation failed")
+	eg.Go(func() error {
+		if err := d.originListenOrDial(); err != nil {
+			connectionCloser(d, d.log)
+			return err
+		}
+
+		return nil
+	})
+	eg.Go(func() error {
+		if err := d.clientListenOrDial(); err != nil {
+			connectionCloser(d, d.log)
+			return err
+		}
+
+		return nil
+	})
+
+	// wait until copy goroutine end
+	if err := eg.Wait(); err != nil {
+		if strings.Contains(err.Error(), "EOF") {
+			d.log.debug("data connection aborted by EOF")
+		} else {
+			d.log.err("data connection creation failed: %s", err.Error())
+		}
 
 		return err
 	}
-	if err := d.clientListenOrDial(); err != nil {
-		d.log.debug("data channel with client creation failed")
 
-		return err
-	}
+	d.log.debug("start %s data transfer", direction)
 
 	// do not timeout communication connection during data transfer
-	*d.inDataTransfer = true
+	atomic.StoreInt32(d.inDataTransfer, 1)
 	d.clientConn.communicaionConn.SetDeadline(time.Time{})
 	d.originConn.communicaionConn.SetDeadline(time.Time{})
 
-	// client to origin
-	eg.Go(func() error { return d.dataTransfer(d.clientConn.dataConn, d.originConn.dataConn) })
-
-	// origin to client
-	eg.Go(func() error { return d.dataTransfer(d.originConn.dataConn, d.clientConn.dataConn) })
-
-	// wait until data transfer goroutine end
-	if err = eg.Wait(); err != nil {
-		d.log.err(err.Error())
+	if err := d.run(); err != nil {
+		d.log.err("got error on %s data transfer: %s", direction, err.Error())
+	} else {
+		d.log.debug("%s data transfer finished", direction)
 	}
 
 	// set timeout to each connection
-	*d.inDataTransfer = false
+	atomic.StoreInt32(d.inDataTransfer, 0)
 	d.clientConn.communicaionConn.SetDeadline(time.Now().Add(time.Duration(d.config.IdleTimeout) * time.Second))
 	d.originConn.communicaionConn.SetDeadline(time.Now().Add(time.Duration(d.config.ProxyTimeout) * time.Second))
 
@@ -286,23 +329,27 @@ func (d *dataHandler) StartDataTransfer() error {
 func (d *dataHandler) clientListenOrDial() error {
 	// if client connect needs listen, open listener
 	if d.clientConn.needsListen {
+		d.mutex.Lock()
+		if d.closed {
+			d.mutex.Unlock()
+			return errors.New("abort: data handler already closed")
+		}
+		listener := d.clientConn.listener
+		d.mutex.Unlock()
+
 		// set listener timeout
-		d.clientConn.listener.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
+		listener.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
 
-		conn, err := d.clientConn.listener.AcceptTCP()
-		if err != nil || conn == nil {
-			if !strings.Contains(err.Error(), alreadyClosedMsg) {
-				d.log.err("error on client connection listen: %v, %s", conn, err.Error())
-			}
-
+		conn, err := listener.AcceptTCP()
+		if err != nil {
 			return err
 		}
 
 		d.log.debug("client connected from %s", conn.RemoteAddr().String())
-		d.log.debug("close listener %s", d.clientConn.listener.Addr().String())
+		d.log.debug("close listener %s", listener.Addr().String())
 
 		// release listener for reuse
-		if err := d.clientConn.listener.Close(); err != nil {
+		if err := listener.Close(); err != nil {
 			if !strings.Contains(err.Error(), alreadyClosedMsg) {
 				d.log.err("cannot close client data listener: %s", err.Error())
 			}
@@ -323,8 +370,7 @@ func (d *dataHandler) clientListenOrDial() error {
 		// when connect to client(use active mode), dial to client use port 20 only
 		lAddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort("", "20"))
 		if err != nil {
-			d.log.err("cannot resolve local address")
-			return err
+			return fmt.Errorf("cannot resolve local address: %s", err.Error())
 		}
 		// set port reuse and local address
 		netDialer := net.Dialer{
@@ -334,13 +380,9 @@ func (d *dataHandler) clientListenOrDial() error {
 		}
 
 		conn, err = netDialer.Dial("tcp", net.JoinHostPort(d.clientConn.remoteIP, d.clientConn.remotePort))
-
-		if err != nil || conn == nil {
-			d.log.err("cannot connect to client data address: %v, %s", conn, err.Error())
-			return err
+		if err != nil {
+			return fmt.Errorf("cannot connect to client data address: %v, %s", conn, err.Error())
 		}
-
-		d.log.debug("connect to client %s", conn.RemoteAddr().String())
 
 		// set linger 0 and tcp keepalive setting between client connection
 		tcpConn := conn.(*net.TCPConn)
@@ -351,6 +393,35 @@ func (d *dataHandler) clientListenOrDial() error {
 		d.clientConn.dataConn = tcpConn
 	}
 
+	if atomic.LoadInt32(d.needTLSForTransfer) == 1 {
+		if d.tlsDataSet.forClient.getTLSConfig() == nil {
+			return errors.New("cannot get client TLS config for data transfer. abort data transfer")
+		}
+
+		d.mutex.Lock()
+		if d.closed {
+			d.mutex.Unlock()
+			return errors.New("abort: data handler already closed")
+		}
+		dataConn := d.clientConn.dataConn
+		d.mutex.Unlock()
+
+		tlsConn := tls.Server(dataConn, d.tlsDataSet.forClient.getTLSConfig())
+		if err := tlsConn.Handshake(); err != nil {
+			return fmt.Errorf("TLS client data connection handshake got error: %v", err)
+		}
+		d.log.debug("TLS data connection with client has set. TLS protocol version: %s and Cipher Suite: %s. (resumed?: %v)", getTLSProtocolName(tlsConn.ConnectionState().Version), tls.CipherSuiteName(tlsConn.ConnectionState().CipherSuite), tlsConn.ConnectionState().DidResume)
+
+		d.clientConn.dataConn = tlsConn
+	}
+
+	// set transfer timeout to data connection
+	d.mutex.Lock()
+	if !d.closed {
+		d.clientConn.dataConn.SetDeadline(time.Now().Add(time.Duration(d.config.TransferTimeout) * time.Second))
+	}
+	d.mutex.Unlock()
+
 	return nil
 }
 
@@ -358,21 +429,27 @@ func (d *dataHandler) clientListenOrDial() error {
 func (d *dataHandler) originListenOrDial() error {
 	// if origin connect needs listen, open listener
 	if d.originConn.needsListen {
+		d.mutex.Lock()
+		if d.closed {
+			d.mutex.Unlock()
+			return errors.New("abort: data handler already closed")
+		}
+		listener := d.originConn.listener
+		d.mutex.Unlock()
+
 		// set listener timeout
-		d.originConn.listener.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
+		listener.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
 
-		conn, err := d.originConn.listener.AcceptTCP()
-		if err != nil || conn == nil {
-			d.log.err("error on origin connection listen: %v, %s", conn, err.Error())
-
+		conn, err := listener.AcceptTCP()
+		if err != nil {
 			return err
 		}
 
 		d.log.debug("origin connected from %s", conn.RemoteAddr().String())
-		d.log.debug("close listener %s", d.originConn.listener.Addr().String())
+		d.log.debug("close listener %s", listener.Addr().String())
 
 		// release listener for reuse
-		if err := d.originConn.listener.Close(); err != nil {
+		if err := listener.Close(); err != nil {
 			if !strings.Contains(err.Error(), alreadyClosedMsg) {
 				d.log.err("cannot close origin data listener: %s", err.Error())
 			}
@@ -396,11 +473,8 @@ func (d *dataHandler) originListenOrDial() error {
 			net.JoinHostPort(d.originConn.remoteIP, d.originConn.remotePort),
 			time.Duration(connectionTimeout)*time.Second,
 		)
-
-		if err != nil || conn == nil {
-			d.log.debug("cannot connect to origin data address: %v, %s", conn, err.Error())
-
-			return err
+		if err != nil {
+			return fmt.Errorf("cannot connect to origin data address: %v, %s", conn, err.Error())
 		}
 
 		d.log.debug("connected to origin %s", conn.RemoteAddr().String())
@@ -414,26 +488,92 @@ func (d *dataHandler) originListenOrDial() error {
 		d.originConn.dataConn = tcpConn
 	}
 
+	// set TLS session.
+	if atomic.LoadInt32(d.needTLSForTransfer) == 1 {
+		if d.tlsDataSet.forOrigin.getTLSConfig() == nil {
+			return errors.New("cannot get origin TLS config for data transfer. abort data transfer")
+		}
+
+		d.mutex.Lock()
+		if d.closed {
+			d.mutex.Unlock()
+			return errors.New("abort: data handler already closed")
+		}
+		dataConn := d.originConn.dataConn
+		d.mutex.Unlock()
+
+		tlsConn := tls.Client(dataConn, d.tlsDataSet.forOrigin.getTLSConfig())
+		if err := tlsConn.Handshake(); err != nil {
+			return fmt.Errorf("TLS origin data connection handshake got error: %v", err)
+		}
+		d.log.debug("TLS data connection with origin has set. TLS protocol version: %s and Cipher Suite: %s. (resumed?: %v)", getTLSProtocolName(tlsConn.ConnectionState().Version), tls.CipherSuiteName(tlsConn.ConnectionState().CipherSuite), tlsConn.ConnectionState().DidResume)
+
+		d.originConn.dataConn = tlsConn
+	}
+
+	// set transfer timeout to data connection
+	d.mutex.Lock()
+	if !d.closed {
+		d.originConn.dataConn.SetDeadline(time.Now().Add(time.Duration(d.config.TransferTimeout) * time.Second))
+	}
+	d.mutex.Unlock()
+
 	return nil
 }
 
-// send data until got EOF or error on connection
-func (d *dataHandler) dataTransfer(reader net.Conn, writer net.Conn) error {
+// make full duplex connection between client and origin sockets
+func (d *dataHandler) run() error {
+	eg := errgroup.Group{}
+
+	// origin to client
+	eg.Go(func() error {
+		return d.copyPackets(d.clientConn.dataConn, d.originConn.dataConn, d.config.TransferTimeout)
+	})
+	// client to origin
+	eg.Go(func() error {
+		return d.copyPackets(d.originConn.dataConn, d.clientConn.dataConn, d.config.TransferTimeout)
+	})
+
+	// wait until copy goroutine end
+	err := eg.Wait()
+
+	return err
+}
+
+// send src packet to dst.
+// replace io.Copy function to manual coding because io.Copy
+// function can not increase src conn's deadline per each read.
+func (d *dataHandler) copyPackets(dst net.Conn, src net.Conn, timeout int) error {
 	lastErr := error(nil)
+	buff := make([]byte, bufferSize)
 
-	buffer := make([]byte, dataTransferBufferSize)
-	if _, err := io.CopyBuffer(writer, reader, buffer); err != nil {
-		lastErr = fmt.Errorf("got error on data transfer: %s", err.Error())
+	for {
+		// check about aborted from outside of handler
+		if d.isClosed() {
+			break
+		}
+
+		n, err := src.Read(buff)
+		if n > 0 {
+			// stop coping when failed to write dst socket
+			if _, err := dst.Write(buff[:n]); err != nil {
+				dst.Close()
+				break
+			}
+			// increase data transfer timeout
+			src.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+		}
+		if err != nil {
+			if err == io.EOF {
+				// got EOF from src, send EOF to dst
+				lastErr = sendEOF(dst)
+			} else {
+				lastErr = err
+			}
+
+			break
+		}
 	}
-
-	// send EOF to writer. if fail, close connection
-	if err := sendEOF(writer); err != nil {
-		writer.Close()
-	}
-
-	// set deadline each conn when data transfer complete
-	reader.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
-	writer.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
 
 	return lastErr
 }

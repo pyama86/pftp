@@ -32,8 +32,11 @@ masquerade_ip = "127.0.0.1"
 
 [tls]
 ## Set SSL certification and secret key file's path
+## cipher_suite set by IANA ciphersuites. if not set, or no available names, use hardware default ciphersuites
 cert = "./tls/server.crt"
 key = "./tls/server.key"
+#cipher_suite = "TLS_RSA_WITH_AES_256_GCM_SHA384:TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA:TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+# ca_cert = "./tls/ca_cert.crt"
 
 ## Make sure TLS protocol range allowed in origin ftp server
 ## If only one protocol support, set min and max to same

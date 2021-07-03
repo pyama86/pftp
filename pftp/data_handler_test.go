@@ -82,7 +82,8 @@ func Test_dataHandler_parsePORTcommand(t *testing.T) {
 		},
 	}
 
-	inDataTransfer := false
+	transferInTLS := int32(0)
+	inDataTransfer := int32(0)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -93,6 +94,8 @@ func Test_dataHandler_parsePORTcommand(t *testing.T) {
 				nil,
 				nil,
 				tt.fields.mode,
+				nil,
+				&transferInTLS,
 				&inDataTransfer,
 			)
 			err := d.parsePORTcommand(tt.fields.line)
@@ -206,7 +209,8 @@ func Test_dataHandler_parseEPRTcommand(t *testing.T) {
 		},
 	}
 
-	inDataTransfer := false
+	transferInTLS := int32(0)
+	inDataTransfer := int32(0)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -217,6 +221,8 @@ func Test_dataHandler_parseEPRTcommand(t *testing.T) {
 				nil,
 				nil,
 				tt.fields.mode,
+				nil,
+				&transferInTLS,
 				&inDataTransfer,
 			)
 			err := d.parseEPRTcommand(tt.fields.line)
@@ -316,7 +322,8 @@ func Test_dataHandler_parsePASVresponse(t *testing.T) {
 		},
 	}
 
-	inDataTransfer := false
+	transferInTLS := int32(0)
+	inDataTransfer := int32(0)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -327,6 +334,8 @@ func Test_dataHandler_parsePASVresponse(t *testing.T) {
 				nil,
 				nil,
 				tt.fields.mode,
+				nil,
+				&transferInTLS,
 				&inDataTransfer,
 			)
 			err := d.parsePASVresponse(tt.fields.line)
@@ -412,7 +421,8 @@ func Test_dataHandler_parseEPSV(t *testing.T) {
 		},
 	}
 
-	inDataTransfer := false
+	transferInTLS := int32(0)
+	inDataTransfer := int32(0)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -423,6 +433,8 @@ func Test_dataHandler_parseEPSV(t *testing.T) {
 				nil,
 				nil,
 				tt.fields.mode,
+				nil,
+				&transferInTLS,
 				&inDataTransfer,
 			)
 			err := d.parseEPSVresponse(tt.fields.line)

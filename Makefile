@@ -92,4 +92,4 @@ integration:
 	$(GO) test $(VERBOSE) -timeout=300s -integration $(TEST) $(TEST_OPTIONS)
 	./misc/server stop
 
-.PHONY: default dist test
+.PHONY: default dist test ftp proftpd vsftpd help ghr build server
