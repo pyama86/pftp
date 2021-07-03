@@ -327,25 +327,29 @@ func (d *dataHandler) StartDataTransfer(direction string) error {
 
 // make client connection
 func (d *dataHandler) clientListenOrDial() error {
-	if d.isClosed() {
-		return errors.New("abort: data handler already closed")
-	}
-
 	// if client connect needs listen, open listener
 	if d.clientConn.needsListen {
-		// set listener timeout
-		d.clientConn.listener.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
+		d.mutex.Lock()
+		if d.closed {
+			d.mutex.Unlock()
+			return errors.New("abort: data handler already closed")
+		}
+		listener := d.clientConn.listener
+		d.mutex.Unlock()
 
-		conn, err := d.clientConn.listener.AcceptTCP()
+		// set listener timeout
+		listener.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
+
+		conn, err := listener.AcceptTCP()
 		if err != nil {
 			return err
 		}
 
 		d.log.debug("client connected from %s", conn.RemoteAddr().String())
-		d.log.debug("close listener %s", d.clientConn.listener.Addr().String())
+		d.log.debug("close listener %s", listener.Addr().String())
 
 		// release listener for reuse
-		if err := d.clientConn.listener.Close(); err != nil {
+		if err := listener.Close(); err != nil {
 			if !strings.Contains(err.Error(), alreadyClosedMsg) {
 				d.log.err("cannot close client data listener: %s", err.Error())
 			}
@@ -394,7 +398,15 @@ func (d *dataHandler) clientListenOrDial() error {
 			return errors.New("cannot get client TLS config for data transfer. abort data transfer")
 		}
 
-		tlsConn := tls.Server(d.clientConn.dataConn, d.tlsDataSet.forClient.getTLSConfig())
+		d.mutex.Lock()
+		if d.closed {
+			d.mutex.Unlock()
+			return errors.New("abort: data handler already closed")
+		}
+		dataConn := d.clientConn.dataConn
+		d.mutex.Unlock()
+
+		tlsConn := tls.Server(dataConn, d.tlsDataSet.forClient.getTLSConfig())
 		if err := tlsConn.Handshake(); err != nil {
 			return fmt.Errorf("TLS client data connection handshake got error: %v", err)
 		}
@@ -404,32 +416,40 @@ func (d *dataHandler) clientListenOrDial() error {
 	}
 
 	// set transfer timeout to data connection
-	d.clientConn.dataConn.SetDeadline(time.Now().Add(time.Duration(d.config.TransferTimeout) * time.Second))
+	d.mutex.Lock()
+	if !d.closed {
+		d.clientConn.dataConn.SetDeadline(time.Now().Add(time.Duration(d.config.TransferTimeout) * time.Second))
+	}
+	d.mutex.Unlock()
 
 	return nil
 }
 
 // make origin connection
 func (d *dataHandler) originListenOrDial() error {
-	if d.isClosed() {
-		return errors.New("abort: data handler already closed")
-	}
-
 	// if origin connect needs listen, open listener
 	if d.originConn.needsListen {
-		// set listener timeout
-		d.originConn.listener.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
+		d.mutex.Lock()
+		if d.closed {
+			d.mutex.Unlock()
+			return errors.New("abort: data handler already closed")
+		}
+		listener := d.originConn.listener
+		d.mutex.Unlock()
 
-		conn, err := d.originConn.listener.AcceptTCP()
+		// set listener timeout
+		listener.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
+
+		conn, err := listener.AcceptTCP()
 		if err != nil {
 			return err
 		}
 
 		d.log.debug("origin connected from %s", conn.RemoteAddr().String())
-		d.log.debug("close listener %s", d.originConn.listener.Addr().String())
+		d.log.debug("close listener %s", listener.Addr().String())
 
 		// release listener for reuse
-		if err := d.originConn.listener.Close(); err != nil {
+		if err := listener.Close(); err != nil {
 			if !strings.Contains(err.Error(), alreadyClosedMsg) {
 				d.log.err("cannot close origin data listener: %s", err.Error())
 			}
@@ -474,7 +494,15 @@ func (d *dataHandler) originListenOrDial() error {
 			return errors.New("cannot get origin TLS config for data transfer. abort data transfer")
 		}
 
-		tlsConn := tls.Client(d.originConn.dataConn, d.tlsDataSet.forOrigin.getTLSConfig())
+		d.mutex.Lock()
+		if d.closed {
+			d.mutex.Unlock()
+			return errors.New("abort: data handler already closed")
+		}
+		dataConn := d.originConn.dataConn
+		d.mutex.Unlock()
+
+		tlsConn := tls.Client(dataConn, d.tlsDataSet.forOrigin.getTLSConfig())
 		if err := tlsConn.Handshake(); err != nil {
 			return fmt.Errorf("TLS origin data connection handshake got error: %v", err)
 		}
@@ -484,29 +512,26 @@ func (d *dataHandler) originListenOrDial() error {
 	}
 
 	// set transfer timeout to data connection
-	d.originConn.dataConn.SetDeadline(time.Now().Add(time.Duration(d.config.TransferTimeout) * time.Second))
+	d.mutex.Lock()
+	if !d.closed {
+		d.originConn.dataConn.SetDeadline(time.Now().Add(time.Duration(d.config.TransferTimeout) * time.Second))
+	}
+	d.mutex.Unlock()
 
 	return nil
 }
 
 // make full duplex connection between client and origin sockets
 func (d *dataHandler) run() error {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
-	if d.closed {
-		return errors.New("abort: data handler already closed")
-	}
-
 	eg := errgroup.Group{}
 
 	// origin to client
 	eg.Go(func() error {
-		return copyPackets(d.clientConn.dataConn, d.originConn.dataConn, d.config.TransferTimeout)
+		return d.copyPackets(d.clientConn.dataConn, d.originConn.dataConn, d.config.TransferTimeout)
 	})
 	// client to origin
 	eg.Go(func() error {
-		return copyPackets(d.originConn.dataConn, d.clientConn.dataConn, d.config.TransferTimeout)
+		return d.copyPackets(d.originConn.dataConn, d.clientConn.dataConn, d.config.TransferTimeout)
 	})
 
 	// wait until copy goroutine end
@@ -518,11 +543,16 @@ func (d *dataHandler) run() error {
 // send src packet to dst.
 // replace io.Copy function to manual coding because io.Copy
 // function can not increase src conn's deadline per each read.
-func copyPackets(dst net.Conn, src net.Conn, timeout int) error {
+func (d *dataHandler) copyPackets(dst net.Conn, src net.Conn, timeout int) error {
 	lastErr := error(nil)
 	buff := make([]byte, bufferSize)
 
 	for {
+		// check about aborted from outside of handler
+		if d.isClosed() {
+			break
+		}
+
 		n, err := src.Read(buff)
 		if n > 0 {
 			// stop coping when failed to write dst socket
