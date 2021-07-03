@@ -13,12 +13,14 @@ import (
 
 func (c *clientHandler) handleUSER() *result {
 	// make fail when try to login after logged in
-	if c.proxy.isLoggedIn() {
-		return &result{
-			code: 500,
-			msg:  "Already logged in",
-			err:  fmt.Errorf("already logged in"),
-			log:  c.log,
+	if c.proxy != nil {
+		if c.proxy.isLoggedIn() {
+			return &result{
+				code: 500,
+				msg:  "Already logged in",
+				err:  fmt.Errorf("already logged in"),
+				log:  c.log,
+			}
 		}
 	}
 
