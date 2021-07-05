@@ -307,7 +307,6 @@ func (d *dataHandler) StartDataTransfer(direction string) error {
 	d.log.debug("start %s data transfer", direction)
 
 	// do not timeout communication connection during data transfer
-	atomic.StoreInt32(d.inDataTransfer, 1)
 	d.clientConn.communicaionConn.SetDeadline(time.Time{})
 	d.originConn.communicaionConn.SetDeadline(time.Time{})
 
