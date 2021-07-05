@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	logrus_stack "github.com/Gurpartap/logrus-stack"
-	"github.com/heat1024/pftp/example/webapi"
-	"github.com/heat1024/pftp/pftp"
+	"github.com/pyama86/pftp/example/webapi"
+	"github.com/pyama86/pftp/pftp"
 	"github.com/sirupsen/logrus"
 )
 
