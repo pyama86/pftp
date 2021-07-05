@@ -312,13 +312,6 @@ func (c *clientHandler) handleDATA() *result {
 			}
 		}
 
-		if !c.proxy.isDataHandlerAvailable() {
-			return &result{
-				code: 425,
-				msg:  "Can't open data connection",
-			}
-		}
-
 		// make new listener and store listener port
 		dataHandler, err := newDataHandler(
 			c.config,
@@ -376,6 +369,13 @@ func (c *clientHandler) handleDATA() *result {
 					err:  err,
 					log:  c.log,
 				}
+			}
+		}
+
+		if !c.proxy.isDataHandlerAvailable() {
+			return &result{
+				code: 425,
+				msg:  "Can't open data connection",
 			}
 		}
 
