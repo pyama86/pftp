@@ -245,6 +245,8 @@ func (d *dataHandler) Close() error {
 	}
 
 	d.closed = true
+	atomic.StoreInt32(d.inDataTransfer, 0)
+
 	d.log.debug("proxy data channel disconnected")
 
 	return lastErr
@@ -317,7 +319,6 @@ func (d *dataHandler) StartDataTransfer(direction string) error {
 	}
 
 	// set timeout to each connection
-	atomic.StoreInt32(d.inDataTransfer, 0)
 	d.clientConn.communicaionConn.SetDeadline(time.Now().Add(time.Duration(d.config.IdleTimeout) * time.Second))
 	d.originConn.communicaionConn.SetDeadline(time.Now().Add(time.Duration(d.config.ProxyTimeout) * time.Second))
 
