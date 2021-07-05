@@ -244,6 +244,9 @@ func (c *clientHandler) handleTransfer() *result {
 		}
 	}
 
+	// set transfer in progress flag to 1
+	atomic.StoreInt32(&c.inDataTransfer, 1)
+
 	// start data transfer by direction
 	switch c.command {
 	case "RETR", "LIST", "MLSD", "NLST":
@@ -366,6 +369,13 @@ func (c *clientHandler) handleDATA() *result {
 					err:  err,
 					log:  c.log,
 				}
+			}
+		}
+
+		if !c.proxy.isDataHandlerAvailable() {
+			return &result{
+				code: 425,
+				msg:  "Can't open data connection",
 			}
 		}
 

@@ -466,21 +466,25 @@ func (s *proxyServer) startProxy() error {
 					}
 
 					if s.isDataCommandResponse {
-						switch s.dataConnector.clientConn.mode {
-						case "PORT", "EPRT":
-							buff = fmt.Sprintf("200 %s command successful\r\n", s.dataConnector.clientConn.mode)
-						case "PASV":
-							// prepare PASV response line to client
-							_, lPort, _ := net.SplitHostPort(s.dataConnector.clientConn.listener.Addr().String())
-							listenPort, _ := strconv.Atoi(lPort)
-							buff = fmt.Sprintf("227 Entering Passive Mode (%s,%s,%s).\r\n",
-								strings.ReplaceAll(s.config.MasqueradeIP, ".", ","),
-								strconv.Itoa(listenPort/256),
-								strconv.Itoa(listenPort%256))
-						case "EPSV":
-							// prepare EPSV response line to client
-							_, listenPort, _ := net.SplitHostPort(s.dataConnector.clientConn.listener.Addr().String())
-							buff = fmt.Sprintf("229 Entering Extended Passive Mode (|||%s|).\r\n", listenPort)
+						if s.isDataHandlerAvailable() {
+							switch s.dataConnector.clientConn.mode {
+							case "PORT", "EPRT":
+								buff = fmt.Sprintf("200 %s command successful\r\n", s.dataConnector.clientConn.mode)
+							case "PASV":
+								// prepare PASV response line to client
+								_, lPort, _ := net.SplitHostPort(s.dataConnector.clientConn.listener.Addr().String())
+								listenPort, _ := strconv.Atoi(lPort)
+								buff = fmt.Sprintf("227 Entering Passive Mode (%s,%s,%s).\r\n",
+									strings.ReplaceAll(s.config.MasqueradeIP, ".", ","),
+									strconv.Itoa(listenPort/256),
+									strconv.Itoa(listenPort%256))
+							case "EPSV":
+								// prepare EPSV response line to client
+								_, listenPort, _ := net.SplitHostPort(s.dataConnector.clientConn.listener.Addr().String())
+								buff = fmt.Sprintf("229 Entering Extended Passive Mode (|||%s|).\r\n", listenPort)
+							}
+						} else {
+							buff = "425 Can't open data connection\r\n"
 						}
 					}
 				}
