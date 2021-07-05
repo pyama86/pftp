@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pyama86/pftp/test"
+	"github.com/heat1024/pftp/test"
 )
 
 func Test_clientHandler_handleCommands(t *testing.T) {
