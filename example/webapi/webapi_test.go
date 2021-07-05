@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/heat1024/pftp/test"
+	"github.com/pyama86/pftp/test"
 )
 
 func Test_restapi_RequestToServer(t *testing.T) {
