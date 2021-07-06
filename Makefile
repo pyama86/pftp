@@ -16,8 +16,6 @@ ci: depsdev ftp test lint integration ## Run test and more...
 
 depsdev: ## Installing dependencies for development
 	$(GO) get golang.org/x/lint/golint
-	$(GO) get -u github.com/tcnksm/ghr
-	$(GO) get github.com/mitchellh/gox
 
 test: ## Run test
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Testing$(RESET)"
