@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/heat1024/pftp.svg?branch=master)](https://travis-ci.org/heat1024/pftp)
+
 # pftp
 plaggable ftp proxy server
 

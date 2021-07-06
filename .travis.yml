@@ -3,18 +3,17 @@ sudo: required
 services:
   - docker
 before_install:
-- sudo apt-get -qqy update
-- sudo mkdir -p misc/test/data/prouser/stor
-- sudo mkdir -p misc/test/data/vsuser/stor
-- sudo chmod -R 777 misc/test/data
+  - sudo apt-get -qqy update
+  - sudo mkdir -p misc/test/data/prouser/stor
+  - sudo mkdir -p misc/test/data/vsuser/stor
+  - sudo chmod -R 777 misc/test/data
 
 script:
-- GO="GO111MODULE=on go" make ci
+  - GO="GO111MODULE=on go" make ci
+
 go:
-  - 1.15
+  - 1.15.5
 cache:
   directories:
     - misc/test/data
     - /go/src/github.com
-notifications:
-  slack: pepabo:CQkcN0cdvPSJvVsK2D48qYyV

@@ -16,17 +16,11 @@ ci: depsdev ftp test lint integration ## Run test and more...
 
 depsdev: ## Installing dependencies for development
 	$(GO) get golang.org/x/lint/golint
-	$(GO) get -u github.com/tcnksm/ghr
-	$(GO) get github.com/mitchellh/gox
 
 test: ## Run test
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Testing$(RESET)"
 	$(GO) test -v $(TEST) -timeout=5s -parallel=4
 	$(GO) test -race $(TEST)
-
-vet: ## Exec $(GO) vet
-	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Vetting$(RESET)"
-	$(GO) vet $(TEST)
 
 lint: ## Exec golint
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Linting$(RESET)"
@@ -38,14 +32,6 @@ server: ## Run server with gin
 build: ## Build as linux binary
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Building$(RESET)"
 	$(GO) build -o pftp_bin main.go
-
-
-ghr: ## Upload to Github releases without token check
-	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Releasing for Github$(RESET)"
-	ghr -u heat1024 v$(VERSION)-$(REVISION) pkg
-
-dist: build ## Upload to Github releases
-	@test -z $(GITHUB_TOKEN) || test -z $(GITHUB_API) || $(MAKE) ghr
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(INFO_COLOR)%-30s$(RESET) %s\n", $$1, $$2}'
@@ -92,4 +78,4 @@ integration:
 	$(GO) test $(VERBOSE) -timeout=300s -integration $(TEST) $(TEST_OPTIONS)
 	./misc/server stop
 
-.PHONY: default dist test ftp proftpd vsftpd help ghr build server
+.PHONY: default dist test ftp proftpd vsftpd help build server
