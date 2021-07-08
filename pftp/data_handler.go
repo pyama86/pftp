@@ -312,6 +312,9 @@ func (d *dataHandler) StartDataTransfer(direction string) error {
 	d.clientConn.communicaionConn.SetDeadline(time.Time{})
 	d.originConn.communicaionConn.SetDeadline(time.Time{})
 
+	// set transfer in progress flag to 1
+	atomic.StoreInt32(d.inDataTransfer, 1)
+
 	if err := d.run(); err != nil {
 		d.log.err("got error on %s data transfer: %s", direction, err.Error())
 	} else {

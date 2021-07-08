@@ -244,9 +244,6 @@ func (c *clientHandler) handleTransfer() *result {
 		}
 	}
 
-	// set transfer in progress flag to 1
-	atomic.StoreInt32(&c.inDataTransfer, 1)
-
 	// start data transfer by direction
 	switch c.command {
 	case "RETR", "LIST", "MLSD", "NLST":
