@@ -471,6 +471,12 @@ func (s *proxyServer) startProxy() error {
 						atomic.StoreInt32(s.inDataTransfer, 1)
 					}
 
+					// when got 226 from origin, it means data transfer finished
+					// set data transfer in p rogress flag to 0 for accept next data transfers
+					if strings.HasPrefix(buff, "226 ") {
+						atomic.StoreInt32(s.inDataTransfer, 0)
+					}
+
 					if s.isDataCommandResponse {
 						if s.isDataHandlerAvailable() {
 							switch s.dataConnector.clientConn.mode {
