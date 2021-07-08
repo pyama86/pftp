@@ -465,6 +465,12 @@ func (s *proxyServer) startProxy() error {
 						s.isDataCommandResponse = true
 					}
 
+					// when got 150 from origin, it means data transfer has started
+					// set transfer in progress flag to 1
+					if strings.HasPrefix(buff, "150 ") {
+						atomic.StoreInt32(s.inDataTransfer, 1)
+					}
+
 					if s.isDataCommandResponse {
 						if s.isDataHandlerAvailable() {
 							switch s.dataConnector.clientConn.mode {
