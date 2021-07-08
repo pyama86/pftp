@@ -276,9 +276,10 @@ func (d *dataHandler) StartDataTransfer(direction string) error {
 
 	eg := errgroup.Group{}
 
-	// make data connection (origin first)
+	// make data connection (client first)
+	clientConnnected := make(chan error)
 	eg.Go(func() error {
-		if err := d.originListenOrDial(); err != nil {
+		if err := d.clientListenOrDial(clientConnnected); err != nil {
 			connectionCloser(d, d.log)
 			return err
 		}
@@ -286,7 +287,7 @@ func (d *dataHandler) StartDataTransfer(direction string) error {
 		return nil
 	})
 	eg.Go(func() error {
-		if err := d.clientListenOrDial(); err != nil {
+		if err := d.originListenOrDial(clientConnnected); err != nil {
 			connectionCloser(d, d.log)
 			return err
 		}
@@ -327,7 +328,7 @@ func (d *dataHandler) StartDataTransfer(direction string) error {
 }
 
 // make client connection
-func (d *dataHandler) clientListenOrDial() error {
+func (d *dataHandler) clientListenOrDial(clientConnnected chan error) error {
 	// if client connect needs listen, open listener
 	if d.clientConn.needsListen {
 		d.mutex.Lock()
@@ -342,6 +343,7 @@ func (d *dataHandler) clientListenOrDial() error {
 		listener.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
 
 		conn, err := listener.AcceptTCP()
+		clientConnnected <- err
 		if err != nil {
 			return err
 		}
@@ -381,6 +383,7 @@ func (d *dataHandler) clientListenOrDial() error {
 		}
 
 		conn, err = netDialer.Dial("tcp", net.JoinHostPort(d.clientConn.remoteIP, d.clientConn.remotePort))
+		clientConnnected <- err
 		if err != nil {
 			return fmt.Errorf("cannot connect to client data address: %v, %s", conn, err.Error())
 		}
@@ -427,7 +430,12 @@ func (d *dataHandler) clientListenOrDial() error {
 }
 
 // make origin connection
-func (d *dataHandler) originListenOrDial() error {
+func (d *dataHandler) originListenOrDial(clientConnnected chan error) error {
+	// if client data connection got error, abort origin connection too
+	if <-clientConnnected != nil {
+		return nil
+	}
+
 	// if origin connect needs listen, open listener
 	if d.originConn.needsListen {
 		d.mutex.Lock()
