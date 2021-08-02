@@ -438,7 +438,7 @@ func (d *dataHandler) dataTransfer(reader net.Conn, writer net.Conn) error {
 	return lastErr
 }
 
-// parse port comand line
+// parse port comand line (active data conn)
 func (d *dataHandler) parsePORTcommand(line string) error {
 	// PORT command format : "PORT h1,h2,h3,h4,p1,p2\r\n"
 	var err error
@@ -453,7 +453,7 @@ func (d *dataHandler) parsePORTcommand(line string) error {
 	return err
 }
 
-// parse eprt comand line
+// parse eprt comand line (active data conn)
 func (d *dataHandler) parseEPRTcommand(line string) error {
 	// EPRT command format
 	// - IPv4 : "EPRT |1|h1.h2.h3.h4|port|\r\n"
@@ -470,7 +470,7 @@ func (d *dataHandler) parseEPRTcommand(line string) error {
 	return err
 }
 
-// parse pasv comand line
+// parse pasv comand line (passive data conn)
 func (d *dataHandler) parsePASVresponse(line string) error {
 	// PASV response format : "227 Entering Passive Mode (h1,h2,h3,h4,p1,p2).\r\n"
 	var err error
@@ -485,14 +485,14 @@ func (d *dataHandler) parsePASVresponse(line string) error {
 	d.originConn.remoteIP, d.originConn.remotePort, err = parseLineToAddr(line[startIndex+1 : endIndex])
 
 	// if received ip is not public IP, ignore it
-	if !isPublicIP(net.ParseIP(d.originConn.remoteIP)) {
+	if !isPublicIP(net.ParseIP(d.originConn.remoteIP)) || d.config.IgnorePassiveIP {
 		d.originConn.remoteIP = d.originConn.originalRemoteIP
 	}
 
 	return err
 }
 
-// parse epsv comand line
+// parse epsv comand line (passive data conn)
 func (d *dataHandler) parseEPSVresponse(line string) error {
 	// EPSV response format : "229 Entering Extended Passive Mode (|||port|)\r\n"
 	startIndex := strings.Index(line, "(")

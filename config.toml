@@ -26,6 +26,9 @@ data_listen_port_range = "65000-65100" # "min-max"(default : random)
 ## Set client(the default setup), use client's connected mode.
 transfer_mode = "pasv"  # PASV / Passive / PORT / Active / client (default : client)
 
+## Should we ignore the passive data channel IP sent by the origin FTP server ? (default: false)
+ignore_passive_ip = false
+
 ## Masquerade pftp's ip to setted IP(may be LB's IP).
 ## It might necessary if pftp server is at behind the LB.
 masquerade_ip = "127.0.0.1"

@@ -301,7 +301,7 @@ func Test_dataHandler_parsePASVresponse(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "passive_mode_parse_ok",
+			name: "passive_mode_parse_ok_public",
 			fields: fields{
 				line:   "227 Entering Passive Mode (20,30,40,50,100,10).\r\n",
 				mode:   "PASV",
@@ -309,6 +309,36 @@ func Test_dataHandler_parsePASVresponse(t *testing.T) {
 			},
 			want: want{
 				ip:   "20.30.40.50",
+				port: "25610",
+				err:  "",
+			},
+			wantErr: false,
+		},
+		{
+			name: "passive_mode_parse_ok_private",
+			fields: fields{
+				line:   "227 Entering Passive Mode (10,30,40,50,100,10).\r\n",
+				mode:   "PASV",
+				config: &config{},
+			},
+			want: want{
+				ip:   "",
+				port: "25610",
+				err:  "",
+			},
+			wantErr: false,
+		},
+		{
+			name: "passive_mode_parse_ignore_public_passive_ip",
+			fields: fields{
+				line:   "227 Entering Passive Mode (20,30,40,50,100,10).\r\n",
+				mode:   "PASV",
+				config: &config{
+					IgnorePassiveIP: true,
+				},
+			},
+			want: want{
+				ip:   "",
 				port: "25610",
 				err:  "",
 			},
