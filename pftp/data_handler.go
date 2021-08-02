@@ -26,7 +26,7 @@ type dataHandler struct {
 
 type connector struct {
 	listener         *net.TCPListener
-	communicaionConn net.Conn
+	communicationConn net.Conn
 	dataConn         net.Conn
 	originalRemoteIP string
 	remoteIP         string
@@ -45,7 +45,7 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 	d := &dataHandler{
 		originConn: connector{
 			listener:         nil,
-			communicaionConn: originConn,
+			communicationConn: originConn,
 			dataConn:         nil,
 			needsListen:      false,
 			isClient:         false,
@@ -53,7 +53,7 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 		},
 		clientConn: connector{
 			listener:         nil,
-			communicaionConn: clientConn,
+			communicationConn: clientConn,
 			dataConn:         nil,
 			needsListen:      false,
 			isClient:         true,
@@ -67,12 +67,12 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 		transferDone:         make(chan struct{}),
 	}
 
-	if d.originConn.communicaionConn != nil {
+	if d.originConn.communicationConn != nil {
 		d.originConn.originalRemoteIP, _, _ = net.SplitHostPort(originConn.RemoteAddr().String())
 		d.originConn.localIP, d.originConn.localPort, _ = net.SplitHostPort(originConn.LocalAddr().String())
 	}
 
-	if d.clientConn.communicaionConn != nil {
+	if d.clientConn.communicationConn != nil {
 		d.clientConn.originalRemoteIP, _, _ = net.SplitHostPort(clientConn.RemoteAddr().String())
 		d.clientConn.localIP, d.clientConn.localPort, _ = net.SplitHostPort(clientConn.LocalAddr().String())
 	}
@@ -260,8 +260,8 @@ func (d *dataHandler) StartDataTransfer() error {
 
 	// do not timeout communication connection during data transfer
 	*d.inDataTransfer = true
-	d.clientConn.communicaionConn.SetDeadline(time.Time{})
-	d.originConn.communicaionConn.SetDeadline(time.Time{})
+	d.clientConn.communicationConn.SetDeadline(time.Time{})
+	d.originConn.communicationConn.SetDeadline(time.Time{})
 
 	// client to origin
 	eg.Go(func() error { return d.dataTransfer(d.clientConn.dataConn, d.originConn.dataConn) })
@@ -276,8 +276,8 @@ func (d *dataHandler) StartDataTransfer() error {
 
 	// set timeout to each connection
 	*d.inDataTransfer = false
-	d.clientConn.communicaionConn.SetDeadline(time.Now().Add(time.Duration(d.config.IdleTimeout) * time.Second))
-	d.originConn.communicaionConn.SetDeadline(time.Now().Add(time.Duration(d.config.ProxyTimeout) * time.Second))
+	d.clientConn.communicationConn.SetDeadline(time.Now().Add(time.Duration(d.config.IdleTimeout) * time.Second))
+	d.originConn.communicationConn.SetDeadline(time.Now().Add(time.Duration(d.config.ProxyTimeout) * time.Second))
 
 	return err
 }
