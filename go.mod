@@ -11,7 +11,7 @@ require (
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/lestrrat/go-server-starter v0.0.0-20180220115249-6ac0b358431b
 	github.com/marcobeierer/ftps v0.0.0-20180713194618-60e520f5feed
-	github.com/pires/go-proxyproto v0.4.2
+	github.com/pires/go-proxyproto v0.6.0
 	github.com/sirupsen/logrus v1.8.0
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/sys v0.0.0-20210421221651-33663a62ff08
