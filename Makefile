@@ -5,11 +5,7 @@ REVISION = $(shell git describe --always)
 INFO_COLOR=\033[1;34m
 RESET=\033[0m
 BOLD=\033[1m
-ifeq ("$(shell uname)","Darwin")
 GO ?= GO111MODULE=on go
-else
-GO ?= GO111MODULE=on /usr/local/go/bin/go
-endif
 
 default: build
 ci: depsdev ftp test lint integration ## Run test and more...
