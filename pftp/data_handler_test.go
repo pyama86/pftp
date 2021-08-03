@@ -108,8 +108,8 @@ func Test_dataHandler_parsePORTcommand(t *testing.T) {
 
 			got.ip = d.clientConn.remoteIP
 			got.port = d.clientConn.remotePort
-			if tt.wantErr && !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("dataHandler.parsePORTcommand() = %s, want %s", got.err, tt.want.err)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("dataHandler.parsePORTresponse() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -232,8 +232,8 @@ func Test_dataHandler_parseEPRTcommand(t *testing.T) {
 
 			got.ip = d.clientConn.remoteIP
 			got.port = d.clientConn.remotePort
-			if tt.wantErr && !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("dataHandler.parseEPRTcommand() = %s, want %s", got.err, tt.want.err)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("dataHandler.parseEPRTresponse() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -438,8 +438,8 @@ func Test_dataHandler_parseEPSV(t *testing.T) {
 
 			got.ip = d.originConn.remoteIP
 			got.port = d.originConn.remotePort
-			if tt.wantErr && !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("dataHandler.parseEPSVresponse() = %s, want %s", got.err, tt.want.err)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("dataHandler.parseEPSVresponse() = %v, want %v", got, tt.want)
 			}
 		})
 	}
