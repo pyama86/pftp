@@ -69,12 +69,12 @@ func Test_dataHandler_parsePORTcommand(t *testing.T) {
 		{
 			name: "active_mode_parse_ok",
 			fields: fields{
-				line:   "PORT 10,10,10,10,100,10\r\n",
+				line:   "PORT 1,1,1,1,100,10\r\n",
 				mode:   "PORT",
 				config: &config{},
 			},
 			want: want{
-				ip:   "10.10.10.10",
+				ip:   "1.1.1.1",
 				port: "25610",
 				err:  "",
 			},
@@ -193,12 +193,12 @@ func Test_dataHandler_parseEPRTcommand(t *testing.T) {
 		{
 			name: "eprt_mode_parse_ok",
 			fields: fields{
-				line:   "EPRT |1|10.10.10.10|25610|\r\n",
+				line:   "EPRT |1|1.1.1.1|25610|\r\n",
 				mode:   "EPRT",
 				config: &config{},
 			},
 			want: want{
-				ip:   "10.10.10.10",
+				ip:   "1.1.1.1",
 				port: "25610",
 				err:  "",
 			},
