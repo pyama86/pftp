@@ -162,8 +162,7 @@ func (d *dataHandler) setNewListener() (*net.TCPListener, error) {
 			return nil, err
 		}
 
-		// only can support IPv4 between origin server connection
-		if listener, err = net.ListenTCP("tcp4", lAddr); err != nil {
+		if listener, err = net.ListenTCP("tcp", lAddr); err != nil {
 			if counter > connectionTimeout {
 				d.log.err("cannot set listener")
 
