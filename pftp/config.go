@@ -32,6 +32,7 @@ type config struct {
 	DataPortRange   string      `toml:"data_listen_port_range"`
 	MasqueradeIP    string      `toml:"masquerade_ip"`
 	TransferMode    string      `toml:"transfer_mode"`
+	IgnorePassiveIP bool        `toml:"ignore_passive_ip"`
 	TLS             *tlsPair    `toml:"tls"`
 	TLSConfig       *tls.Config `toml:"-"`
 }
@@ -126,6 +127,7 @@ func defaultConfig(config *config) {
 	config.DataPortRange = ""
 	config.WelcomeMsg = "FTP proxy ready"
 	config.TransferMode = "CLIENT"
+	config.IgnorePassiveIP = false
 }
 
 func dataPortRangeValidation(r string) error {
