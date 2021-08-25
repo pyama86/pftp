@@ -12,7 +12,7 @@ script:
   - GO="GO111MODULE=on go" make ci
 
 go:
-  - 1.15.5
+  - 1.16.6
 cache:
   directories:
     - misc/test/data
