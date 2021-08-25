@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	proxyproto "github.com/pires/go-proxyproto"
+	"github.com/tevino/abool"
 )
 
 const (
@@ -41,7 +41,7 @@ type proxyServer struct {
 	config                *config
 	dataConnector         *dataHandler
 	waitSwitching         chan bool
-	inDataTransfer        *int32
+	inDataTransfer        *abool.AtomicBool
 	isDataCommandResponse bool
 }
 
@@ -53,7 +53,7 @@ type proxyServerConfig struct {
 	mutex          *sync.Mutex
 	log            *logger
 	config         *config
-	inDataTransfer *int32
+	inDataTransfer *abool.AtomicBool
 }
 
 func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
@@ -423,7 +423,7 @@ func (s *proxyServer) startProxy() error {
 			} else {
 				if s.config.ProxyTimeout > 0 {
 					// do not time out during transfer data
-					if atomic.LoadInt32(s.inDataTransfer) == 1 {
+					if s.inDataTransfer.IsSet() {
 						s.origin.SetDeadline(time.Time{})
 					} else {
 						s.origin.SetDeadline(time.Now().Add(time.Duration(s.config.ProxyTimeout) * time.Second))
@@ -468,13 +468,13 @@ func (s *proxyServer) startProxy() error {
 					// when got 150 from origin, it means data transfer has started
 					// set transfer in progress flag to 1
 					if strings.HasPrefix(buff, "150 ") {
-						atomic.StoreInt32(s.inDataTransfer, 1)
+						s.inDataTransfer.Set()
 					}
 
 					// when got 226 from origin, it means data transfer finished
 					// set data transfer in p rogress flag to 0 for accept next data transfers
 					if strings.HasPrefix(buff, "226 ") {
-						atomic.StoreInt32(s.inDataTransfer, 0)
+						s.inDataTransfer.UnSet()
 					}
 
 					if s.isDataCommandResponse {

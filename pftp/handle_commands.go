@@ -8,7 +8,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"sync/atomic"
 )
 
 func (c *clientHandler) handleUSER() *result {
@@ -101,7 +100,7 @@ func (c *clientHandler) handleAUTH() *result {
 
 		c.previousTLSCommands = append(c.previousTLSCommands, c.line)
 
-		atomic.StoreInt32(&c.controlInTLS, 1)
+		c.controlInTLS.Set()
 
 		c.tlsDatas.serverName = tlsConn.ConnectionState().ServerName
 		c.tlsDatas.version = tlsConn.ConnectionState().Version
@@ -122,7 +121,7 @@ func (c *clientHandler) handleAUTH() *result {
 
 // response PBSZ to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePBSZ() *result {
-	if atomic.LoadInt32(&c.controlInTLS) == 1 {
+	if c.controlInTLS.IsSet() {
 		if !c.proxy.isLoggedIn() {
 			r := &result{
 				code: 200,
@@ -163,7 +162,7 @@ func (c *clientHandler) handlePBSZ() *result {
 
 // response PROT to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePROT() *result {
-	if atomic.LoadInt32(&c.controlInTLS) == 1 {
+	if c.controlInTLS.IsSet() {
 		if !c.proxy.isLoggedIn() {
 			var r *result
 			if c.param == "C" {
@@ -209,9 +208,9 @@ func (c *clientHandler) handlePROT() *result {
 		}
 
 		if c.param == "P" {
-			atomic.StoreInt32(&c.transferInTLS, 1)
+			c.transferInTLS.Set()
 		} else {
-			atomic.StoreInt32(&c.transferInTLS, 0)
+			c.transferInTLS.UnSet()
 		}
 
 		return nil
@@ -317,8 +316,8 @@ func (c *clientHandler) handleDATA() *result {
 			c.proxy.GetConn(),
 			c.command,
 			c.tlsDatas,
-			&c.transferInTLS,
-			&c.inDataTransfer,
+			c.transferInTLS,
+			c.inDataTransfer,
 		)
 		if err != nil {
 			return &result{

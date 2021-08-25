@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
+	"github.com/tevino/abool"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -28,8 +28,8 @@ type dataHandler struct {
 	config             *config
 	log                *logger
 	tlsDataSet         *tlsDataSet
-	needTLSForTransfer *int32
-	inDataTransfer     *int32
+	needTLSForTransfer *abool.AtomicBool
+	inDataTransfer     *abool.AtomicBool
 	closed             bool
 	mutex              *sync.Mutex
 }
@@ -49,7 +49,7 @@ type connector struct {
 }
 
 // Make listener for data connection
-func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn net.Conn, mode string, tlsDataSet *tlsDataSet, transferOverTLS *int32, inDataTransfer *int32) (*dataHandler, error) {
+func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn net.Conn, mode string, tlsDataSet *tlsDataSet, transferOverTLS *abool.AtomicBool, inDataTransfer *abool.AtomicBool) (*dataHandler, error) {
 	var err error
 
 	d := &dataHandler{
@@ -244,7 +244,7 @@ func (d *dataHandler) Close() error {
 	}
 
 	d.closed = true
-	atomic.StoreInt32(d.inDataTransfer, 0)
+	d.inDataTransfer.UnSet()
 
 	d.log.debug("proxy data channel disconnected")
 
@@ -264,7 +264,7 @@ func (d *dataHandler) isStarted() bool {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
-	return atomic.LoadInt32(d.inDataTransfer) == 1
+	return d.inDataTransfer.IsSet()
 }
 
 // Make listener for data connection
@@ -396,7 +396,7 @@ func (d *dataHandler) clientListenOrDial(clientConnnected chan error) error {
 		d.clientConn.dataConn = tcpConn
 	}
 
-	if atomic.LoadInt32(d.needTLSForTransfer) == 1 {
+	if d.needTLSForTransfer.IsSet() {
 		if d.tlsDataSet.forClient.getTLSConfig() == nil {
 			return errors.New("cannot get client TLS config for data transfer. abort data transfer")
 		}
@@ -497,7 +497,7 @@ func (d *dataHandler) originListenOrDial(clientConnnected chan error) error {
 	}
 
 	// set TLS session.
-	if atomic.LoadInt32(d.needTLSForTransfer) == 1 {
+	if d.needTLSForTransfer.IsSet() {
 		if d.tlsDataSet.forOrigin.getTLSConfig() == nil {
 			return errors.New("cannot get origin TLS config for data transfer. abort data transfer")
 		}

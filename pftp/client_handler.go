@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/tevino/abool"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -47,8 +48,8 @@ type clientHandler struct {
 	conn                net.Conn
 	config              *config
 	tlsDatas            *tlsDataSet
-	controlInTLS        int32
-	transferInTLS       int32
+	controlInTLS        *abool.AtomicBool
+	transferInTLS       *abool.AtomicBool
 	middleware          middleware
 	writer              *bufio.Writer
 	reader              *bufio.Reader
@@ -63,7 +64,7 @@ type clientHandler struct {
 	log                 *logger
 	srcIP               string
 	previousTLSCommands []string
-	inDataTransfer      int32
+	inDataTransfer      *abool.AtomicBool
 }
 
 func newClientHandler(connection net.Conn, c *config, sharedTLSData *tlsData, m middleware, id uint64, currentConnection *int32) *clientHandler {
@@ -71,8 +72,8 @@ func newClientHandler(connection net.Conn, c *config, sharedTLSData *tlsData, m 
 		id:                id,
 		conn:              connection,
 		config:            c,
-		controlInTLS:      0,
-		transferInTLS:     0,
+		controlInTLS:      abool.New(),
+		transferInTLS:     abool.New(),
 		middleware:        m,
 		writer:            bufio.NewWriter(connection),
 		reader:            bufio.NewReader(connection),
@@ -81,7 +82,7 @@ func newClientHandler(connection net.Conn, c *config, sharedTLSData *tlsData, m 
 		mutex:             &sync.Mutex{},
 		log:               &logger{fromip: connection.RemoteAddr().String(), user: "-", id: id},
 		srcIP:             connection.RemoteAddr().String(),
-		inDataTransfer:    0,
+		inDataTransfer:    abool.New(),
 	}
 
 	// increase current connection count
@@ -115,7 +116,7 @@ func (c *clientHandler) Close() error {
 
 func (c *clientHandler) setClientDeadLine(t int) {
 	// do not time out during transfer data
-	if atomic.LoadInt32(&c.inDataTransfer) == 1 {
+	if c.inDataTransfer.IsSet() {
 		c.conn.SetDeadline(time.Time{})
 	} else {
 		c.conn.SetDeadline(time.Now().Add(time.Duration(t) * time.Second))
@@ -383,7 +384,7 @@ func (c *clientHandler) connectProxy() error {
 				mutex:          c.mutex,
 				log:            c.log,
 				config:         c.config,
-				inDataTransfer: &c.inDataTransfer,
+				inDataTransfer: c.inDataTransfer,
 			})
 		if err != nil {
 			return err
