@@ -35,17 +35,17 @@ type dataHandler struct {
 }
 
 type connector struct {
-	listener         *net.TCPListener
+	listener          *net.TCPListener
 	communicationConn net.Conn
-	dataConn         net.Conn
-	originalRemoteIP string
-	remoteIP         string
-	remotePort       string
-	localIP          string
-	localPort        string
-	needsListen      bool
-	isClient         bool
-	mode             string
+	dataConn          net.Conn
+	originalRemoteIP  string
+	remoteIP          string
+	remotePort        string
+	localIP           string
+	localPort         string
+	needsListen       bool
+	isClient          bool
+	mode              string
 }
 
 // Make listener for data connection
@@ -54,20 +54,20 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 
 	d := &dataHandler{
 		originConn: connector{
-			listener:         nil,
+			listener:          nil,
 			communicationConn: originConn,
-			dataConn:         nil,
-			needsListen:      false,
-			isClient:         false,
-			mode:             config.TransferMode,
+			dataConn:          nil,
+			needsListen:       false,
+			isClient:          false,
+			mode:              config.TransferMode,
 		},
 		clientConn: connector{
-			listener:         nil,
+			listener:          nil,
 			communicationConn: clientConn,
-			dataConn:         nil,
-			needsListen:      false,
-			isClient:         true,
-			mode:             mode,
+			dataConn:          nil,
+			needsListen:       false,
+			isClient:          true,
+			mode:              mode,
 		},
 		config:             config,
 		log:                log,
@@ -308,8 +308,8 @@ func (d *dataHandler) StartDataTransfer(direction string) error {
 	d.log.debug("start %s data transfer", direction)
 
 	// do not timeout communication connection during data transfer
-	d.clientConn.communictaionConn.SetDeadline(time.Time{})
-	d.originConn.communictaionConn.SetDeadline(time.Time{})
+	d.clientConn.communicationConn.SetDeadline(time.Time{})
+	d.originConn.communicationConn.SetDeadline(time.Time{})
 
 	if err := d.run(); err != nil {
 		if !strings.Contains(err.Error(), alreadyClosedMsg) {
