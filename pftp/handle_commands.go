@@ -12,12 +12,14 @@ import (
 
 func (c *clientHandler) handleUSER() *result {
 	// make fail when try to login after logged in
-	if c.isLoggedin {
-		return &result{
-			code: 500,
-			msg:  "Already logged in",
-			err:  fmt.Errorf("already logged in"),
-			log:  c.log,
+	if c.proxy != nil {
+		if c.proxy.isLoggedIn() {
+			return &result{
+				code: 500,
+				msg:  "Already logged in",
+				err:  fmt.Errorf("already logged in"),
+				log:  c.log,
+			}
 		}
 	}
 
@@ -53,7 +55,6 @@ func (c *clientHandler) handleUSER() *result {
 			log:  c.log,
 		}
 	}
-	c.isLoggedin = true
 
 	return nil
 }
@@ -99,7 +100,7 @@ func (c *clientHandler) handleAUTH() *result {
 
 		c.previousTLSCommands = append(c.previousTLSCommands, c.line)
 
-		c.controlInTLS = true
+		c.controlInTLS.Set()
 
 		c.tlsDatas.serverName = tlsConn.ConnectionState().ServerName
 		c.tlsDatas.version = tlsConn.ConnectionState().Version
@@ -120,8 +121,8 @@ func (c *clientHandler) handleAUTH() *result {
 
 // response PBSZ to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePBSZ() *result {
-	if c.controlInTLS {
-		if !c.isLoggedin {
+	if c.controlInTLS.IsSet() {
+		if !c.proxy.isLoggedIn() {
 			r := &result{
 				code: 200,
 				msg:  fmt.Sprintf("PBSZ %s successful", c.param),
@@ -161,8 +162,8 @@ func (c *clientHandler) handlePBSZ() *result {
 
 // response PROT to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePROT() *result {
-	if c.controlInTLS {
-		if !c.isLoggedin {
+	if c.controlInTLS.IsSet() {
+		if !c.proxy.isLoggedIn() {
 			var r *result
 			if c.param == "C" {
 				r = &result{
@@ -206,7 +207,11 @@ func (c *clientHandler) handlePROT() *result {
 			}
 		}
 
-		c.transferInTLS = (c.param == "P")
+		if c.param == "P" {
+			c.transferInTLS.Set()
+		} else {
+			c.transferInTLS.UnSet()
+		}
 
 		return nil
 	}
@@ -217,8 +222,35 @@ func (c *clientHandler) handlePROT() *result {
 }
 
 func (c *clientHandler) handleTransfer() *result {
-	if c.config.TransferTimeout > 0 {
-		c.setClientDeadLine(c.config.TransferTimeout)
+	if !c.proxy.isLoggedIn() {
+		return &result{
+			code: 530,
+			msg:  "Please login with USER and PASS",
+		}
+	}
+
+	if !c.proxy.isDataHandlerAvailable() {
+		return &result{
+			code: 425,
+			msg:  "Can't open data connection",
+		}
+	}
+
+	if c.proxy.isDataTransferStarted() {
+		return &result{
+			code: 450,
+			msg:  fmt.Sprintf("%s: data transfer in progress", c.command),
+		}
+	}
+
+	// start data transfer by direction
+	switch c.command {
+	case "RETR", "LIST", "MLSD", "NLST":
+		// set transfer direction to download
+		go c.proxy.dataConnector.StartDataTransfer(downloadStream)
+	case "STOR", "STOU", "APPE":
+		// set transfer direction to upload
+		go c.proxy.dataConnector.StartDataTransfer(uploadStream)
 	}
 
 	if err := c.proxy.sendToOrigin(c.line); err != nil {
@@ -255,7 +287,7 @@ func (c *clientHandler) handlePROXY() *result {
 
 // handle PORT, EPRT, PASV, EPSV commands when set data channel proxy is true
 func (c *clientHandler) handleDATA() *result {
-	if !c.isLoggedin {
+	if !c.proxy.isLoggedIn() {
 		return &result{
 			code: 530,
 			msg:  "Please login with USER and PASS",
@@ -266,6 +298,16 @@ func (c *clientHandler) handleDATA() *result {
 	if c.config.DataChanProxy {
 		var toOriginMsg string
 
+		// only one data connection available in same time.
+		// Return 450 response code to client without create
+		// & attach new data handler when data transfer in progress.
+		if c.proxy.isDataTransferStarted() {
+			return &result{
+				code: 450,
+				msg:  fmt.Sprintf("%s: data transfer in progress", c.command),
+			}
+		}
+
 		// make new listener and store listener port
 		dataHandler, err := newDataHandler(
 			c.config,
@@ -275,7 +317,7 @@ func (c *clientHandler) handleDATA() *result {
 			c.command,
 			c.tlsDatas,
 			c.transferInTLS,
-			&c.inDataTransfer,
+			c.inDataTransfer,
 		)
 		if err != nil {
 			return &result{
@@ -323,6 +365,13 @@ func (c *clientHandler) handleDATA() *result {
 					err:  err,
 					log:  c.log,
 				}
+			}
+		}
+
+		if !c.proxy.isDataHandlerAvailable() {
+			return &result{
+				code: 425,
+				msg:  "Can't open data connection",
 			}
 		}
 

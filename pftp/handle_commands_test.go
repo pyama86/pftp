@@ -4,6 +4,8 @@ import (
 	"net"
 	"reflect"
 	"testing"
+
+	"github.com/tevino/abool"
 )
 
 func Test_clientHandler_handleAUTH(t *testing.T) {
@@ -93,7 +95,8 @@ func Test_clientHandler_handlePBSZ(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &clientHandler{
-				config: tt.fields.config,
+				config:       tt.fields.config,
+				controlInTLS: abool.New(),
 			}
 			r := c.handlePBSZ()
 			got := &res{
@@ -144,7 +147,8 @@ func Test_clientHandler_handlePROT(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &clientHandler{
-				config: tt.fields.config,
+				config:       tt.fields.config,
+				controlInTLS: abool.New(),
 			}
 			r := c.handlePBSZ()
 			got := &res{

@@ -3,6 +3,8 @@ package pftp
 import (
 	"reflect"
 	"testing"
+
+	"github.com/tevino/abool"
 )
 
 func Test_dataHandler_parsePORTcommand(t *testing.T) {
@@ -82,7 +84,8 @@ func Test_dataHandler_parsePORTcommand(t *testing.T) {
 		},
 	}
 
-	inDataTransfer := false
+	transferInTLS := abool.New()
+	inDataTransfer := abool.New()
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -94,8 +97,8 @@ func Test_dataHandler_parsePORTcommand(t *testing.T) {
 				nil,
 				tt.fields.mode,
 				nil,
-				false,
-				&inDataTransfer,
+				transferInTLS,
+				inDataTransfer,
 			)
 			err := d.parsePORTcommand(tt.fields.line)
 			if (err != nil) != tt.wantErr {
@@ -208,7 +211,8 @@ func Test_dataHandler_parseEPRTcommand(t *testing.T) {
 		},
 	}
 
-	inDataTransfer := false
+	transferInTLS := abool.New()
+	inDataTransfer := abool.New()
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -220,8 +224,8 @@ func Test_dataHandler_parseEPRTcommand(t *testing.T) {
 				nil,
 				tt.fields.mode,
 				nil,
-				false,
-				&inDataTransfer,
+				transferInTLS,
+				inDataTransfer,
 			)
 			err := d.parseEPRTcommand(tt.fields.line)
 			if (err != nil) != tt.wantErr {
@@ -335,8 +339,8 @@ func Test_dataHandler_parsePASVresponse(t *testing.T) {
 		{
 			name: "passive_mode_parse_ignore_public_passive_ip",
 			fields: fields{
-				line:   "227 Entering Passive Mode (20,30,40,50,100,10).\r\n",
-				mode:   "PASV",
+				line: "227 Entering Passive Mode (20,30,40,50,100,10).\r\n",
+				mode: "PASV",
 				config: &config{
 					IgnorePassiveIP: true,
 				},
@@ -350,7 +354,8 @@ func Test_dataHandler_parsePASVresponse(t *testing.T) {
 		},
 	}
 
-	inDataTransfer := false
+	transferInTLS := abool.New()
+	inDataTransfer := abool.New()
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -362,8 +367,8 @@ func Test_dataHandler_parsePASVresponse(t *testing.T) {
 				nil,
 				tt.fields.mode,
 				nil,
-				false,
-				&inDataTransfer,
+				transferInTLS,
+				inDataTransfer,
 			)
 			err := d.parsePASVresponse(tt.fields.line)
 			if (err != nil) != tt.wantErr {
@@ -448,7 +453,8 @@ func Test_dataHandler_parseEPSV(t *testing.T) {
 		},
 	}
 
-	inDataTransfer := false
+	transferInTLS := abool.New()
+	inDataTransfer := abool.New()
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -460,8 +466,8 @@ func Test_dataHandler_parseEPSV(t *testing.T) {
 				nil,
 				tt.fields.mode,
 				nil,
-				false,
-				&inDataTransfer,
+				transferInTLS,
+				inDataTransfer,
 			)
 			err := d.parseEPSVresponse(tt.fields.line)
 			if (err != nil) != tt.wantErr {

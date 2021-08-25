@@ -12,6 +12,7 @@ import (
 	"time"
 
 	proxyproto "github.com/pires/go-proxyproto"
+	"github.com/tevino/abool"
 )
 
 const (
@@ -35,12 +36,12 @@ type proxyServer struct {
 	stopChan              chan struct{}
 	stopChanDone          chan struct{}
 	stop                  bool
-	isSwitched            bool
+	isLoggedin            bool
 	welcomeMsg            string
 	config                *config
 	dataConnector         *dataHandler
 	waitSwitching         chan bool
-	inDataTransfer        *bool
+	inDataTransfer        *abool.AtomicBool
 	isDataCommandResponse bool
 }
 
@@ -52,7 +53,7 @@ type proxyServerConfig struct {
 	mutex          *sync.Mutex
 	log            *logger
 	config         *config
-	inDataTransfer *bool
+	inDataTransfer *abool.AtomicBool
 }
 
 func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
@@ -82,7 +83,7 @@ func newProxyServer(conf *proxyServerConfig) (*proxyServer, error) {
 		stopChan:       make(chan struct{}),
 		stopChanDone:   make(chan struct{}),
 		welcomeMsg:     "220 " + conf.config.WelcomeMsg + "\r\n",
-		isSwitched:     false,
+		isLoggedin:     false,
 		config:         conf.config,
 		waitSwitching:  make(chan bool),
 		inDataTransfer: conf.inDataTransfer,
@@ -184,6 +185,10 @@ func (s *proxyServer) Close() error {
 		}
 	}
 
+	if s.dataConnector != nil {
+		s.DestroyDataHandler()
+	}
+
 	return nil
 }
 
@@ -191,28 +196,45 @@ func (s *proxyServer) GetConn() net.Conn {
 	return s.origin
 }
 
+// basically, this function never called during data transfer
+// in progress, so block by chan is not necessary.
 func (s *proxyServer) SetDataHandler(handler *dataHandler) {
-	// only one data connection available in same time.
+	// cleanup previous data connector.
 	if s.dataConnector != nil {
-		// if already had previous data handler in use, wait until end.
-		if s.dataConnector.proxyHandlerAttached {
-			s.dataConnector.waitTransferEnd = true
-			s.dataConnector.proxyHandlerAttached = false
-			<-s.dataConnector.transferDone
-			s.dataConnector.waitTransferEnd = false
-		}
-
-		// after sent response for previous data command, close it for use new data handler.
-		s.dataConnector.Close()
+		s.DestroyDataHandler()
 	}
 
 	s.dataConnector = handler
-	s.dataConnector.proxyHandlerAttached = true
 }
 
 // Destroy data handler
 func (s *proxyServer) DestroyDataHandler() {
-	connectionCloser(s.dataConnector, s.log)
+	if s.dataConnector != nil {
+		connectionCloser(s.dataConnector, s.log)
+	}
+}
+
+// return true when data handler is available now
+func (s *proxyServer) isDataHandlerAvailable() bool {
+	if s.dataConnector == nil {
+		return false
+	}
+
+	return !s.dataConnector.isClosed()
+}
+
+// return true when data transfer in progress
+func (s *proxyServer) isDataTransferStarted() bool {
+	if s.dataConnector == nil {
+		return false
+	}
+
+	return s.dataConnector.isStarted()
+}
+
+// return switch origin & user logged in state
+func (s *proxyServer) isLoggedIn() bool {
+	return s.isLoggedin
 }
 
 func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) error {
@@ -308,14 +330,12 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, previou
 	}
 
 	// if client switched before, return error
-	if s.isSwitched {
+	if s.isLoggedin {
 		return fmt.Errorf("origin already switched")
 	}
 
 	s.log.info("switch origin to: %s", originAddr)
 	var err error
-
-	s.isSwitched = true
 
 	if s.passThrough {
 		s.suspend()
@@ -337,9 +357,7 @@ func (s *proxyServer) switchOrigin(clientAddr string, originAddr string, previou
 	}()
 
 	// change connection and reset reader and writer buffer
-	s.origin, err = net.DialTimeout("tcp",
-		originAddr,
-		time.Duration(connectionTimeout)*time.Second)
+	s.origin, err = net.DialTimeout("tcp", originAddr, time.Duration(connectionTimeout)*time.Second)
 	if err != nil {
 		return err
 	}
@@ -405,7 +423,7 @@ func (s *proxyServer) startProxy() error {
 			} else {
 				if s.config.ProxyTimeout > 0 {
 					// do not time out during transfer data
-					if *s.inDataTransfer {
+					if s.inDataTransfer.IsSet() {
 						s.origin.SetDeadline(time.Time{})
 					} else {
 						s.origin.SetDeadline(time.Now().Add(time.Duration(s.config.ProxyTimeout) * time.Second))
@@ -415,8 +433,13 @@ func (s *proxyServer) startProxy() error {
 				s.log.debug("response from origin: %s", strings.TrimSuffix(buff, "\r\n"))
 
 				// response user setted welcome message
-				if strings.Compare(getCode(buff)[0], "220") == 0 && !s.isSwitched {
+				if strings.Compare(getCode(buff)[0], "220") == 0 && !s.isLoggedin {
 					buff = s.welcomeMsg
+				}
+
+				// check login and switch origin success
+				if strings.Compare(getCode(buff)[0], "230") == 0 {
+					s.isLoggedin = true
 				}
 
 				// when got 500 PROXY not understood, ignore it
@@ -429,7 +452,7 @@ func (s *proxyServer) startProxy() error {
 				}
 
 				// is data channel proxy used
-				if s.config.DataChanProxy && s.isSwitched {
+				if s.config.DataChanProxy && s.isLoggedin {
 					if strings.HasPrefix(buff, "227 ") {
 						s.isDataCommandResponse = true
 						s.dataConnector.parsePASVresponse(buff)
@@ -442,25 +465,38 @@ func (s *proxyServer) startProxy() error {
 						s.isDataCommandResponse = true
 					}
 
-					if s.isDataCommandResponse {
-						// start data transfer
-						go s.dataConnector.StartDataTransfer()
+					// when got 150 from origin, it means data transfer has started
+					// set transfer in progress flag to 1
+					if strings.HasPrefix(buff, "150 ") {
+						s.inDataTransfer.Set()
+					}
 
-						switch s.dataConnector.clientConn.mode {
-						case "PORT", "EPRT":
-							buff = fmt.Sprintf("200 %s command successful\r\n", s.dataConnector.clientConn.mode)
-						case "PASV":
-							// prepare PASV response line to client
-							_, lPort, _ := net.SplitHostPort(s.dataConnector.clientConn.listener.Addr().String())
-							listenPort, _ := strconv.Atoi(lPort)
-							buff = fmt.Sprintf("227 Entering Passive Mode (%s,%s,%s).\r\n",
-								strings.ReplaceAll(s.config.MasqueradeIP, ".", ","),
-								strconv.Itoa(listenPort/256),
-								strconv.Itoa(listenPort%256))
-						case "EPSV":
-							// prepare EPSV response line to client
-							_, listenPort, _ := net.SplitHostPort(s.dataConnector.clientConn.listener.Addr().String())
-							buff = fmt.Sprintf("229 Entering Extended Passive Mode (|||%s|).\r\n", listenPort)
+					// when got 226 from origin, it means data transfer finished
+					// set data transfer in p rogress flag to 0 for accept next data transfers
+					if strings.HasPrefix(buff, "226 ") {
+						s.inDataTransfer.UnSet()
+					}
+
+					if s.isDataCommandResponse {
+						if s.isDataHandlerAvailable() {
+							switch s.dataConnector.clientConn.mode {
+							case "PORT", "EPRT":
+								buff = fmt.Sprintf("200 %s command successful\r\n", s.dataConnector.clientConn.mode)
+							case "PASV":
+								// prepare PASV response line to client
+								_, lPort, _ := net.SplitHostPort(s.dataConnector.clientConn.listener.Addr().String())
+								listenPort, _ := strconv.Atoi(lPort)
+								buff = fmt.Sprintf("227 Entering Passive Mode (%s,%s,%s).\r\n",
+									strings.ReplaceAll(s.config.MasqueradeIP, ".", ","),
+									strconv.Itoa(listenPort/256),
+									strconv.Itoa(listenPort%256))
+							case "EPSV":
+								// prepare EPSV response line to client
+								_, listenPort, _ := net.SplitHostPort(s.dataConnector.clientConn.listener.Addr().String())
+								buff = fmt.Sprintf("229 Entering Extended Passive Mode (|||%s|).\r\n", listenPort)
+							}
+						} else {
+							buff = "425 Can't open data connection\r\n"
 						}
 					}
 				}
@@ -524,10 +560,6 @@ loop:
 		}
 	}
 	<-done
-
-	if s.dataConnector != nil {
-		s.DestroyDataHandler()
-	}
 
 	return lastError
 }
