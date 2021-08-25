@@ -69,12 +69,12 @@ func Test_dataHandler_parsePORTcommand(t *testing.T) {
 		{
 			name: "active_mode_parse_ok",
 			fields: fields{
-				line:   "PORT 10,10,10,10,100,10\r\n",
+				line:   "PORT 1,1,1,1,100,10\r\n",
 				mode:   "PORT",
 				config: &config{},
 			},
 			want: want{
-				ip:   "10.10.10.10",
+				ip:   "1.1.1.1",
 				port: "25610",
 				err:  "",
 			},
@@ -111,8 +111,8 @@ func Test_dataHandler_parsePORTcommand(t *testing.T) {
 
 			got.ip = d.clientConn.remoteIP
 			got.port = d.clientConn.remotePort
-			if tt.wantErr && !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("dataHandler.parsePORTcommand() = %s, want %s", got.err, tt.want.err)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("dataHandler.parsePORTresponse() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -196,12 +196,12 @@ func Test_dataHandler_parseEPRTcommand(t *testing.T) {
 		{
 			name: "eprt_mode_parse_ok",
 			fields: fields{
-				line:   "EPRT |1|10.10.10.10|25610|\r\n",
+				line:   "EPRT |1|1.1.1.1|25610|\r\n",
 				mode:   "EPRT",
 				config: &config{},
 			},
 			want: want{
-				ip:   "10.10.10.10",
+				ip:   "1.1.1.1",
 				port: "25610",
 				err:  "",
 			},
@@ -238,8 +238,8 @@ func Test_dataHandler_parseEPRTcommand(t *testing.T) {
 
 			got.ip = d.clientConn.remoteIP
 			got.port = d.clientConn.remotePort
-			if tt.wantErr && !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("dataHandler.parseEPRTcommand() = %s, want %s", got.err, tt.want.err)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("dataHandler.parseEPRTresponse() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -307,14 +307,44 @@ func Test_dataHandler_parsePASVresponse(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "passive_mode_parse_ok",
+			name: "passive_mode_parse_ok_public",
 			fields: fields{
-				line:   "227 Entering Passive Mode (10,19,10,10,100,10).\r\n",
+				line:   "227 Entering Passive Mode (20,30,40,50,100,10).\r\n",
 				mode:   "PASV",
 				config: &config{},
 			},
 			want: want{
-				ip:   "10.10.10.10",
+				ip:   "20.30.40.50",
+				port: "25610",
+				err:  "",
+			},
+			wantErr: false,
+		},
+		{
+			name: "passive_mode_parse_ok_private",
+			fields: fields{
+				line:   "227 Entering Passive Mode (10,30,40,50,100,10).\r\n",
+				mode:   "PASV",
+				config: &config{},
+			},
+			want: want{
+				ip:   "",
+				port: "25610",
+				err:  "",
+			},
+			wantErr: false,
+		},
+		{
+			name: "passive_mode_parse_ignore_public_passive_ip",
+			fields: fields{
+				line:   "227 Entering Passive Mode (20,30,40,50,100,10).\r\n",
+				mode:   "PASV",
+				config: &config{
+					IgnorePassiveIP: true,
+				},
+			},
+			want: want{
+				ip:   "",
 				port: "25610",
 				err:  "",
 			},
@@ -351,8 +381,8 @@ func Test_dataHandler_parsePASVresponse(t *testing.T) {
 
 			got.ip = d.originConn.remoteIP
 			got.port = d.originConn.remotePort
-			if tt.wantErr && !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("dataHandler.parsePASVresponse() = %s, want %s", got.err, tt.want.err)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("dataHandler.parsePASVresponse() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -450,8 +480,8 @@ func Test_dataHandler_parseEPSV(t *testing.T) {
 
 			got.ip = d.originConn.remoteIP
 			got.port = d.originConn.remotePort
-			if tt.wantErr && !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("dataHandler.parseEPSVresponse() = %s, want %s", got.err, tt.want.err)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("dataHandler.parseEPSVresponse() = %v, want %v", got, tt.want)
 			}
 		})
 	}

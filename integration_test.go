@@ -186,7 +186,7 @@ func makeRandomFiles(t *testing.T) {
 			f := fmt.Sprintf("%s/%d", dataPath, num)
 			if !fileExists(f) {
 				// make 500MB files
-				out, err := exec.Command("dd", "if=/dev/urandom", fmt.Sprintf("of=%s", f), "bs=1024", "count=500000").CombinedOutput()
+				out, err := exec.Command("sudo", "dd", "if=/dev/urandom", fmt.Sprintf("of=%s", f), "bs=1024", "count=500000").CombinedOutput()
 				if err != nil {
 					return errors.New(string(out))
 				}
