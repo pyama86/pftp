@@ -1,6 +1,7 @@
 package pftp
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +22,8 @@ type dataHandler struct {
 	inDataTransfer       *bool
 	proxyHandlerAttached bool
 	waitTransferEnd      bool
+	tlsDataSet           *tlsDataSet
+	needTLSForTransfer   bool
 	transferDone         chan struct{}
 }
 
@@ -39,7 +42,7 @@ type connector struct {
 }
 
 // Make listener for data connection
-func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn net.Conn, mode string, inDataTransfer *bool) (*dataHandler, error) {
+func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn net.Conn, mode string, tlsDataSet *tlsDataSet, transferOverTLS bool, inDataTransfer *bool) (*dataHandler, error) {
 	var err error
 
 	d := &dataHandler{
@@ -64,6 +67,8 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 		inDataTransfer:       inDataTransfer,
 		proxyHandlerAttached: false,
 		waitTransferEnd:      false,
+		tlsDataSet:           tlsDataSet,
+		needTLSForTransfer:   transferOverTLS,
 		transferDone:         make(chan struct{}),
 	}
 
@@ -151,6 +156,7 @@ func (d *dataHandler) setNewListener() (*net.TCPListener, error) {
 	var listener *net.TCPListener
 	var lAddr *net.TCPAddr
 	var err error
+
 	// reallocate listener port when selected port is busy until LISTEN_TIMEOUT
 	counter := 0
 	for {
@@ -247,12 +253,12 @@ func (d *dataHandler) StartDataTransfer() error {
 
 	// make data connection (origin first)
 	if err := d.originListenOrDial(); err != nil {
-		d.log.debug("data channel with origin creation failed")
+		d.log.debug("data channel with origin creation failed: %s", err.Error())
 
 		return err
 	}
 	if err := d.clientListenOrDial(); err != nil {
-		d.log.debug("data channel with client creation failed")
+		d.log.debug("data channel with client creation failed: %s", err.Error())
 
 		return err
 	}
@@ -263,10 +269,10 @@ func (d *dataHandler) StartDataTransfer() error {
 	d.originConn.communicationConn.SetDeadline(time.Time{})
 
 	// client to origin
-	eg.Go(func() error { return d.dataTransfer(d.clientConn.dataConn, d.originConn.dataConn) })
+	eg.Go(func() error { return d.dataTransfer(d.clientConn.dataConn, d.originConn.dataConn, "upload") })
 
 	// origin to client
-	eg.Go(func() error { return d.dataTransfer(d.originConn.dataConn, d.clientConn.dataConn) })
+	eg.Go(func() error { return d.dataTransfer(d.originConn.dataConn, d.clientConn.dataConn, "download") })
 
 	// wait until data transfer goroutine end
 	if err = eg.Wait(); err != nil {
@@ -333,7 +339,6 @@ func (d *dataHandler) clientListenOrDial() error {
 		}
 
 		conn, err = netDialer.Dial("tcp", net.JoinHostPort(d.clientConn.remoteIP, d.clientConn.remotePort))
-
 		if err != nil || conn == nil {
 			d.log.err("cannot connect to client data address: %v, %s", conn, err.Error())
 			return err
@@ -348,6 +353,20 @@ func (d *dataHandler) clientListenOrDial() error {
 		tcpConn.SetLinger(0)
 
 		d.clientConn.dataConn = tcpConn
+	}
+
+	if d.needTLSForTransfer {
+		if d.tlsDataSet.forClient.getTLSConfig() == nil {
+			return errors.New("cannot get client TLS config for data transfer. abort data transfer")
+		}
+
+		tlsConn := tls.Server(d.clientConn.dataConn, d.tlsDataSet.forClient.getTLSConfig())
+		if err := tlsConn.Handshake(); err != nil {
+			return fmt.Errorf("TLS client data connection handshake got error: %v", err)
+		}
+		d.log.debug("TLS data connection with client has set. TLS protocol version: %s and Cipher Suite: %s. (resumed?: %v)", getTLSProtocolName(tlsConn.ConnectionState().Version), tls.CipherSuiteName(tlsConn.ConnectionState().CipherSuite), tlsConn.ConnectionState().DidResume)
+
+		d.clientConn.dataConn = tlsConn
 	}
 
 	return nil
@@ -413,26 +432,45 @@ func (d *dataHandler) originListenOrDial() error {
 		d.originConn.dataConn = tcpConn
 	}
 
+	// set TLS session.
+	if d.needTLSForTransfer {
+		if d.tlsDataSet.forOrigin.getTLSConfig() == nil {
+			return errors.New("cannot get origin TLS config for data transfer. abort data transfer")
+		}
+
+		tlsConn := tls.Client(d.originConn.dataConn, d.tlsDataSet.forOrigin.getTLSConfig())
+		if err := tlsConn.Handshake(); err != nil {
+			d.log.err("TLS origin data connection handshake got error: %v", err)
+		}
+		d.log.debug("TLS data connection with origin has set. TLS protocol version: %s and Cipher Suite: %s. (resumed?: %v)", getTLSProtocolName(tlsConn.ConnectionState().Version), tls.CipherSuiteName(tlsConn.ConnectionState().CipherSuite), tlsConn.ConnectionState().DidResume)
+
+		d.originConn.dataConn = tlsConn
+	}
+
 	return nil
 }
 
 // send data until got EOF or error on connection
-func (d *dataHandler) dataTransfer(reader net.Conn, writer net.Conn) error {
+func (d *dataHandler) dataTransfer(reader net.Conn, writer net.Conn, direction string) error {
 	lastErr := error(nil)
 
 	buffer := make([]byte, dataTransferBufferSize)
 	if _, err := io.CopyBuffer(writer, reader, buffer); err != nil {
-		lastErr = fmt.Errorf("got error on data transfer: %s", err.Error())
+		if !strings.Contains(err.Error(), alreadyClosedMsg) {
+			lastErr = fmt.Errorf("got error on %s data transfer: %s", direction, err.Error())
+		}
 	}
 
 	// send EOF to writer. if fail, close connection
 	if err := sendEOF(writer); err != nil {
-		writer.Close()
+		d.log.err("got error on send EOF to writer conn: %s", err.Error())
 	}
 
 	// set deadline each conn when data transfer complete
-	reader.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
-	writer.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
+	reader.SetDeadline(time.Now().Add(time.Duration(d.config.TransferTimeout) * time.Second))
+	writer.SetDeadline(time.Now().Add(time.Duration(d.config.TransferTimeout) * time.Second))
+
+	d.log.info("%s data transfer routine has done", direction)
 
 	return lastErr
 }

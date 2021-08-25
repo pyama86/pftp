@@ -39,6 +39,9 @@ type clientHandler struct {
 	id                  int
 	conn                net.Conn
 	config              *config
+	tlsDatas            *tlsDataSet
+	controlInTLS        bool
+	transferInTLS       bool
 	middleware          middleware
 	writer              *bufio.Writer
 	reader              *bufio.Reader
@@ -53,18 +56,18 @@ type clientHandler struct {
 	log                 *logger
 	deadline            time.Time
 	srcIP               string
-	tlsProtocol         uint16
 	isLoggedin          bool
 	previousTLSCommands []string
-	isDone              bool
 	inDataTransfer      bool
 }
 
-func newClientHandler(connection net.Conn, c *config, m middleware, id int, currentConnection *int32) *clientHandler {
+func newClientHandler(connection net.Conn, c *config, sharedTLSData *tlsData, m middleware, id int, currentConnection *int32) *clientHandler {
 	p := &clientHandler{
 		id:                id,
 		conn:              connection,
 		config:            c,
+		controlInTLS:      false,
+		transferInTLS:     false,
 		middleware:        m,
 		writer:            bufio.NewWriter(connection),
 		reader:            bufio.NewReader(connection),
@@ -73,9 +76,7 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 		mutex:             &sync.Mutex{},
 		log:               &logger{fromip: connection.RemoteAddr().String(), user: "-", id: id},
 		srcIP:             connection.RemoteAddr().String(),
-		tlsProtocol:       0,
 		isLoggedin:        false,
-		isDone:            false,
 		inDataTransfer:    false,
 	}
 
@@ -86,6 +87,12 @@ func newClientHandler(connection net.Conn, c *config, m middleware, id int, curr
 	// is masquerade IP not setted, set local IP of client connection
 	if len(p.config.MasqueradeIP) == 0 {
 		p.config.MasqueradeIP = strings.Split(connection.LocalAddr().String(), ":")[0]
+	}
+
+	// make TLS configs by shared pftp server conf(for client) and client own conf(for origin)
+	p.tlsDatas = &tlsDataSet{
+		forClient: sharedTLSData,
+		forOrigin: buildTLSConfigForOrigin(),
 	}
 
 	return p
@@ -172,8 +179,6 @@ func (c *clientHandler) getResponseFromOrigin() error {
 
 	// close origin connection when close goroutine
 	defer func() {
-		c.isDone = true
-
 		// send EOF to client connection. if fail, close immediatly
 		c.log.debug("send EOF to client")
 
@@ -221,8 +226,6 @@ func (c *clientHandler) readClientCommands() error {
 
 	// close client connection when close goroutine
 	defer func() {
-		c.isDone = true
-
 		// send EOF to origin connection. if fail, close immediatly
 		c.log.debug("send EOF to origin")
 
@@ -303,10 +306,7 @@ func (c *clientHandler) writeLine(line string) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	if _, err := c.writer.Write([]byte(line)); err != nil {
-		return err
-	}
-	if _, err := c.writer.Write([]byte("\r\n")); err != nil {
+	if _, err := c.writer.WriteString(line + "\r\n"); err != nil {
 		return err
 	}
 	if err := c.writer.Flush(); err != nil {
@@ -368,7 +368,7 @@ func (c *clientHandler) handleCommand(line string) (r *result) {
 
 func (c *clientHandler) connectProxy() error {
 	if c.proxy != nil {
-		err := c.proxy.switchOrigin(c.srcIP, c.context.RemoteAddr, c.tlsProtocol, c.previousTLSCommands)
+		err := c.proxy.switchOrigin(c.srcIP, c.context.RemoteAddr, c.previousTLSCommands)
 		if err != nil {
 			return err
 		}
@@ -377,14 +377,13 @@ func (c *clientHandler) connectProxy() error {
 			&proxyServerConfig{
 				clientReader:   c.reader,
 				clientWriter:   c.writer,
+				tlsDatas:       c.tlsDatas,
 				originAddr:     c.context.RemoteAddr,
 				mutex:          c.mutex,
 				log:            c.log,
 				config:         c.config,
-				isDone:         &c.isDone,
 				inDataTransfer: &c.inDataTransfer,
 			})
-
 		if err != nil {
 			return err
 		}
@@ -413,6 +412,6 @@ func (c *clientHandler) commandLog(line string) {
 	if strings.Compare(strings.ToUpper(getCommand(line)[0]), secureCommand) == 0 {
 		c.log.info("read from client: %s ********\r\n", secureCommand)
 	} else {
-		c.log.info("read from client: %s", line)
+		c.log.info("read from client: %s", strings.TrimSuffix(line, "\r\n"))
 	}
 }

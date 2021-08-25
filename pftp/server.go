@@ -22,6 +22,7 @@ type FtpServer struct {
 	listener      net.Listener
 	clientCounter int
 	config        *config
+	serverTLSData *tlsData
 	middleware    middleware
 	shutdown      bool
 }
@@ -32,11 +33,24 @@ func NewFtpServer(confFile string) (*FtpServer, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	m := middleware{}
-	return &FtpServer{
+	server := &FtpServer{
 		config:     c,
 		middleware: m,
-	}, nil
+	}
+
+	// build and set TLS configuration
+	if server.config.TLS != nil {
+		logrus.Info("build server TLS configurations...")
+		server.serverTLSData, err = buildTLSConfigForClient(server.config.TLS)
+		if err != nil {
+			return nil, err
+		}
+		logrus.Infof("TLS certificate successfully loaded")
+	}
+
+	return server, nil
 }
 
 // Use set middleware function
@@ -94,7 +108,7 @@ func (server *FtpServer) serve() error {
 
 		server.clientCounter++
 
-		c := newClientHandler(conn, server.config, server.middleware, server.clientCounter, &currentConnection)
+		c := newClientHandler(conn, server.config, server.serverTLSData, server.middleware, server.clientCounter, &currentConnection)
 		eg.Go(func() error {
 			err := c.handleCommands()
 			logrus.Info("handle command end runtime goroutine count: ", runtime.NumGoroutine())

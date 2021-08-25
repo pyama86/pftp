@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"reflect"
 	"strconv"
 	"strings"
 )
@@ -59,18 +58,8 @@ func (c *clientHandler) handleUSER() *result {
 	return nil
 }
 
-func getTLSVersion(c *tls.Conn) uint16 {
-	cv := reflect.ValueOf(c)
-	switch ce := cv.Elem(); ce.Kind() {
-	case reflect.Struct:
-		fe := ce.FieldByName("vers")
-		return uint16(fe.Uint())
-	}
-	return 0
-}
-
 func (c *clientHandler) handleAUTH() *result {
-	if c.config.TLSConfig != nil {
+	if c.tlsDatas.forClient.getTLSConfig() != nil {
 		r := &result{
 			code: 234,
 			msg:  fmt.Sprintf("AUTH command ok. Expecting %s Negotiation.", c.param),
@@ -85,7 +74,7 @@ func (c *clientHandler) handleAUTH() *result {
 			}
 		}
 
-		tlsConn := tls.Server(c.conn, c.config.TLSConfig)
+		tlsConn := tls.Server(c.conn, c.tlsDatas.forClient.getTLSConfig())
 		err := tlsConn.Handshake()
 		if err != nil {
 			return &result{
@@ -96,11 +85,30 @@ func (c *clientHandler) handleAUTH() *result {
 			}
 		}
 
+		c.log.debug("TLS control connection finished with client. TLS protocol version: %s and Cipher Suite: %s", getTLSProtocolName(tlsConn.ConnectionState().Version), tls.CipherSuiteName(tlsConn.ConnectionState().CipherSuite))
+
 		c.conn = tlsConn
-		*c.reader = *(bufio.NewReader(c.conn))
-		*c.writer = *(bufio.NewWriter(c.conn))
-		c.tlsProtocol = getTLSVersion(tlsConn)
+		c.reader = bufio.NewReader(c.conn)
+		c.writer = bufio.NewWriter(c.conn)
+
+		// if proxy server attached, change proxy handler's client reader & writer to TLS conn
+		if c.proxy != nil {
+			c.proxy.clientReader = c.reader
+			c.proxy.clientWriter = c.writer
+		}
+
 		c.previousTLSCommands = append(c.previousTLSCommands, c.line)
+
+		c.controlInTLS = true
+
+		c.tlsDatas.serverName = tlsConn.ConnectionState().ServerName
+		c.tlsDatas.version = tlsConn.ConnectionState().Version
+		c.tlsDatas.cipherSuite = tlsConn.ConnectionState().CipherSuite
+
+		// set specific client TLS informations to origin TLS config
+		c.tlsDatas.forOrigin.setServerName(c.tlsDatas.serverName)
+		c.tlsDatas.forOrigin.setSpecificTLSVersion(c.tlsDatas.version)
+		c.tlsDatas.forOrigin.setCipherSUite(c.tlsDatas.cipherSuite)
 
 		return nil
 	}
@@ -112,7 +120,7 @@ func (c *clientHandler) handleAUTH() *result {
 
 // response PBSZ to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePBSZ() *result {
-	if c.tlsProtocol != 0 {
+	if c.controlInTLS {
 		if !c.isLoggedin {
 			r := &result{
 				code: 200,
@@ -153,7 +161,7 @@ func (c *clientHandler) handlePBSZ() *result {
 
 // response PROT to client and store command line when connect by TLS & not loggined
 func (c *clientHandler) handlePROT() *result {
-	if c.tlsProtocol != 0 {
+	if c.controlInTLS {
 		if !c.isLoggedin {
 			var r *result
 			if c.param == "C" {
@@ -197,6 +205,8 @@ func (c *clientHandler) handlePROT() *result {
 				}
 			}
 		}
+
+		c.transferInTLS = (c.param == "P")
 
 		return nil
 	}
@@ -263,6 +273,8 @@ func (c *clientHandler) handleDATA() *result {
 			c.conn,
 			c.proxy.GetConn(),
 			c.command,
+			c.tlsDatas,
+			c.transferInTLS,
 			&c.inDataTransfer,
 		)
 		if err != nil {

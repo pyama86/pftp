@@ -93,6 +93,8 @@ func Test_dataHandler_parsePORTcommand(t *testing.T) {
 				nil,
 				nil,
 				tt.fields.mode,
+				nil,
+				false,
 				&inDataTransfer,
 			)
 			err := d.parsePORTcommand(tt.fields.line)
@@ -217,6 +219,8 @@ func Test_dataHandler_parseEPRTcommand(t *testing.T) {
 				nil,
 				nil,
 				tt.fields.mode,
+				nil,
+				false,
 				&inDataTransfer,
 			)
 			err := d.parseEPRTcommand(tt.fields.line)
@@ -357,6 +361,8 @@ func Test_dataHandler_parsePASVresponse(t *testing.T) {
 				nil,
 				nil,
 				tt.fields.mode,
+				nil,
+				false,
 				&inDataTransfer,
 			)
 			err := d.parsePASVresponse(tt.fields.line)
@@ -453,6 +459,8 @@ func Test_dataHandler_parseEPSV(t *testing.T) {
 				nil,
 				nil,
 				tt.fields.mode,
+				nil,
+				false,
 				&inDataTransfer,
 			)
 			err := d.parseEPSVresponse(tt.fields.line)
