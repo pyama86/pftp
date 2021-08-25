@@ -29,7 +29,7 @@ type dataHandler struct {
 
 type connector struct {
 	listener         *net.TCPListener
-	communicaionConn net.Conn
+	communicationConn net.Conn
 	dataConn         net.Conn
 	originalRemoteIP string
 	remoteIP         string
@@ -48,7 +48,7 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 	d := &dataHandler{
 		originConn: connector{
 			listener:         nil,
-			communicaionConn: originConn,
+			communicationConn: originConn,
 			dataConn:         nil,
 			needsListen:      false,
 			isClient:         false,
@@ -56,7 +56,7 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 		},
 		clientConn: connector{
 			listener:         nil,
-			communicaionConn: clientConn,
+			communicationConn: clientConn,
 			dataConn:         nil,
 			needsListen:      false,
 			isClient:         true,
@@ -72,12 +72,12 @@ func newDataHandler(config *config, log *logger, clientConn net.Conn, originConn
 		transferDone:         make(chan struct{}),
 	}
 
-	if d.originConn.communicaionConn != nil {
+	if d.originConn.communicationConn != nil {
 		d.originConn.originalRemoteIP, _, _ = net.SplitHostPort(originConn.RemoteAddr().String())
 		d.originConn.localIP, d.originConn.localPort, _ = net.SplitHostPort(originConn.LocalAddr().String())
 	}
 
-	if d.clientConn.communicaionConn != nil {
+	if d.clientConn.communicationConn != nil {
 		d.clientConn.originalRemoteIP, _, _ = net.SplitHostPort(clientConn.RemoteAddr().String())
 		d.clientConn.localIP, d.clientConn.localPort, _ = net.SplitHostPort(clientConn.LocalAddr().String())
 	}
@@ -168,8 +168,7 @@ func (d *dataHandler) setNewListener() (*net.TCPListener, error) {
 			return nil, err
 		}
 
-		// only can support IPv4 between origin server connection
-		if listener, err = net.ListenTCP("tcp4", lAddr); err != nil {
+		if listener, err = net.ListenTCP("tcp", lAddr); err != nil {
 			if counter > connectionTimeout {
 				d.log.err("cannot set listener")
 
@@ -266,8 +265,8 @@ func (d *dataHandler) StartDataTransfer() error {
 
 	// do not timeout communication connection during data transfer
 	*d.inDataTransfer = true
-	d.clientConn.communicaionConn.SetDeadline(time.Time{})
-	d.originConn.communicaionConn.SetDeadline(time.Time{})
+	d.clientConn.communicationConn.SetDeadline(time.Time{})
+	d.originConn.communicationConn.SetDeadline(time.Time{})
 
 	// client to origin
 	eg.Go(func() error { return d.dataTransfer(d.clientConn.dataConn, d.originConn.dataConn, "upload") })
@@ -282,8 +281,8 @@ func (d *dataHandler) StartDataTransfer() error {
 
 	// set timeout to each connection
 	*d.inDataTransfer = false
-	d.clientConn.communicaionConn.SetDeadline(time.Now().Add(time.Duration(d.config.IdleTimeout) * time.Second))
-	d.originConn.communicaionConn.SetDeadline(time.Now().Add(time.Duration(d.config.ProxyTimeout) * time.Second))
+	d.clientConn.communicationConn.SetDeadline(time.Now().Add(time.Duration(d.config.IdleTimeout) * time.Second))
+	d.originConn.communicationConn.SetDeadline(time.Now().Add(time.Duration(d.config.ProxyTimeout) * time.Second))
 
 	return err
 }
@@ -476,7 +475,7 @@ func (d *dataHandler) dataTransfer(reader net.Conn, writer net.Conn, direction s
 	return lastErr
 }
 
-// parse port comand line
+// parse port comand line (active data conn)
 func (d *dataHandler) parsePORTcommand(line string) error {
 	// PORT command format : "PORT h1,h2,h3,h4,p1,p2\r\n"
 	var err error
@@ -491,7 +490,7 @@ func (d *dataHandler) parsePORTcommand(line string) error {
 	return err
 }
 
-// parse eprt comand line
+// parse eprt comand line (active data conn)
 func (d *dataHandler) parseEPRTcommand(line string) error {
 	// EPRT command format
 	// - IPv4 : "EPRT |1|h1.h2.h3.h4|port|\r\n"
@@ -508,7 +507,7 @@ func (d *dataHandler) parseEPRTcommand(line string) error {
 	return err
 }
 
-// parse pasv comand line
+// parse pasv comand line (passive data conn)
 func (d *dataHandler) parsePASVresponse(line string) error {
 	// PASV response format : "227 Entering Passive Mode (h1,h2,h3,h4,p1,p2).\r\n"
 	var err error
@@ -523,14 +522,14 @@ func (d *dataHandler) parsePASVresponse(line string) error {
 	d.originConn.remoteIP, d.originConn.remotePort, err = parseLineToAddr(line[startIndex+1 : endIndex])
 
 	// if received ip is not public IP, ignore it
-	if !isPublicIP(net.ParseIP(d.originConn.remoteIP)) {
+	if !isPublicIP(net.ParseIP(d.originConn.remoteIP)) || d.config.IgnorePassiveIP {
 		d.originConn.remoteIP = d.originConn.originalRemoteIP
 	}
 
 	return err
 }
 
-// parse epsv comand line
+// parse epsv comand line (passive data conn)
 func (d *dataHandler) parseEPSVresponse(line string) error {
 	// EPSV response format : "229 Entering Extended Passive Mode (|||port|)\r\n"
 	startIndex := strings.Index(line, "(")
