@@ -1,4 +1,4 @@
-module github.com/heat1024/pftp
+module github.com/pyama86/pftp
 
 go 1.15
 

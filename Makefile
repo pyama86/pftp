@@ -1,28 +1,28 @@
 TEST ?= $(shell $(GO) list ./... | grep -v vendor)
 VERSION = $(shell cat version)
 REVISION = $(shell git describe --always)
-GOVERSION = $(shell go version | awk '{print $$3}')
-DATE = $(shell date '+%Y%m%d-%H%M%S%Z')
+
 INFO_COLOR=\033[1;34m
 RESET=\033[0m
 BOLD=\033[1m
-ifeq ("$(shell uname)","Darwin")
 GO ?= GO111MODULE=on go
-else
-GO ?= GO111MODULE=on /usr/local/go/bin/go
-endif
-TAG ?= $(shell git tag | grep -q v$(VERSION) && echo "v$(VERSION)-$(REVISION)" || echo "v$(VERSION)")
 
 default: build
 ci: depsdev ftp test lint integration ## Run test and more...
 
 depsdev: ## Installing dependencies for development
 	$(GO) get golang.org/x/lint/golint
+	$(GO) get -u github.com/tcnksm/ghr
+	$(GO) get github.com/mitchellh/gox
 
 test: ## Run test
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Testing$(RESET)"
 	$(GO) test -v $(TEST) -timeout=5s -parallel=4
 	$(GO) test -race $(TEST)
+
+vet: ## Exec $(GO) vet
+	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Vetting$(RESET)"
+	$(GO) vet $(TEST)
 
 lint: ## Exec golint
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Linting$(RESET)"
@@ -35,10 +35,13 @@ build: ## Build as linux binary
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Building$(RESET)"
 	$(GO) build -o pftp_bin main.go
 
-release:
-	$(GO) mod tidy
-	git tag $(TAG)
-	git push origin $(TAG)
+
+ghr: ## Upload to Github releases without token check
+	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Releasing for Github$(RESET)"
+	ghr -u pyama86 v$(VERSION)-$(REVISION) pkg
+
+dist: build ## Upload to Github releases
+	@test -z $(GITHUB_TOKEN) || test -z $(GITHUB_API) || $(MAKE) ghr
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(INFO_COLOR)%-30s$(RESET) %s\n", $$1, $$2}'
@@ -85,4 +88,4 @@ integration:
 	$(GO) test $(VERBOSE) -timeout=300s -integration $(TEST) $(TEST_OPTIONS)
 	./misc/server stop
 
-.PHONY: default dist test ftp proftpd vsftpd help build server release
+.PHONY: default dist test ftp proftpd vsftpd help ghr build server

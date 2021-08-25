@@ -254,7 +254,8 @@ func (c *clientHandler) readClientCommands() error {
 			} else {
 				switch err := err.(type) {
 				case net.Error:
-					if err.(net.Error).Timeout() {
+					nErr := net.Error(err)
+					if nErr.Timeout() {
 						c.conn.SetDeadline(time.Now().Add(time.Minute))
 						r := result{
 							code: 421,
