@@ -180,7 +180,7 @@ func (c *clientHandler) getResponseFromOrigin() error {
 
 	// close origin connection when close goroutine
 	defer func() {
-		// send EOF to client connection. if fail, close immediatly
+		// send EOF to client connection. if fail, close immediately
 		c.log.debug("send EOF to client")
 
 		if err := sendEOF(c.conn); err != nil {
@@ -227,7 +227,7 @@ func (c *clientHandler) readClientCommands() error {
 
 	// close client connection when close goroutine
 	defer func() {
-		// send EOF to origin connection. if fail, close immediatly
+		// send EOF to origin connection. if fail, close immediately
 		c.log.debug("send EOF to origin")
 
 		if err := sendEOF(c.proxy.GetConn()); err != nil {
@@ -273,7 +273,7 @@ func (c *clientHandler) readClientCommands() error {
 						// if timeout, send EOF to client connection for graceful disconnect
 						c.log.debug("send EOF to client")
 
-						// if send EOF failed, close immediatly
+						// if send EOF failed, close immediately
 						if err := sendEOF(c.conn); err != nil {
 							c.log.debug("send EOF to client failed. try to close connection.")
 							connectionCloser(c, c.log)

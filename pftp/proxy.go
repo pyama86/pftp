@@ -552,7 +552,7 @@ loop:
 		case <-s.stopChan:
 			s.stop = true
 
-			// close read groutine
+			// close read goroutine
 			connectionCloser(s, s.log)
 
 			s.stopChanDone <- struct{}{}

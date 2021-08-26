@@ -28,7 +28,7 @@ func getTLSProtocol(protocol string) uint16 {
 	case "TLSv1.3":
 		return tls.VersionTLS13
 	default:
-		logrus.Debugf("%s is unsupport TLS protocol version. use default: %s", protocol, defaultTLSVer)
+		logrus.Debugf("%s is an unsupported TLS protocol version. use default: %s", protocol, defaultTLSVer)
 		return tls.VersionTLS12 // the default TLS protocol is TLSv1.2
 	}
 }
@@ -45,7 +45,7 @@ func getTLSProtocolName(version uint16) string {
 	case tls.VersionTLS13:
 		return "TLSv1.3"
 	default:
-		return "unsupport TLS version"
+		return "unsupported TLS version"
 	}
 }
 
@@ -143,7 +143,7 @@ func (t *tlsData) verifyTLSConnection(cs tls.ConnectionState) error {
 
 		_, err := cs.PeerCertificates[0].Verify(opts)
 		if err != nil {
-			return fmt.Errorf("varidate error: %v", err)
+			return fmt.Errorf("variation error: %v", err)
 		}
 	}
 
