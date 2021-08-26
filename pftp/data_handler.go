@@ -276,9 +276,9 @@ func (d *dataHandler) StartDataTransfer(direction string) error {
 	eg := errgroup.Group{}
 
 	// make data connection (client first)
-	clientConnnected := make(chan error)
+	clientConnected := make(chan error)
 	eg.Go(func() error {
-		if err := d.clientListenOrDial(clientConnnected); err != nil {
+		if err := d.clientListenOrDial(clientConnected); err != nil {
 			connectionCloser(d, d.log)
 			return err
 		}
@@ -286,7 +286,7 @@ func (d *dataHandler) StartDataTransfer(direction string) error {
 		return nil
 	})
 	eg.Go(func() error {
-		if err := d.originListenOrDial(clientConnnected); err != nil {
+		if err := d.originListenOrDial(clientConnected); err != nil {
 			connectionCloser(d, d.log)
 			return err
 		}
@@ -327,7 +327,7 @@ func (d *dataHandler) StartDataTransfer(direction string) error {
 }
 
 // make client connection
-func (d *dataHandler) clientListenOrDial(clientConnnected chan error) error {
+func (d *dataHandler) clientListenOrDial(clientConnected chan error) error {
 	// if client connect needs listen, open listener
 	if d.clientConn.needsListen {
 		d.mutex.Lock()
@@ -342,7 +342,7 @@ func (d *dataHandler) clientListenOrDial(clientConnnected chan error) error {
 		listener.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
 
 		conn, err := listener.AcceptTCP()
-		clientConnnected <- err
+		clientConnected <- err
 		if err != nil {
 			return err
 		}
@@ -382,7 +382,7 @@ func (d *dataHandler) clientListenOrDial(clientConnnected chan error) error {
 		}
 
 		conn, err = netDialer.Dial("tcp", net.JoinHostPort(d.clientConn.remoteIP, d.clientConn.remotePort))
-		clientConnnected <- err
+		clientConnected <- err
 		if err != nil {
 			return fmt.Errorf("cannot connect to client data address: %v, %s", conn, err.Error())
 		}
@@ -429,9 +429,9 @@ func (d *dataHandler) clientListenOrDial(clientConnnected chan error) error {
 }
 
 // make origin connection
-func (d *dataHandler) originListenOrDial(clientConnnected chan error) error {
+func (d *dataHandler) originListenOrDial(clientConnected chan error) error {
 	// if client data connection got error, abort origin connection too
-	if <-clientConnnected != nil {
+	if <-clientConnected != nil {
 		return nil
 	}
 
