@@ -238,23 +238,43 @@ func (s *proxyServer) isLoggedIn() bool {
 }
 
 func (s *proxyServer) sendProxyHeader(clientAddr string, originAddr string) error {
-	sourceAddr := strings.Split(clientAddr, ":")
-	destinationAddr := strings.Split(originAddr, ":")
-	sourcePort, _ := strconv.Atoi(sourceAddr[1])
-	destinationPort, _ := strconv.Atoi(destinationAddr[1])
-
-	// proxyProtocolHeader's DestinationAddress must be IP! not domain name
-	hostIP, err := net.LookupIP(destinationAddr[0])
+	sourceAddr, sourcePort, err := net.SplitHostPort(clientAddr)
 	if err != nil {
 		return err
+	}
+
+	sourcePortInt, err := strconv.Atoi(sourcePort)
+	if err != nil {
+		return err
+	}
+
+	destinationAddr, destinationPort, err := net.SplitHostPort(originAddr)
+	if err != nil {
+		return err
+	}
+
+	destinationPortInt, err := strconv.Atoi(destinationPort)
+	if err != nil {
+		return err
+	}
+
+	// proxyProtocolHeader's DestinationAddress must be IP! not domain name
+	hostIP, err := net.LookupIP(destinationAddr)
+	if err != nil {
+		return err
+	}
+
+	transportProtocol := proxyproto.TCPv4
+	if strings.Count(sourceAddr, ":") > 0 {
+		transportProtocol = proxyproto.TCPv6
 	}
 
 	proxyProtocolHeader := proxyproto.Header{
 		Version:           byte(1),
 		Command:           proxyproto.PROXY,
-		TransportProtocol: proxyproto.TCPv4,
-		SourceAddr:        &net.TCPAddr{IP: net.ParseIP(sourceAddr[0]), Port: sourcePort},
-		DestinationAddr:   &net.TCPAddr{IP: net.ParseIP(hostIP[0].String()), Port: destinationPort},
+		TransportProtocol: transportProtocol,
+		SourceAddr:        &net.TCPAddr{IP: net.ParseIP(sourceAddr), Port: sourcePortInt},
+		DestinationAddr:   &net.TCPAddr{IP: net.ParseIP(hostIP[0].String()), Port: destinationPortInt},
 	}
 
 	_, err = proxyProtocolHeader.WriteTo(s.origin)
