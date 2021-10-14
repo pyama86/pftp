@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	proxyproto "github.com/pires/go-proxyproto"
 	"github.com/tevino/abool"
 	"golang.org/x/sync/errgroup"
 )
@@ -494,6 +495,31 @@ func (d *dataHandler) originListenOrDial(clientConnected chan error) error {
 		tcpConn.SetLinger(0)
 
 		d.originConn.dataConn = tcpConn
+
+		if d.config.ProxyProtocol {
+			sourcePortInt := 4242 // XXX TODO use the client Port
+
+			destinationPortInt, err := strconv.Atoi(d.originConn.remotePort)
+			if err != nil {
+				return err
+			}
+
+			transportProtocol := proxyproto.TCPv4
+			if strings.Count(d.clientConn.localIP, ":") > 0 {
+				transportProtocol = proxyproto.TCPv6
+			}
+
+			proxyProtocolHeader := proxyproto.Header{
+				Version:           byte(1),
+				Command:           proxyproto.PROXY,
+				TransportProtocol: transportProtocol,
+				SourceAddr:        &net.TCPAddr{IP: net.ParseIP(d.clientConn.localIP), Port: sourcePortInt},
+				DestinationAddr:   &net.TCPAddr{IP: net.ParseIP(d.originConn.remoteIP), Port: destinationPortInt},
+			}
+
+			_, err = proxyProtocolHeader.WriteTo(tcpConn)
+			return err
+		}
 	}
 
 	// set TLS session.
