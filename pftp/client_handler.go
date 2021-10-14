@@ -390,6 +390,12 @@ func (c *clientHandler) connectProxy() error {
 			return err
 		}
 		c.proxy = p
+
+		if c.config.ProxyProtocol {
+			if err := p.sendProxyHeader(c.srcIP, c.context.RemoteAddr); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
