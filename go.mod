@@ -3,7 +3,7 @@ module github.com/pyama86/pftp
 go 1.16
 
 require (
-	github.com/BurntSushi/toml v0.4.1
+	github.com/BurntSushi/toml v1.2.0
 	github.com/Gurpartap/logrus-stack v0.0.0-20170710170904-89c00d8a28f4
 	github.com/facebookgo/stack v0.0.0-20160209184415-751773369052 // indirect
 	github.com/jlaffaye/ftp v0.0.0-20210307004419-5d4190119067
