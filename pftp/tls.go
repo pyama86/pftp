@@ -4,7 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strings"
 	"sync"
 
@@ -89,7 +89,7 @@ func buildTLSConfigForClient(TLS *tlsPair) (*tlsData, error) {
 	if len(caCertFile) == 0 {
 		caCertFile = TLS.Cert
 	}
-	caCertPEM, err := ioutil.ReadFile(caCertFile)
+	caCertPEM, err := os.ReadFile(caCertFile)
 	if err != nil {
 		return nil, err
 	}

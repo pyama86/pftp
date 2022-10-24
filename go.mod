@@ -3,7 +3,7 @@ module github.com/pyama86/pftp
 go 1.19
 
 require (
-	github.com/BurntSushi/toml v0.4.1
+	github.com/BurntSushi/toml v1.2.1
 	github.com/Gurpartap/logrus-stack v0.0.0-20170710170904-89c00d8a28f4
 	github.com/jlaffaye/ftp v0.0.0-20210307004419-5d4190119067
 	github.com/julienschmidt/httprouter v1.3.0
@@ -34,10 +34,13 @@ require (
 	github.com/tcnksm/go-gitconfig v0.1.2 // indirect
 	github.com/tcnksm/go-latest v0.0.0-20170313132115-e3007ae9052e // indirect
 	golang.org/x/crypto v0.1.0 // indirect
+	golang.org/x/exp/typeparams v0.0.0-20221023144134-a1e5550cf13e // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
+	golang.org/x/mod v0.6.0 // indirect
 	golang.org/x/net v0.1.0 // indirect
 	golang.org/x/oauth2 v0.1.0 // indirect
-	golang.org/x/tools v0.0.0-20200130002326-2f3ba24bd6e7 // indirect
+	golang.org/x/tools v0.2.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
+	honnef.co/go/tools v0.3.3 // indirect
 )
