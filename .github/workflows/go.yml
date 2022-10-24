@@ -10,6 +10,8 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    env:
+      GOPATH: /home/runner/go
     steps:
     - uses: actions/checkout@v2
 

@@ -11,7 +11,7 @@ default: build
 ci: depsdev ftp test lint integration ## Run test and more...
 
 depsdev: ## Installing dependencies for development
-	$(GO) get golang.org/x/lint/golint
+	which staticcheck > /dev/null || $(GO) install honnef.co/go/tools/cmd/staticcheck@latest
 	$(GO) get -u github.com/tcnksm/ghr
 	$(GO) get github.com/mitchellh/gox
 
@@ -26,7 +26,7 @@ vet: ## Exec $(GO) vet
 
 lint: ## Exec golint
 	@echo "$(INFO_COLOR)==> $(RESET)$(BOLD)Linting$(RESET)"
-	golint -min_confidence 1.1 -set_exit_status $(TEST)
+	$(GOPATH)/bin/staticcheck ./...
 
 server: ## Run server with gin
 	$(GO) run main.go
