@@ -45,7 +45,7 @@ key = "./tls/server.key"
 ## If only one protocol support, set min and max to same
 ## Can set TLSv1 TLSv1.1 TLSv1.2
 min_protocol = "TLSv1"
-max_protocol = "TLSv1"
+max_protocol = "TLSv1.2"
 
 [webapiserver]
 # %s replace by username on running

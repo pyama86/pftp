@@ -12,7 +12,7 @@ import (
 var confFile = "./config.toml"
 
 func init() {
-	logrus.SetLevel(logrus.DebugLevel)
+	logrus.SetLevel(logrus.ErrorLevel)
 	stackLevels := []logrus.Level{logrus.PanicLevel, logrus.FatalLevel}
 	logrus.AddHook(logrus_stack.NewHook(stackLevels, stackLevels))
 }
