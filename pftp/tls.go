@@ -68,14 +68,19 @@ type tlsDataSet struct {
 // build origin side tls config
 // it is working TLS client
 func buildTLSConfigForOrigin(c *config) *tlsData {
+	tc := &tls.Config{
+		InsecureSkipVerify:     true,
+		ClientSessionCache:     tls.NewLRUClientSessionCache(10),
+		SessionTicketsDisabled: false,
+	}
+
+	if c != nil && c.TLS != nil {
+		tc.MinVersion = getTLSProtocol(c.TLS.MinProtocol)
+		tc.MaxVersion = getTLSProtocol(c.TLS.MaxProtocol)
+	}
+
 	return &tlsData{
-		config: &tls.Config{
-			MinVersion:             getTLSProtocol(c.TLS.MinProtocol),
-			MaxVersion:             getTLSProtocol(c.TLS.MaxProtocol),
-			InsecureSkipVerify:     true,
-			ClientSessionCache:     tls.NewLRUClientSessionCache(10),
-			SessionTicketsDisabled: false,
-		},
+		config: tc,
 		rootCA: nil,
 		cert:   nil,
 	}

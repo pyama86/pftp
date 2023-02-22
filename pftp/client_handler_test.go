@@ -256,7 +256,7 @@ func Test_clientHandler_TLS_error_type_bug(t *testing.T) {
 	var cn int32
 
 	for _, tt := range tests {
-		tlsData := buildTLSConfigForOrigin()
+		tlsData := buildTLSConfigForOrigin(tt.fields.config)
 
 		t.Run(tt.name, func(t *testing.T) {
 			serverTLSConfig, err := buildTLSConfigForClient(tt.fields.config.TLS)
@@ -384,7 +384,7 @@ func Test_clientHandler_TLS_Session_Resumption(t *testing.T) {
 	var cn int32
 
 	for _, tt := range tests {
-		tlsData := buildTLSConfigForOrigin()
+		tlsData := buildTLSConfigForOrigin(tt.fields.config)
 
 		t.Run(tt.name, func(t *testing.T) {
 			serverTLSConfig, err := buildTLSConfigForClient(tt.fields.config.TLS)

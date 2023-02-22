@@ -209,7 +209,7 @@ func Test_clientHandler_handleUSER(t *testing.T) {
 			},
 			want: &result{
 				code: 530,
-				msg:  "I can't deal with you (proxy error)",
+				msg:  "I can't deal with you (proxy error for user)",
 			},
 		},
 	}
