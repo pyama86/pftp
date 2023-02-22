@@ -131,8 +131,9 @@ func TestAuth(t *testing.T) {
 				return fmt.Errorf("integration.TestAuth() error = %v, want %v", err, "234 AUTH command ok")
 			}
 
+			err := client.Login(testset[index].User.ID, testset[index].User.Pass)
 			// If Login success with vsftpd user(vsuser), Return Error
-			if err := client.Login(testset[index].User.ID, testset[index].User.Pass); err == nil && testset[index].User.ID == "vsuser" {
+			if err == nil && testset[index].User.ID == "vsuser" {
 				return fmt.Errorf("integration.TestAuth() error = %v, wantErr %v", err, errors.New("550 Permission denied"))
 			} else if err != nil && testset[index].User.ID == "prouser" {
 				return fmt.Errorf("integration.TestAuth() error = %v, want %s", err, "230 User prouser logged in")

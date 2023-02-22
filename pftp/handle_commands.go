@@ -38,7 +38,7 @@ func (c *clientHandler) handleUSER() *result {
 
 		return &result{
 			code: 530,
-			msg:  "I can't deal with you (proxy error)",
+			msg:  "I can't deal with you (proxy error for user)",
 			err:  err,
 			log:  c.log,
 		}
@@ -50,7 +50,7 @@ func (c *clientHandler) handleUSER() *result {
 	if err := c.proxy.sendToOrigin(c.line); err != nil {
 		return &result{
 			code: 530,
-			msg:  "I can't deal with you (proxy error)",
+			msg:  "I can't deal with you (proxy error) for user",
 			err:  err,
 			log:  c.log,
 		}
@@ -145,7 +145,7 @@ func (c *clientHandler) handlePBSZ() *result {
 			if err := c.proxy.sendToOrigin(c.line); err != nil {
 				return &result{
 					code: 530,
-					msg:  "I can't deal with you (proxy error)",
+					msg:  "I can't deal with you (proxy error for pbsz)",
 					err:  err,
 					log:  c.log,
 				}
@@ -200,7 +200,7 @@ func (c *clientHandler) handlePROT() *result {
 			if err := c.proxy.sendToOrigin(c.line); err != nil {
 				return &result{
 					code: 530,
-					msg:  "I can't deal with you (proxy error)",
+					msg:  "I can't deal with you (proxy error for prot)",
 					err:  err,
 					log:  c.log,
 				}
@@ -415,7 +415,7 @@ func (c *clientHandler) handleDATA() *result {
 
 			return &result{
 				code: 530,
-				msg:  "I can't deal with you (proxy error)",
+				msg:  "I can't deal with you (proxy error for handle data)",
 				err:  err,
 				log:  c.log,
 			}
