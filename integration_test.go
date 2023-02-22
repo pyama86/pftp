@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/md5"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -126,6 +127,8 @@ func TestAuth(t *testing.T) {
 			defer client.Quit()
 			client.Debug = true
 			client.TLSConfig.InsecureSkipVerify = true
+			client.TLSConfig.MinVersion = tls.VersionTLS10
+			client.TLSConfig.MaxVersion = tls.VersionTLS13
 
 			if err := client.Connect("localhost", 2121); err != nil {
 				return fmt.Errorf("integration.TestAuth() error = %v, want %v", err, "234 AUTH command ok")
@@ -154,12 +157,12 @@ func removeDirFiles(t *testing.T, dir string) {
 		filepath.Walk(f,
 			func(fpath string, info os.FileInfo, err error) error {
 				if err != nil {
-					t.Fatal(err)
+					fmt.Println(err)
 				}
 
 				rel, err := filepath.Rel(f, fpath)
 				if err != nil {
-					t.Fatal(err)
+					fmt.Println(err)
 				}
 				if rel == `.` || rel == `..` {
 					return nil

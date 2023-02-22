@@ -323,7 +323,7 @@ func (s *proxyServer) sendTLSCommand(previousTLSCommands []string) error {
 					tlsConn := tls.Client(s.origin, s.tlsDatas.forOrigin.getTLSConfig())
 					err = tlsConn.Handshake()
 					if err != nil {
-						return fmt.Errorf("TLS handshake with origin has failed")
+						return fmt.Errorf("TLS handshake with origin has failed %s", err)
 					}
 
 					s.log.debug("TLS control connection finished with origin. TLS protocol version: %s and Cipher Suite: %s", getTLSProtocolName(tlsConn.ConnectionState().Version), tls.CipherSuiteName(tlsConn.ConnectionState().CipherSuite))

@@ -97,7 +97,7 @@ func newClientHandler(connection net.Conn, c *config, sharedTLSData *tlsData, m 
 	// make TLS configs by shared pftp server conf(for client) and client own conf(for origin)
 	p.tlsDatas = &tlsDataSet{
 		forClient: sharedTLSData,
-		forOrigin: buildTLSConfigForOrigin(),
+		forOrigin: buildTLSConfigForOrigin(c),
 	}
 
 	return p
