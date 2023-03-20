@@ -19,8 +19,8 @@ github.com/lestrrat/go-server-starter v0.0.0-20180220115249-6ac0b358431b h1:Ial7
 github.com/lestrrat/go-server-starter v0.0.0-20180220115249-6ac0b358431b/go.mod h1:3T+o9dIpjId0dpv2Aa7+HivBIW9h9nra0VuN5ARP/ec=
 github.com/marcobeierer/ftps v0.0.0-20180713194618-60e520f5feed h1:1VAr2hlM3isutlZdn7L0CnKc2vVvxY+KNWJMzTMs3wQ=
 github.com/marcobeierer/ftps v0.0.0-20180713194618-60e520f5feed/go.mod h1:kFk0pASx+lFf7MyQg428JrEFYIYLpqQnFJjUaXWunic=
-github.com/pires/go-proxyproto v0.6.2 h1:KAZ7UteSOt6urjme6ZldyFm4wDe/z0ZUP0Yv0Dos0d8=
-github.com/pires/go-proxyproto v0.6.2/go.mod h1:Odh9VFOZJCf9G8cLW5o435Xf1J95Jw9Gw5rnCjcwzAY=
+github.com/pires/go-proxyproto v0.7.0 h1:IukmRewDQFWC7kfnb66CSomk2q/seBuilHBYFwyq0Hs=
+github.com/pires/go-proxyproto v0.7.0/go.mod h1:Vz/1JPY/OACxWGQNIRY2BeyDmpoaWmEP40O9LbuiFR4=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/sirupsen/logrus v1.9.0 h1:trlNQbNUG3OdDrDil03MCb1H2o9nJ1x4/5LYw7byDE0=

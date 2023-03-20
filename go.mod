@@ -9,7 +9,7 @@ require (
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/lestrrat/go-server-starter v0.0.0-20180220115249-6ac0b358431b
 	github.com/marcobeierer/ftps v0.0.0-20180713194618-60e520f5feed
-	github.com/pires/go-proxyproto v0.6.2
+	github.com/pires/go-proxyproto v0.7.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/tevino/abool v1.2.0
 	golang.org/x/sync v0.1.0
