@@ -10,7 +10,7 @@ require (
 	github.com/lestrrat/go-server-starter v0.0.0-20180220115249-6ac0b358431b
 	github.com/marcobeierer/ftps v0.0.0-20180713194618-60e520f5feed
 	github.com/pires/go-proxyproto v0.7.0
-	github.com/sirupsen/logrus v1.9.2
+	github.com/sirupsen/logrus v1.9.3
 	github.com/tevino/abool v1.2.0
 	golang.org/x/sync v0.2.0
 	golang.org/x/sys v0.8.0
