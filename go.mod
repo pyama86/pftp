@@ -3,7 +3,7 @@ module github.com/pyama86/pftp
 go 1.19
 
 require (
-	github.com/BurntSushi/toml v1.3.0
+	github.com/BurntSushi/toml v1.3.2
 	github.com/Gurpartap/logrus-stack v0.0.0-20170710170904-89c00d8a28f4
 	github.com/jlaffaye/ftp v0.2.0
 	github.com/julienschmidt/httprouter v1.3.0
