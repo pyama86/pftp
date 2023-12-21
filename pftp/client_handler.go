@@ -77,7 +77,7 @@ func newClientHandler(connection net.Conn, c *config, sharedTLSData *tlsData, m 
 		middleware:        m,
 		writer:            bufio.NewWriter(connection),
 		reader:            bufio.NewReader(connection),
-		context:           newContext(c),
+		context:           newContext(c, connection),
 		currentConnection: currentConnection,
 		mutex:             &sync.Mutex{},
 		log:               &logger{fromip: connection.RemoteAddr().String(), user: "-", id: id},
