@@ -34,6 +34,11 @@ func NewFtpServer(confFile string) (*FtpServer, error) {
 		return nil, err
 	}
 
+	return NewFtpServerFromConfig(c)
+}
+
+// NewFtpServerFromConfig creates new ftp server from the given config
+func NewFtpServerFromConfig(c *config) (*FtpServer, error) {
 	m := middleware{}
 	server := &FtpServer{
 		config:     c,
@@ -43,10 +48,11 @@ func NewFtpServer(confFile string) (*FtpServer, error) {
 	// build and set TLS configuration
 	if server.config.TLS != nil {
 		logrus.Info("build server TLS configurations...")
-		server.serverTLSData, err = buildTLSConfigForClient(server.config.TLS)
+		serverTLSData, err := buildTLSConfigForClient(server.config.TLS)
 		if err != nil {
 			return nil, err
 		}
+		server.serverTLSData = serverTLSData
 		logrus.Infof("TLS certificate successfully loaded")
 	}
 
