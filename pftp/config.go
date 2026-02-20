@@ -30,9 +30,10 @@ type config struct {
 	DataChanProxy   bool     `toml:"data_channel_proxy"`
 	DataPortRange   string   `toml:"data_listen_port_range"`
 	MasqueradeIP    string   `toml:"masquerade_ip"`
-	TransferMode    string   `toml:"transfer_mode"`
-	IgnorePassiveIP bool     `toml:"ignore_passive_ip"`
-	TLS             *tlsPair `toml:"tls"`
+	TransferMode        string   `toml:"transfer_mode"`
+	IgnorePassiveIP     bool     `toml:"ignore_passive_ip"`
+	EnforceSameIPCheck  bool     `toml:"enforce_same_ip_check"`
+	TLS                 *tlsPair `toml:"tls"`
 }
 
 // NewConfig creates a new config instance and applies the provided options.
@@ -131,6 +132,7 @@ func defaultConfig(config *config) {
 	config.WelcomeMsg = "FTP proxy ready"
 	config.TransferMode = "CLIENT"
 	config.IgnorePassiveIP = false
+	config.EnforceSameIPCheck = false
 }
 
 func dataPortRangeValidation(r string) error {
@@ -259,6 +261,13 @@ func WithTransferMode(transferMode string) ConfigOption {
 func WithIgnorePassiveIP(ignorePassiveIP bool) ConfigOption {
 	return func(c *config) {
 		c.IgnorePassiveIP = ignorePassiveIP
+	}
+}
+
+// WithEnforceSameIPCheck enables or disables PASV same-IP check for data connections.
+func WithEnforceSameIPCheck(enforceSameIPCheck bool) ConfigOption {
+	return func(c *config) {
+		c.EnforceSameIPCheck = enforceSameIPCheck
 	}
 }
 
