@@ -18,22 +18,22 @@ const (
 )
 
 type config struct {
-	ListenAddr      string   `toml:"listen_addr"`
-	RemoteAddr      string   `toml:"remote_addr"`
-	IdleTimeout     int      `toml:"idle_timeout"`
-	ProxyTimeout    int      `toml:"proxy_timeout"`
-	TransferTimeout int      `toml:"transfer_timeout"`
-	MaxConnections  int32    `toml:"max_connections"`
-	ProxyProtocol   bool     `toml:"send_proxy_protocol"`
-	WelcomeMsg      string   `toml:"welcome_message"`
-	KeepaliveTime   int      `toml:"keepalive_time"`
-	DataChanProxy   bool     `toml:"data_channel_proxy"`
-	DataPortRange   string   `toml:"data_listen_port_range"`
-	MasqueradeIP    string   `toml:"masquerade_ip"`
-	TransferMode        string   `toml:"transfer_mode"`
-	IgnorePassiveIP     bool     `toml:"ignore_passive_ip"`
-	EnforceSameIPCheck  bool     `toml:"enforce_same_ip_check"`
-	TLS                 *tlsPair `toml:"tls"`
+	ListenAddr         string   `toml:"listen_addr"`
+	RemoteAddr         string   `toml:"remote_addr"`
+	IdleTimeout        int      `toml:"idle_timeout"`
+	ProxyTimeout       int      `toml:"proxy_timeout"`
+	TransferTimeout    int      `toml:"transfer_timeout"`
+	MaxConnections     int32    `toml:"max_connections"`
+	ProxyProtocol      bool     `toml:"send_proxy_protocol"`
+	WelcomeMsg         string   `toml:"welcome_message"`
+	KeepaliveTime      int      `toml:"keepalive_time"`
+	DataChanProxy      bool     `toml:"data_channel_proxy"`
+	DataPortRange      string   `toml:"data_listen_port_range"`
+	MasqueradeIP       string   `toml:"masquerade_ip"`
+	TransferMode       string   `toml:"transfer_mode"`
+	IgnorePassiveIP    bool     `toml:"ignore_passive_ip"`
+	EnforceSameIPCheck bool     `toml:"enforce_same_ip_check"`
+	TLS                *tlsPair `toml:"tls"`
 }
 
 // NewConfig creates a new config instance and applies the provided options.
