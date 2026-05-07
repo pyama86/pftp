@@ -341,10 +341,31 @@ func (d *dataHandler) clientListenOrDial(clientConnected chan error) error {
 		// set listener timeout
 		listener.SetDeadline(time.Now().Add(time.Duration(connectionTimeout) * time.Second))
 
-		conn, err := listener.AcceptTCP()
-		clientConnected <- err
-		if err != nil {
-			return err
+		// PASV Same-IP Check - vsftpd pasv_promiscuous=NO equivalent behavior
+		var conn *net.TCPConn
+		for {
+			var err error
+			conn, err = listener.AcceptTCP()
+			if err != nil {
+				clientConnected <- err
+				return err
+			}
+
+			// PASV Same-IP Check
+			if d.config.EnforceSameIPCheck {
+				clientIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
+				if clientIP != d.clientConn.originalRemoteIP {
+					d.log.debug("PASV same-IP check failed: rejecting connection from %s (expected: %s)",
+						clientIP, d.clientConn.originalRemoteIP)
+					conn.Close() // 不正接続を切断
+					continue     // 次の接続を待機
+				}
+				d.log.debug("PASV same-IP check passed: %s", clientIP)
+			}
+
+			// 正当な接続が確立された
+			clientConnected <- nil
+			break
 		}
 
 		d.log.debug("client connected from %s", conn.RemoteAddr().String())

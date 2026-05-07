@@ -352,6 +352,39 @@ func Test_dataHandler_parsePASVresponse(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "passive_mode_parse_enforce_same_ip_check_enabled",
+			fields: fields{
+				line: "227 Entering Passive Mode (20,30,40,50,100,10).\r\n",
+				mode: "PASV",
+				config: &config{
+					EnforceSameIPCheck: true,
+				},
+			},
+			want: want{
+				ip:   "20.30.40.50",
+				port: "25610",
+				err:  "",
+			},
+			wantErr: false,
+		},
+		{
+			name: "passive_mode_parse_combined_ignore_passive_and_enforce_same_ip",
+			fields: fields{
+				line: "227 Entering Passive Mode (20,30,40,50,100,10).\r\n",
+				mode: "PASV",
+				config: &config{
+					IgnorePassiveIP:    true,
+					EnforceSameIPCheck: true,
+				},
+			},
+			want: want{
+				ip:   "",
+				port: "25610",
+				err:  "",
+			},
+			wantErr: false,
+		},
 	}
 
 	transferInTLS := abool.New()
